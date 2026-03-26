@@ -110,7 +110,8 @@ if (command === 'launch') {
 if (command === 'use') {
   const { useSession } = await import('./session-commands.js');
   const name = restArgs.filter(a => !a.startsWith('--'))[0];
-  const result = useSession(name);
+  const force = hasFlag('force');
+  const result = await useSession(name, force);
   console.log(JSON.stringify(result));
   process.exit(result.success ? 0 : 1);
 }
