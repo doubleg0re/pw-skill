@@ -1,9 +1,9 @@
-// attr.ts — DOM 속성 읽기/쓰기
+// attr.ts — Read/write DOM attributes
 // Usage:
-//   pw attr "#btn" class                      # 읽기
-//   pw attr "#input" value                    # 읽기
-//   pw attr "#div" data-id --set=123          # 쓰기
-//   pw attr "#el" textContent                 # textContent 읽기
+//   pw attr "#btn" class                      # read
+//   pw attr "#input" value                    # read
+//   pw attr "#div" data-id --set=123          # write
+//   pw attr "#el" textContent                 # read textContent
 import { run, parseFlag } from './common.js';
 
 run(async ({ page, args }) => {

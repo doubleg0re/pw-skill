@@ -1,5 +1,5 @@
 // ~/.claude/skills/pw-browse/scripts/tab.ts
-// 탭(페이지) 관리: 생성, 목록, 전환, 닫기
+// Tab (page) management: create, list, switch, close
 import { connectBrowser, ensureStateDir, output, parseArgs, hasFlag } from './common.js';
 
 const args = parseArgs();

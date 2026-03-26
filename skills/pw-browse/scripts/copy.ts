@@ -1,10 +1,10 @@
-// copy.ts — 요소의 텍스트/HTML 복사 (클립보드가 아닌 stdout 반환)
+// copy.ts — Copy element text/HTML (returns to stdout, not clipboard)
 // Usage:
 //   pw copy "#article"                        # textContent
-//   pw copy "#article" --format=text          # textContent (기본)
+//   pw copy "#article" --format=text          # textContent (default)
 //   pw copy "#article" --format=html          # innerHTML
 //   pw copy "#article" --format=outer         # outerHTML
-//   pw copy "#table" --format=text            # 테이블 텍스트
+//   pw copy "#table" --format=text            # table text
 import { run, parseFlag } from './common.js';
 
 run(async ({ page, args }) => {

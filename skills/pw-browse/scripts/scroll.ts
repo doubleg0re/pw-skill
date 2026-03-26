@@ -1,11 +1,11 @@
-// scroll.ts — 페이지/요소 스크롤
+// scroll.ts — Page/element scrolling
 // Usage:
-//   pw scroll down                    # 한 화면 아래로
-//   pw scroll up                      # 한 화면 위로
-//   pw scroll top                     # 맨 위로
-//   pw scroll bottom                  # 맨 아래로
-//   pw scroll "#element"              # 요소가 보일 때까지 스크롤
-//   pw scroll down --px=500           # 500px 아래로
+//   pw scroll down                    # one viewport down
+//   pw scroll up                      # one viewport up
+//   pw scroll top                     # scroll to top
+//   pw scroll bottom                  # scroll to bottom
+//   pw scroll "#element"              # scroll until element is visible
+//   pw scroll down --px=500           # 500px down
 import { run, parseFlag, screenshotPath } from './common.js';
 
 run(async ({ page, args }) => {
@@ -27,12 +27,12 @@ run(async ({ page, args }) => {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       break;
     default:
-      // 셀렉터 → 요소까지 스크롤
+      // Selector -> scroll to element
       await page.locator(target).first().scrollIntoViewIfNeeded();
       break;
   }
 
-  await page.waitForTimeout(300); // 스크롤 애니메이션 대기
+  await page.waitForTimeout(300); // Wait for scroll animation
   const path = screenshotPath();
   await page.screenshot({ path });
 

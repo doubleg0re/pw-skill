@@ -1,5 +1,5 @@
 // ~/.claude/skills/pw-browse/scripts/console.ts
-// 브라우저에 console 패칭을 inject하고, 수집된 로그를 파일로 덤프
+// Inject console patching into the browser and dump collected logs to a file
 import { run, ensureStateDir } from './common.js';
 import { join, resolve } from 'path';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
@@ -7,7 +7,7 @@ import { writeFileSync, readFileSync, existsSync } from 'fs';
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const LOG_FILE = join(STATE_DIR, 'console.log');
 
-// 브라우저에 inject할 console 패칭 코드
+// Console patching code to inject into the browser
 const INJECT_SCRIPT = `
 if (!window.__PW_CONSOLE_PATCHED) {
   window.__PW_CONSOLE_PATCHED = true;
@@ -43,21 +43,21 @@ run(async ({ page, args }) => {
     }
 
     case 'dump': {
-      // inject 안 되어있으면 자동 inject
+      // Auto-inject if not already injected
       const patched = await page.evaluate('!!window.__PW_CONSOLE_PATCHED');
       if (!patched) await page.evaluate(INJECT_SCRIPT);
 
       const logs = await page.evaluate('window.__PW_LOGS || []') as any[];
       ensureStateDir();
 
-      // 파일에 append
+      // Append to file
       const lines = logs.map((l: any) =>
         `[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.text}`
       ).join('\n');
 
       if (lines) writeFileSync(LOG_FILE, lines + '\n', { flag: 'a' });
 
-      // 덤프 후 브라우저 로그 비우기
+      // Clear browser logs after dump
       await page.evaluate('window.__PW_LOGS = []');
 
       return { success: true, data: { dumped: logs.length, file: LOG_FILE } };

@@ -18,6 +18,7 @@ Terminate the browser process and clean up temporary files.
 
 Read the port from `.playwright-state/cdp-port.txt` and kill only the process using that port:
 
+**macOS / Linux:**
 ```bash
 CDP_PORT=$(cat .playwright-state/cdp-port.txt 2>/dev/null)
 if [ -n "$CDP_PORT" ]; then
@@ -25,6 +26,17 @@ if [ -n "$CDP_PORT" ]; then
 fi
 rm -f .playwright-state/cdp-port.txt
 ```
+
+**Windows:**
+```bash
+CDP_PORT=$(cat .playwright-state/cdp-port.txt 2>/dev/null)
+if [ -n "$CDP_PORT" ]; then
+  cmd.exe /c "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :$CDP_PORT') do taskkill /PID %a /F 2>nul"
+fi
+rm -f .playwright-state/cdp-port.txt
+```
+
+> Note: `pw close` command handles platform detection automatically.
 
 ### 2. Preserve storageState
 

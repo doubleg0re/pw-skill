@@ -1,12 +1,12 @@
-// find.ts — DOM 요소 탐색
+// find.ts — DOM element search
 // Usage:
-//   pw find ".item"                          # 매칭 요소 개수 + 텍스트
-//   pw find "#form" --children               # 자식 요소 목록
-//   pw find ".card" --detail=tag             # 태그명만
-//   pw find ".card" --detail=class           # 태그 + 클래스
-//   pw find ".card" --detail=full            # 태그 + id + 클래스 + 텍스트 + 속성
-//   pw find ".card" --attr=data-id           # 특정 속성값만 추출
-//   pw find ".card" --limit=5               # 최대 N개
+//   pw find ".item"                          # matching element count + text
+//   pw find "#form" --children               # child element list
+//   pw find ".card" --detail=tag             # tag name only
+//   pw find ".card" --detail=class           # tag + class
+//   pw find ".card" --detail=full            # tag + id + class + text + attributes
+//   pw find ".card" --attr=data-id           # extract specific attribute values only
+//   pw find ".card" --limit=5               # max N elements
 import { run, parseFlag, hasFlag } from './common.js';
 
 type DetailLevel = 'tag' | 'class' | 'full';
@@ -21,7 +21,7 @@ run(async ({ page, args }) => {
   const limitStr = parseFlag(process.argv.slice(2), 'limit');
   const limit = limitStr ? parseInt(limitStr) : 20;
 
-  // 특정 속성값만 추출
+  // Extract specific attribute values only
   if (attrName) {
     const values = await page.locator(selector).evaluateAll(
       (els, { attr, limit }) => els.slice(0, limit).map(el => ({
@@ -33,7 +33,7 @@ run(async ({ page, args }) => {
     return { success: true, data: { selector, attr: attrName, count: values.length, values } };
   }
 
-  // 자식 요소 탐색
+  // Search child elements
   const targetSelector = children ? `${selector} > *` : selector;
 
   const elements = await page.locator(targetSelector).evaluateAll(

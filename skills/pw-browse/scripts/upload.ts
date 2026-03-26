@@ -1,7 +1,7 @@
-// upload.ts — 파일 업로드
+// upload.ts — File upload
 // Usage:
 //   pw upload "#file-input" /path/to/file.pdf
-//   pw upload "#photos" /path/a.jpg /path/b.jpg    # 다중 파일
+//   pw upload "#photos" /path/a.jpg /path/b.jpg    # multiple files
 import { run, screenshotPath } from './common.js';
 
 run(async ({ page, args }) => {

@@ -1,5 +1,5 @@
 // ~/.claude/skills/pw-browse/scripts/network.ts
-// 브라우저에 fetch/XHR 패칭을 inject하고, 수집된 네트워크 로그를 파일로 덤프
+// Inject fetch/XHR patching into the browser and dump collected network logs to a file
 import { run, ensureStateDir } from './common.js';
 import { join, resolve } from 'path';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
@@ -12,7 +12,7 @@ if (!window.__PW_NETWORK_PATCHED) {
   window.__PW_NETWORK_PATCHED = true;
   window.__PW_NETWORK = window.__PW_NETWORK || [];
 
-  // fetch 패칭
+  // Patch fetch
   const origFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;
@@ -33,7 +33,7 @@ if (!window.__PW_NETWORK_PATCHED) {
     }
   };
 
-  // XMLHttpRequest 패칭
+  // Patch XMLHttpRequest
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
@@ -101,7 +101,7 @@ run(async ({ page, args }) => {
     }
 
     case 'find': {
-      // args[1]로 URL 패턴 필터링
+      // Filter by URL pattern using args[1]
       const pattern = args[1];
       if (!pattern) return { success: false, error: 'Usage: network.ts find <url-pattern>' };
       if (!existsSync(LOG_FILE)) return { success: true, data: { lines: [] } };

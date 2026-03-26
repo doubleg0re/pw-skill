@@ -42,10 +42,13 @@ npx tsx {script_path}/navigate.ts <url> [--screenshot] [--headed] [--viewport=Wx
 
 ### screenshot.ts — Capture page
 ```bash
-npx tsx {script_path}/screenshot.ts [selector] [--full] [--headed]
+npx tsx {script_path}/screenshot.ts [target] [--full] [--name=filename] [--headed]
 ```
-- `selector`: CSS selector (omit for full page)
+- No args: Capture current viewport
 - `--full`: Full-page scroll capture
+- `selector`: Capture a specific element (e.g., `#header`, `.card`)
+- `x,y,width,height`: Capture a coordinate region (e.g., `100,200,500,300`)
+- `--name=filename`: Custom screenshot filename (default: timestamp)
 
 ### click.ts — Click an element
 ```bash
@@ -133,22 +136,146 @@ npx tsx {script_path}/wait.ts <ms|selector> [--attr=name --value=expected] [--ti
 - `--attr` + `--value`: Wait until the selector's attribute reaches a specific value
   - e.g., `wait.ts "#status" --attr=textContent --value=Done`
 
-### sequence.ts — Run action sequence
+### sequence.ts — Flow engine with variables, conditions, loops, and functions
 ```bash
 npx tsx {script_path}/sequence.ts <json-string | json-file-path>
 ```
-Runs multiple actions sequentially from a JSON array. Stops on failure with an error screenshot.
+Runs an action sequence with full flow control. Stops on failure with an error screenshot.
+
+#### Args format
+All actions accept `args` as either an **array** or an **object**:
+```json
+{"action": "fill", "args": ["#email", "test@test.com"]}
+{"action": "fill", "args": {"selector": "#email", "text": "test@test.com"}}
+```
+
+#### Basic actions
+All browser actions are supported: navigate, click, dblclick, drag, fill, type, hover, scroll, upload, copy, find, attr, select, wait, submit, fetch, screenshot, evaluate
+
 ```json
 [
   {"action": "navigate", "args": ["http://localhost:3000"]},
   {"action": "fill", "args": ["#email", "test@test.com"]},
   {"action": "click", "args": ["#submit"]},
   {"action": "wait", "args": ["#dashboard"]},
-  {"action": "wait", "args": ["#status", "textContent", "Done"]},
   {"action": "screenshot", "args": ["full"]}
 ]
 ```
-Supported actions: navigate, click, dblclick, drag, fill, type, hover, scroll, upload, copy, find, attr, select, wait, screenshot, evaluate
+
+#### screenshot in sequence
+```json
+{"action": "screenshot"}
+{"action": "screenshot", "args": ["full"]}
+{"action": "screenshot", "args": ["#header"]}
+{"action": "screenshot", "args": ["100,200,500,300"]}
+{"action": "screenshot", "args": ["full", "homepage"]}
+{"action": "screenshot", "args": ["#header", "header-shot"]}
+```
+- No args: Capture viewport
+- `"full"`: Full-page capture
+- Selector (`#id`, `.class`, `[attr]`): Capture specific element
+- `"x,y,width,height"`: Capture coordinate region
+- Second arg: Custom filename (e.g., `homepage.png`)
+
+#### Variables — `out` + `{{interpolation}}`
+Any step can store its result with `out`. Reference stored variables in args with `{{var.path}}`.
+```json
+[
+  {"action": "fetch", "args": ["GET", "/api/user"], "out": "user"},
+  {"action": "log", "ref": "user"},
+  {"action": "fill", "args": ["#name", "{{user.data.name}}"]}
+]
+```
+- Nested access: `{{user.data.items.0.name}}`
+- All stored variables are included in the final `vars` output
+
+#### log — Debug and inspect variables
+```json
+{"action": "log", "ref": "user.data"}
+{"action": "log", "text": "Status is {{user.status}}"}
+{"action": "log"}
+```
+- `ref`: Output a variable value (for inspecting structure)
+- `text`: Output interpolated text
+- No args: Dump all variables
+
+#### condition — Conditional branching
+```json
+{"action": "condition", "ref": "user.status", "eq": 200, "then": [
+  {"action": "log", "text": "OK"}
+], "else": [
+  {"action": "log", "text": "Failed"}
+]}
+```
+Operators: `eq`, `neq`, `gt`, `lt`, `contains`, `exists`
+- `exists: true` → ref is not null/undefined; `exists: false` → ref is null/undefined
+- Comparison values support interpolation: `"eq": "{{expectedValue}}"`
+
+#### each — Iterate arrays and objects
+```json
+[
+  {"action": "fetch", "args": ["GET", "/api/items"], "out": "res"},
+  {"action": "each", "ref": "res.data", "as": "item", "do": [
+    {"action": "fill", "args": ["#search", "{{item.name}}"]},
+    {"action": "click", "args": ["#submit"]}
+  ]}
+]
+```
+- **Array**: `"as": "item"` — each element is stored in `item`
+- **Object**: `"as": "{k,v}"` — destructure key/value into separate variables
+  ```json
+  {"action": "each", "ref": "formData", "as": "{field,value}", "do": [
+    {"action": "fill", "args": ["#{{field}}", "{{value}}"]}
+  ]}
+  ```
+- Built-in variables: `{{$index}}`, `{{$key}}` (null for arrays)
+
+#### loop — Repeat N times
+```json
+{"action": "loop", "count": 5, "do": [
+  {"action": "scroll", "args": ["down"]},
+  {"action": "wait", "args": ["500"]}
+]}
+```
+- `{{$index}}`: Current iteration (0-based)
+
+#### label + goto — Jump and retry
+```json
+[
+  {"label": "retry"},
+  {"action": "fetch", "args": ["GET", "/api/status"], "out": "res"},
+  {"action": "condition", "ref": "res.status", "neq": 200, "then": [
+    {"action": "wait", "args": ["2000"]},
+    {"action": "goto", "label": "retry"}
+  ]},
+  {"label": "done"},
+  {"action": "log", "text": "Ready: {{res.data}}"}
+]
+```
+- `label`: A named marker (no action, just a jump target)
+- `goto`: Jump to a label. Bubbles up from nested scopes (condition/each/loop)
+- Max 100 jumps to prevent infinite loops
+
+#### def + call — Reusable functions
+```json
+[
+  {"action": "def", "name": "login", "params": ["email", "pw"], "do": [
+    {"action": "fill", "args": ["#email", "{{email}}"]},
+    {"action": "fill", "args": ["#password", "{{pw}}"]},
+    {"action": "click", "args": ["#submit"]},
+    {"action": "wait", "args": ["#dashboard"]}
+  ]},
+  {"action": "call", "name": "login", "args": ["admin@test.com", "secret"]},
+  {"action": "screenshot", "args": ["admin-dashboard"]},
+  {"action": "call", "name": "login", "args": {"email": "user@test.com", "pw": "12345"}}
+]
+```
+- `def`: Register a named step block with optional `params`. Not executed on definition
+- `call`: Invoke by name
+  - **Array args**: Mapped to `params` in order
+  - **Object args**: Mapped by key name
+- Supports `out` to capture the last step's result
+- Definitions are shared globally — usable inside condition, each, loop, or other calls
 
 ### evaluate.ts — Execute JavaScript
 ```bash
@@ -207,6 +334,20 @@ All scripts return JSON to stdout:
   "success": true,
   "screenshot": ".playwright-state/screenshots/1711234567.png",
   "data": "..."
+}
+```
+
+Sequence returns additional `vars` with all stored variables:
+```json
+{
+  "success": true,
+  "screenshot": ".playwright-state/screenshots/sequence-done.png",
+  "data": {
+    "completed": 5,
+    "total": 5,
+    "results": [...],
+    "vars": {"user": {"status": 200, "data": {...}}}
+  }
 }
 ```
 

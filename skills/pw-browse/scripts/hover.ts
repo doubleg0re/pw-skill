@@ -1,4 +1,4 @@
-// hover.ts — 요소에 마우스 올리기
+// hover.ts — Hover mouse over element
 import { run, parseFlag, screenshotPath } from './common.js';
 
 run(async ({ page, args }) => {

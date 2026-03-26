@@ -32,7 +32,7 @@ run(async ({ page, args }) => {
     if (waitUrl) {
       await page.goto(
         waitUrl.startsWith('http') ? waitUrl : `${page.url().replace(/\/[^/]*$/, '')}${waitUrl}`,
-        { waitUntil: 'networkidle', timeout: 30000 },
+        { waitUntil: 'domcontentloaded', timeout: 30000 },
       );
     }
 

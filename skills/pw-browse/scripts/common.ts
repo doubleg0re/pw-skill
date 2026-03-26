@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from '
 import { join, resolve } from 'path';
 import { spawn } from 'child_process';
 
-// --- 상태 디렉토리 ---
+// --- State directory ---
 
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const STATE_FILE = join(STATE_DIR, 'state.json');
@@ -16,7 +16,7 @@ export function ensureStateDir(): void {
   if (!existsSync(SCREENSHOTS_DIR)) mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 }
 
-// --- storageState 로드/저장 ---
+// --- storageState load/save ---
 
 export function loadState(): string | undefined {
   if (existsSync(STATE_FILE)) return STATE_FILE;
@@ -28,7 +28,7 @@ export function saveState(context: BrowserContext): Promise<void> {
   return context.storageState({ path: STATE_FILE });
 }
 
-// --- CDP 포트 관리 ---
+// --- CDP port management ---
 
 function saveCdpPort(port: number): void {
   ensureStateDir();
@@ -47,7 +47,7 @@ function clearCdpPort(): void {
   if (existsSync(CDP_PORT_FILE)) unlinkSync(CDP_PORT_FILE);
 }
 
-// --- Chromium CDP 프로세스 관리 ---
+// --- Chromium CDP process management ---
 
 async function isPortAlive(port: number): Promise<boolean> {
   try {
@@ -108,7 +108,7 @@ function spawnChromium(headless: boolean): Promise<number> {
   });
 }
 
-// --- 브라우저 연결 ---
+// --- Browser connection ---
 
 interface LaunchOptions {
   headless?: boolean;
@@ -125,7 +125,7 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
   const headless = options.headless ?? true;
   const viewport = options.viewport ?? DEFAULT_VIEWPORT;
 
-  // 1. 기존 CDP 포트로 연결 시도
+  // 1. Try connecting to existing CDP port
   let port = loadCdpPort();
   if (port && await isPortAlive(port)) {
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
@@ -136,13 +136,13 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
       const page = pages.length > 0 ? pages[0] : await ctx.newPage();
       return { browser, context: ctx, page };
     }
-    // context 없으면 새로 생성
+    // No context found, create a new one
     const ctx = await browser.newContext({ viewport });
     const page = await ctx.newPage();
     return { browser, context: ctx, page };
   }
 
-  // 2. 기존 포트 무효 → 새 Chromium 시작
+  // 2. Existing port invalid, start new Chromium
   clearCdpPort();
   port = await spawnChromium(headless);
   saveCdpPort(port);
@@ -153,7 +153,7 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
     const ctx = contexts[0];
     const pages = ctx.pages();
     const page = pages.length > 0 ? pages[0] : await ctx.newPage();
-    // viewport 설정
+    // Set viewport
     await page.setViewportSize(viewport);
     return { browser, context: ctx, page };
   }
@@ -162,7 +162,7 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
   return { browser, context: ctx, page };
 }
 
-// --- 결과 반환 ---
+// --- Result output ---
 
 interface Result {
   success: boolean;
@@ -175,7 +175,7 @@ export function output(result: Result): void {
   console.log(JSON.stringify(result));
 }
 
-// --- 스크린샷 저장 ---
+// --- Screenshot save ---
 
 export function screenshotPath(name?: string): string {
   ensureStateDir();
@@ -183,7 +183,7 @@ export function screenshotPath(name?: string): string {
   return join(SCREENSHOTS_DIR, `${filename}.png`);
 }
 
-// --- 파라미터 파싱 ---
+// --- Parameter parsing ---
 
 export function parseArgs(): string[] {
   return process.argv.slice(2);
@@ -199,7 +199,7 @@ export function hasFlag(args: string[], flag: string): boolean {
   return args.includes(`--${flag}`);
 }
 
-// --- 안전한 실행 래퍼 ---
+// --- Safe execution wrapper ---
 
 export async function run(
   fn: (args: {
@@ -219,7 +219,7 @@ export async function run(
 
     const { browser, context, page: defaultPage } = await connectBrowser({ headless: !headed, viewport });
 
-    // --tab=N 으로 특정 탭 선택
+    // Select specific tab with --tab=N
     const tabStr = parseFlag(cliArgs, 'tab');
     let page = defaultPage;
     if (tabStr !== undefined) {
@@ -238,7 +238,7 @@ export async function run(
     });
 
     output(result);
-    // CDP disconnect — 브라우저 프로세스는 유지됨
+    // CDP disconnect — browser process stays alive
     process.exit(0);
   } catch (err) {
     output({ success: false, error: err instanceof Error ? err.message : String(err) });

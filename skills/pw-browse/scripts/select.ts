@@ -1,4 +1,4 @@
-// select.ts — <select> 드롭다운 옵션 선택
+// select.ts — Select dropdown option from <select>
 // Usage:
 //   pw select "#country" --value=kr
 //   pw select "#size" --label=Large

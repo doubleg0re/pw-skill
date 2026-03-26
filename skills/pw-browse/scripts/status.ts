@@ -1,5 +1,5 @@
 // ~/.claude/skills/pw-browse/scripts/status.ts
-// 브라우저 세션 상태 조회
+// Query browser session status
 import { chromium } from 'playwright';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, resolve, basename } from 'path';
@@ -75,8 +75,8 @@ async function main() {
     }
 
     case 'all': {
-      // 홈 디렉토리 아래 모든 .playwright-state/cdp-port.txt 스캔은 비현실적이니
-      // 흔한 워크스페이스 경로들에서 찾기
+      // Scanning all .playwright-state/cdp-port.txt under home directory is impractical,
+      // so search in common workspace paths
       const home = homedir();
       const searchDirs = [
         resolve(home, 'Workspace'),
@@ -95,7 +95,7 @@ async function main() {
           const entries = readdirSync(dir, { withFileTypes: true });
           for (const entry of entries) {
             if (!entry.isDirectory()) continue;
-            // 2단계까지 탐색
+            // Search up to 2 levels deep
             const paths = [
               join(dir, entry.name, '.playwright-state', 'cdp-port.txt'),
               ...(() => {

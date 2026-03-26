@@ -85,7 +85,11 @@ if (command === 'close') {
     if (existsSync(portFile)) {
       const { readFileSync, unlinkSync } = await import('fs');
       const port = readFileSync(portFile, 'utf-8').trim();
-      execSync(`lsof -ti :${port} | xargs kill 2>/dev/null || true`, { stdio: 'ignore' });
+      if (process.platform === 'win32') {
+        execSync(`for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /PID %a /F 2>nul`, { stdio: 'ignore', shell: 'cmd.exe' });
+      } else {
+        execSync(`lsof -ti :${port} | xargs kill 2>/dev/null || true`, { stdio: 'ignore' });
+      }
       unlinkSync(portFile);
     }
     console.log(JSON.stringify({ success: true, data: 'Browser closed' }));

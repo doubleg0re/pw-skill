@@ -1,9 +1,9 @@
-// wait.ts — 조건부 대기
+// wait.ts — Conditional wait
 // Usage:
-//   pw wait 3000                              # 3초 대기
-//   pw wait "#modal"                          # 셀렉터 visible 될 때까지
-//   pw wait "#status" --attr=textContent --value=완료  # 셀렉터의 속성이 특정 값이 될 때까지
-//   pw wait "#input" --attr=value --value=loaded       # input의 value가 "loaded"가 될 때까지
+//   pw wait 3000                              # wait 3 seconds
+//   pw wait "#modal"                          # wait until selector is visible
+//   pw wait "#status" --attr=textContent --value=done  # wait until selector attribute matches value
+//   pw wait "#input" --attr=value --value=loaded       # wait until input value becomes "loaded"
 import { run, parseFlag, screenshotPath } from './common.js';
 
 run(async ({ page, args }) => {
@@ -15,7 +15,7 @@ run(async ({ page, args }) => {
   const attr = parseFlag(process.argv.slice(2), 'attr');
   const value = parseFlag(process.argv.slice(2), 'value');
 
-  // 특정 시각까지 대기: "14:30" 또는 "14:30:00"
+  // Wait until specific time: "14:30" or "14:30:00"
   if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(target)) {
     const [h, m, s] = target.split(':').map(Number);
     const now = new Date();
@@ -27,7 +27,7 @@ run(async ({ page, args }) => {
     return { success: true, data: { until: target, waited: ms, type: 'until' } };
   }
 
-  // URL 패턴 대기: "http" 또는 "/" 로 시작
+  // Wait for URL pattern: starts with "http" or "/"
   if (target.startsWith('http') || target.startsWith('/')) {
     await page.waitForURL(target.includes('*') ? target : `**${target}*`, { timeout });
     const path = screenshotPath();
@@ -35,13 +35,13 @@ run(async ({ page, args }) => {
     return { success: true, screenshot: path, data: { url: page.url(), type: 'url' } };
   }
 
-  // 숫자면 시간 대기 (ms)
+  // If numeric, wait for duration (ms)
   if (/^\d+$/.test(target)) {
     await new Promise(resolve => setTimeout(resolve, parseInt(target)));
     return { success: true, data: { waited: parseInt(target), type: 'time' } };
   }
 
-  // attr+value가 있으면 속성값 매칭 대기
+  // If attr+value present, wait for attribute value match
   if (attr && value !== undefined) {
     await page.locator(target).first().waitFor({ state: 'attached', timeout });
     await page.waitForFunction(
@@ -61,7 +61,7 @@ run(async ({ page, args }) => {
     return { success: true, screenshot: path, data: { selector: target, attr, value, type: 'attr' } };
   }
 
-  // 셀렉터만 있으면 visible 대기
+  // If only selector, wait for visible
   await page.locator(target).first().waitFor({ state: 'visible', timeout });
   const path = screenshotPath();
   await page.screenshot({ path });
