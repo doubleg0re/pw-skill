@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 // pw CLI — Playwright Skill unified command
-import { execSync, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 
@@ -8,6 +8,16 @@ const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 const command = args[0];
 const restArgs = args.slice(1);
+
+// Parse --flag=value from restArgs
+function flag(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const found = restArgs.find(a => a.startsWith(prefix));
+  return found ? found.slice(prefix.length) : undefined;
+}
+function hasFlag(name: string): boolean {
+  return restArgs.includes(`--${name}`);
+}
 
 const COMMANDS: Record<string, { script: string; desc: string }> = {
   navigate:    { script: 'navigate.ts',    desc: 'Go to URL' },
@@ -44,7 +54,13 @@ pw — Playwright CLI Skill
 
 Usage: pw <command> [args...]
 
-Commands:
+Session management:
+  launch [url] [--name=N] [--resume=N]     Launch browser session
+  use <name>                                Bind session to project
+  sessions                                  List all sessions
+  close [--session=N] [--all]               Close session(s)
+
+Browser actions:
   navigate <url> [--screenshot]              Go to URL
   screenshot [selector] [--full]             Capture page or element
   click <target> [--mode=selector|text|coord] Click element
@@ -64,50 +80,58 @@ Commands:
   fetch <METHOD> <url> [body-json]           HTTP request with auth
   evaluate <js-expression>                   Run JavaScript in page
   sequence <json|file>                       Run action sequence
+
+Debugging:
   console [inject|dump|clear|tail]           Console log capture
   network [inject|dump|clear|tail|find]      Network request capture
   trace [start|stop|view|status]             Record and view traces
-  video [list|path|clear]                    Manage recorded videos
+  video [list|path|rename|clear]             Manage recorded videos
   tab [new|list|close] [args...]             Manage browser tabs
-  status [current|pages|all]                 Session status
-  close                                      Close browser
-  help                                       Show this help
 
 Global flags:
+  --session=N    Target specific session (name or ID)
   --tab=N        Target specific tab (default: 0)
   --headed       Show browser window
   --viewport=WxH Viewport size (default: 1920x1080)
+  --video[=name] Enable video recording
 `.trim());
   process.exit(0);
 }
 
-// Close is special
-if (command === 'close') {
-  const stateDir = resolve(process.cwd(), '.playwright-state');
-  const portFile = join(stateDir, 'cdp-port.txt');
-  try {
-    if (existsSync(portFile)) {
-      const { readFileSync, unlinkSync } = await import('fs');
-      const port = readFileSync(portFile, 'utf-8').trim();
-      if (process.platform === 'win32') {
-        execSync(`for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /PID %a /F 2>nul`, { stdio: 'ignore', shell: 'cmd.exe' });
-      } else {
-        execSync(`lsof -ti :${port} | xargs kill 2>/dev/null || true`, { stdio: 'ignore' });
-      }
-      unlinkSync(portFile);
+// --- launch ---
+if (command === 'launch') {
+  const { launchSession } = await import('./session-commands.js');
+  const result = await launchSession(restArgs);
+  console.log(JSON.stringify(result));
+  process.exit(result.success ? 0 : 1);
+}
 
-      // Auto-rename video if --video=name was used
-      const { autoRenameVideo } = await import('./scripts/video-utils.js');
-      autoRenameVideo(stateDir);
-    }
-    console.log(JSON.stringify({ success: true, data: 'Browser closed' }));
-  } catch {
-    console.log(JSON.stringify({ success: true, data: 'No browser to close' }));
-  }
+// --- use ---
+if (command === 'use') {
+  const { useSession } = await import('./session-commands.js');
+  const name = restArgs.filter(a => !a.startsWith('--'))[0];
+  const result = useSession(name);
+  console.log(JSON.stringify(result));
+  process.exit(result.success ? 0 : 1);
+}
+
+// --- sessions ---
+if (command === 'sessions') {
+  const { listSessionsCommand } = await import('./session-commands.js');
+  const result = listSessionsCommand();
+  console.log(JSON.stringify(result));
   process.exit(0);
 }
 
-// Run script
+// --- close ---
+if (command === 'close') {
+  const { closeSession } = await import('./session-commands.js');
+  const result = await closeSession(restArgs);
+  console.log(JSON.stringify(result));
+  process.exit(result.success ? 0 : 1);
+}
+
+// --- Regular script commands ---
 const cmd = COMMANDS[command];
 if (!cmd) {
   console.error(`Unknown command: ${command}\nRun 'pw help' for usage.`);
