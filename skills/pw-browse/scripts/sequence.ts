@@ -91,6 +91,8 @@ run(async ({ page, args: cliArgs }) => {
             if (target <= now) target.setDate(target.getDate() + 1); // 이미 지났으면 내일
             const ms = target.getTime() - now.getTime();
             await new Promise(resolve => setTimeout(resolve, ms));
+          } else if (a[0].startsWith('http') || a[0].startsWith('/')) {
+            await page.waitForURL(a[0].includes('*') ? a[0] : `**${a[0]}*`, { timeout: 30000 });
           } else if (/^\d+$/.test(a[0])) {
             await new Promise(resolve => setTimeout(resolve, parseInt(a[0])));
           } else if (a[1] && a[2]) {

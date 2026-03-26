@@ -27,6 +27,14 @@ run(async ({ page, args }) => {
     return { success: true, data: { until: target, waited: ms, type: 'until' } };
   }
 
+  // URL 패턴 대기: "http" 또는 "/" 로 시작
+  if (target.startsWith('http') || target.startsWith('/')) {
+    await page.waitForURL(target.includes('*') ? target : `**${target}*`, { timeout });
+    const path = screenshotPath();
+    await page.screenshot({ path });
+    return { success: true, screenshot: path, data: { url: page.url(), type: 'url' } };
+  }
+
   // 숫자면 시간 대기 (ms)
   if (/^\d+$/.test(target)) {
     await new Promise(resolve => setTimeout(resolve, parseInt(target)));
