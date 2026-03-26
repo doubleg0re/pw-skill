@@ -54,6 +54,19 @@ npx tsx {script_path}/click.ts <target> [--mode=selector|text|coord]
 - 자동 감지: `#id` `.class` → selector, `350,200` → coord, 그 외 → text
 - `--mode`: 명시적 모드 지정
 
+### dblclick.ts — 더블 클릭
+```bash
+npx tsx {script_path}/dblclick.ts <target> [--mode=selector|text|coord]
+```
+- click.ts와 동일한 인터페이스, 더블 클릭 동작
+
+### drag.ts — 드래그 앤 드롭
+```bash
+npx tsx {script_path}/drag.ts <source> <target> [--mode=selector|coord]
+```
+- `--mode=selector`: 셀렉터 간 dragTo (기본)
+- `--mode=coord`: 좌표 기반 (예: `drag.ts 100,200 300,400 --mode=coord`)
+
 ### fill.ts — 셀렉터 클릭 + 텍스트 입력
 ```bash
 npx tsx {script_path}/fill.ts <selector> <text>

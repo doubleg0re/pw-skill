@@ -44,6 +44,8 @@ cd ~/.claude/skills/pw-browse/scripts && npm install && npx playwright install c
 ```bash
 pw navigate http://localhost:3000 --screenshot
 pw click "#login-btn"
+pw dblclick "#editable-cell"
+pw drag "#item-1" "#drop-zone"
 pw fill "#email" "user@test.com"
 pw type "password123"
 pw screenshot --full
@@ -82,6 +84,8 @@ Skills load **only when needed**. Idle cost: **0 tokens**.
 | `navigate.ts` | URL navigation + optional screenshot |
 | `screenshot.ts` | Full page or element capture |
 | `click.ts` | Click by selector, text, or coordinates |
+| `dblclick.ts` | Double-click by selector, text, or coordinates |
+| `drag.ts` | Drag and drop by selector or coordinates |
 | `fill.ts` | Click + fill input field |
 | `type.ts` | Keyboard typing with optional delay |
 | `evaluate.ts` | Execute JavaScript in page |

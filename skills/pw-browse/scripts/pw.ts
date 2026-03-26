@@ -13,6 +13,8 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   navigate:    { script: 'navigate.ts',    desc: 'URL 이동' },
   screenshot:  { script: 'screenshot.ts',  desc: '페이지 캡처' },
   click:       { script: 'click.ts',       desc: '요소 클릭' },
+  dblclick:    { script: 'dblclick.ts',    desc: '더블 클릭' },
+  drag:        { script: 'drag.ts',        desc: '드래그 앤 드롭' },
   fill:        { script: 'fill.ts',        desc: '입력 필드 채우기' },
   type:        { script: 'type.ts',        desc: '키보드 타이핑' },
   evaluate:    { script: 'evaluate.ts',    desc: 'JS 실행' },
@@ -33,6 +35,8 @@ Commands:
   navigate <url> [--screenshot]           URL 이동
   screenshot [selector] [--full]          페이지 캡처
   click <target> [--mode=selector|text|coord]  요소 클릭
+  dblclick <target> [--mode=...]          더블 클릭
+  drag <source> <target> [--mode=...]     드래그 앤 드롭
   fill <selector> <text>                  입력 필드 채우기
   type <text> [--delay=ms]                키보드 타이핑
   evaluate <js-expression>                JS 실행
