@@ -15,7 +15,19 @@ run(async ({ page, args }) => {
   const attr = parseFlag(process.argv.slice(2), 'attr');
   const value = parseFlag(process.argv.slice(2), 'value');
 
-  // 숫자면 시간 대기
+  // 특정 시각까지 대기: "14:30" 또는 "14:30:00"
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(target)) {
+    const [h, m, s] = target.split(':').map(Number);
+    const now = new Date();
+    const t = new Date(now);
+    t.setHours(h, m, s || 0, 0);
+    if (t <= now) t.setDate(t.getDate() + 1);
+    const ms = t.getTime() - now.getTime();
+    await new Promise(resolve => setTimeout(resolve, ms));
+    return { success: true, data: { until: target, waited: ms, type: 'until' } };
+  }
+
+  // 숫자면 시간 대기 (ms)
   if (/^\d+$/.test(target)) {
     await new Promise(resolve => setTimeout(resolve, parseInt(target)));
     return { success: true, data: { waited: parseInt(target), type: 'time' } };

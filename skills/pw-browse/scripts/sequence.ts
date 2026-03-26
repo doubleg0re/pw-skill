@@ -82,7 +82,16 @@ run(async ({ page, args: cliArgs }) => {
           break;
 
         case 'wait':
-          if (/^\d+$/.test(a[0])) {
+          if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(a[0])) {
+            // 특정 시각까지 대기: "14:30" 또는 "14:30:00"
+            const [h, m, s] = a[0].split(':').map(Number);
+            const now = new Date();
+            const target = new Date(now);
+            target.setHours(h, m, s || 0, 0);
+            if (target <= now) target.setDate(target.getDate() + 1); // 이미 지났으면 내일
+            const ms = target.getTime() - now.getTime();
+            await new Promise(resolve => setTimeout(resolve, ms));
+          } else if (/^\d+$/.test(a[0])) {
             await new Promise(resolve => setTimeout(resolve, parseInt(a[0])));
           } else if (a[1] && a[2]) {
             // wait selector attr value
@@ -100,6 +109,44 @@ run(async ({ page, args: cliArgs }) => {
             );
           } else {
             await page.locator(a[0]).first().waitFor({ state: 'visible', timeout: 30000 });
+          }
+          break;
+
+        case 'hover':
+          if (/^\d+,\d+$/.test(a[0])) {
+            const [x, y] = a[0].split(',').map(Number);
+            await page.mouse.move(x, y);
+          } else {
+            await page.locator(a[0]).first().hover();
+          }
+          break;
+
+        case 'scroll':
+          if (a[0] === 'down') await page.evaluate((px) => window.scrollBy(0, px || window.innerHeight), a[1] ? parseInt(a[1]) : undefined);
+          else if (a[0] === 'up') await page.evaluate((px) => window.scrollBy(0, -(px || window.innerHeight)), a[1] ? parseInt(a[1]) : undefined);
+          else if (a[0] === 'top') await page.evaluate(() => window.scrollTo(0, 0));
+          else if (a[0] === 'bottom') await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          else await page.locator(a[0]).first().scrollIntoViewIfNeeded();
+          await page.waitForTimeout(300);
+          break;
+
+        case 'select':
+          if (a[2] === 'label') await page.locator(a[0]).first().selectOption({ label: a[1] });
+          else if (a[2] === 'index') await page.locator(a[0]).first().selectOption({ index: parseInt(a[1]) });
+          else await page.locator(a[0]).first().selectOption({ value: a[1] });
+          break;
+
+        case 'upload':
+          await page.locator(a[0]).first().setInputFiles(a.slice(1));
+          break;
+
+        case 'attr':
+          if (a[2]) {
+            await page.locator(a[0]).first().evaluate((el, { name, value }) => {
+              if (name === 'textContent') el.textContent = value;
+              else if (name === 'value') (el as HTMLInputElement).value = value;
+              else el.setAttribute(name, value);
+            }, { name: a[1], value: a[2] });
           }
           break;
 
