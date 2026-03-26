@@ -291,11 +291,36 @@ async function killSession(name: string): Promise<void> {
   const session = getSession(name);
   if (!session) return;
 
-  // Kill by PID (reliable, cross-platform)
+  // Kill by PID
   if (isProcessAlive(session.pid)) {
     try {
       process.kill(session.pid);
-    } catch {}
+    } catch (err) {
+      throw new Error(
+        `Failed to kill session "${name}" (pid ${session.pid}): ${err instanceof Error ? err.message : String(err)}. ` +
+        (process.platform === 'win32'
+          ? 'Try running as Administrator.'
+          : 'Check process permissions.')
+      );
+    }
+
+    // Verify it's actually dead (give it a moment)
+    await new Promise(r => setTimeout(r, 500));
+    if (isProcessAlive(session.pid)) {
+      // Try SIGKILL as last resort (Unix only)
+      if (process.platform !== 'win32') {
+        try { process.kill(session.pid, 'SIGKILL'); } catch {}
+        await new Promise(r => setTimeout(r, 500));
+      }
+      if (isProcessAlive(session.pid)) {
+        throw new Error(
+          `Session "${name}" (pid ${session.pid}) refused to terminate. ` +
+          (process.platform === 'win32'
+            ? 'Try: taskkill /PID ' + session.pid + ' /F (as Administrator)'
+            : 'Try: kill -9 ' + session.pid)
+        );
+      }
+    }
   }
 
   // Auto-rename video

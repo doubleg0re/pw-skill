@@ -357,20 +357,20 @@ export async function run(
 
     // Capture diagnostic context
     try {
-      const { page, session } = await connectBrowser({ headless: true });
+      const conn = await connectBrowser({ headless: true });
       const cliArgs = parseArgs();
       const tabStr = parseFlag(cliArgs, 'tab');
-      let diagnosticPage = page;
 
-      const errorContext: ErrorContext = { session: session.name };
+      const errorContext: ErrorContext = { session: conn.session.name };
+      let diagnosticPage = conn.page;
 
       if (tabStr !== undefined) {
         const tabIdx = parseInt(tabStr);
-        const pages = (await connectBrowser({ headless: true })).context.pages();
+        const pages = conn.context.pages();
         if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < pages.length) {
           diagnosticPage = pages[tabIdx];
         }
-        errorContext.tab = parseInt(tabStr);
+        errorContext.tab = tabIdx;
       }
 
       errorContext.url = diagnosticPage.url();
