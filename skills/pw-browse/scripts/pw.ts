@@ -19,6 +19,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   type:        { script: 'type.ts',        desc: '키보드 타이핑' },
   select:      { script: 'select.ts',      desc: '드롭다운 선택' },
   attr:        { script: 'attr.ts',        desc: 'DOM 속성 읽기/쓰기' },
+  find:        { script: 'find.ts',        desc: 'DOM 요소 탐색' },
   wait:        { script: 'wait.ts',        desc: '조건부 대기' },
   evaluate:    { script: 'evaluate.ts',    desc: 'JS 실행' },
   sequence:    { script: 'sequence.ts',    desc: '액션 시퀀스 실행' },
@@ -43,6 +44,7 @@ Commands:
   drag <source> <target> [--mode=...]     드래그 앤 드롭
   select <selector> [--value|--label|--index]  드롭다운 선택
   attr <selector> <name> [--set=value]    DOM 속성 읽기/쓰기
+  find <selector> [--detail=tag|class|full]  DOM 요소 탐색
   fill <selector> <text>                  입력 필드 채우기
   type <text> [--delay=ms]                키보드 타이핑
   wait <ms|selector> [--attr=x --value=y]  조건부 대기
