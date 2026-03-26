@@ -31,6 +31,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   sequence:    { script: 'sequence.ts',    desc: 'Run action sequence' },
   console:     { script: 'console.ts',     desc: 'Console logs' },
   network:     { script: 'network.ts',     desc: 'Network requests' },
+  trace:       { script: 'trace.ts',       desc: 'Record trace' },
   tab:         { script: 'tab.ts',         desc: 'Manage tabs' },
   status:      { script: 'status.ts',      desc: 'Session status' },
 };
@@ -64,6 +65,7 @@ Commands:
   sequence <json|file>                       Run action sequence
   console [inject|dump|clear|tail]           Console log capture
   network [inject|dump|clear|tail|find]      Network request capture
+  trace [start|stop|view|status]             Record and view traces
   tab [new|list|close] [args...]             Manage browser tabs
   status [current|pages|all]                 Session status
   close                                      Close browser

@@ -1,6 +1,6 @@
 // ~/.claude/skills/pw-browse/scripts/network.ts
 // Inject fetch/XHR patching into the browser and dump collected network logs to a file
-import { run, ensureStateDir } from './common.js';
+import { run, ensureStateDir, hasFlag } from './common.js';
 import { join, resolve } from 'path';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 
@@ -99,6 +99,7 @@ if (!window.__PW_NETWORK_PATCHED) {
 
 run(async ({ page, args }) => {
   const command = args[0] || 'dump'; // inject | dump | clear | tail | find
+  const raw = hasFlag(process.argv.slice(2), 'raw');
 
   switch (command) {
     case 'inject': {
@@ -114,12 +115,12 @@ run(async ({ page, args }) => {
       ensureStateDir();
 
       const lines = logs.map((l: any) => {
-        const reqRaw = l.reqBody ? maskSensitive(JSON.stringify(l.reqBody)) : '';
-        const req = reqRaw ? ` req=${truncate(reqRaw, MAX_BODY_LENGTH)}` : '';
-        const resRaw = l.resBody ? maskSensitive(JSON.stringify(l.resBody)) : '';
-        const res = resRaw ? ` res=${truncate(resRaw, MAX_BODY_LENGTH)}` : '';
+        const reqStr = l.reqBody ? JSON.stringify(l.reqBody) : '';
+        const req = reqStr ? ` req=${raw ? reqStr : truncate(maskSensitive(reqStr), MAX_BODY_LENGTH)}` : '';
+        const resStr = l.resBody ? JSON.stringify(l.resBody) : '';
+        const res = resStr ? ` res=${raw ? resStr : truncate(maskSensitive(resStr), MAX_BODY_LENGTH)}` : '';
         const err = l.error ? ` error=${l.error}` : '';
-        const hdrs = l.headers ? ` headers=${JSON.stringify(maskHeaders(l.headers))}` : '';
+        const hdrs = l.headers ? ` headers=${JSON.stringify(raw ? l.headers : maskHeaders(l.headers))}` : '';
         return `[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.method} ${l.url} → ${l.status}${req}${res}${hdrs}${err}`;
       }).join('\n');
 
