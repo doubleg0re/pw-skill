@@ -135,14 +135,21 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     const contexts = browser.contexts();
     if (contexts.length > 0) {
-      const ctx = contexts[0];
+      const existingCtx = contexts[0];
       if (video) {
-        // Existing context can't enable video — warn via stderr, don't silently ignore
-        process.stderr.write('[pw] Warning: --video ignored — browser already running without video. Close and relaunch with --video.\n');
+        // Existing context can't record video — create a new one with storageState inherited
+        const state = await existingCtx.storageState().catch(() => undefined);
+        const ctx = await browser.newContext({
+          viewport,
+          recordVideo: { dir: VIDEO_DIR, size: viewport },
+          ...(state ? { storageState: state } : {}),
+        });
+        const page = await ctx.newPage();
+        return { browser, context: ctx, page };
       }
-      const pages = ctx.pages();
-      const page = pages.length > 0 ? pages[0] : await ctx.newPage();
-      return { browser, context: ctx, page };
+      const pages = existingCtx.pages();
+      const page = pages.length > 0 ? pages[0] : await existingCtx.newPage();
+      return { browser, context: existingCtx, page };
     }
     // No context found, create a new one
     const ctx = await browser.newContext({
@@ -161,15 +168,22 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const contexts = browser.contexts();
   if (contexts.length > 0) {
-    const ctx = contexts[0];
+    const existingCtx = contexts[0];
     if (video) {
-      process.stderr.write('[pw] Warning: --video ignored — browser already running without video. Close and relaunch with --video.\n');
+      const state = await existingCtx.storageState().catch(() => undefined);
+      const ctx = await browser.newContext({
+        viewport,
+        recordVideo: { dir: VIDEO_DIR, size: viewport },
+        ...(state ? { storageState: state } : {}),
+      });
+      const page = await ctx.newPage();
+      return { browser, context: ctx, page };
     }
-    const pages = ctx.pages();
-    const page = pages.length > 0 ? pages[0] : await ctx.newPage();
+    const pages = existingCtx.pages();
+    const page = pages.length > 0 ? pages[0] : await existingCtx.newPage();
     // Set viewport
     await page.setViewportSize(viewport);
-    return { browser, context: ctx, page };
+    return { browser, context: existingCtx, page };
   }
   const ctx = await browser.newContext({ viewport });
   const page = await ctx.newPage();
