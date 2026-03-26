@@ -17,7 +17,11 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   drag:        { script: 'drag.ts',        desc: '드래그 앤 드롭' },
   fill:        { script: 'fill.ts',        desc: '입력 필드 채우기' },
   type:        { script: 'type.ts',        desc: '키보드 타이핑' },
+  select:      { script: 'select.ts',      desc: '드롭다운 선택' },
+  attr:        { script: 'attr.ts',        desc: 'DOM 속성 읽기/쓰기' },
+  wait:        { script: 'wait.ts',        desc: '조건부 대기' },
   evaluate:    { script: 'evaluate.ts',    desc: 'JS 실행' },
+  sequence:    { script: 'sequence.ts',    desc: '액션 시퀀스 실행' },
   console:     { script: 'console.ts',     desc: '콘솔 로그' },
   network:     { script: 'network.ts',     desc: '네트워크 요청' },
   tab:         { script: 'tab.ts',         desc: '탭 관리' },
@@ -37,9 +41,13 @@ Commands:
   click <target> [--mode=selector|text|coord]  요소 클릭
   dblclick <target> [--mode=...]          더블 클릭
   drag <source> <target> [--mode=...]     드래그 앤 드롭
+  select <selector> [--value|--label|--index]  드롭다운 선택
+  attr <selector> <name> [--set=value]    DOM 속성 읽기/쓰기
   fill <selector> <text>                  입력 필드 채우기
   type <text> [--delay=ms]                키보드 타이핑
+  wait <ms|selector> [--attr=x --value=y]  조건부 대기
   evaluate <js-expression>                JS 실행
+  sequence <json|file>                    액션 시퀀스 실행
   console [inject|dump|clear|tail]        콘솔 로그
   network [inject|dump|clear|tail|find]   네트워크 요청
   tab [new|list|close] [args...]          탭 관리

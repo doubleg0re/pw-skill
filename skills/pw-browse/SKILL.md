@@ -78,6 +78,32 @@ npx tsx {script_path}/type.ts <text> [--delay=ms]
 ```
 - 클릭 후 이어서 사용 (click.ts → type.ts)
 
+### wait.ts — 조건부 대기
+```bash
+npx tsx {script_path}/wait.ts <ms|selector> [--attr=name --value=expected] [--timeout=ms]
+```
+- 숫자: 시간 대기 (ms)
+- 셀렉터: visible 될 때까지 대기
+- `--attr` + `--value`: 셀렉터의 속성이 특정 값이 될 때까지 대기
+  - 예: `wait.ts "#status" --attr=textContent --value=완료`
+
+### sequence.ts — 액션 시퀀스 실행
+```bash
+npx tsx {script_path}/sequence.ts <json-string | json-file-path>
+```
+JSON 배열로 여러 액션을 순차 실행. 실패 시 중단 + 에러 스크린샷.
+```json
+[
+  {"action": "navigate", "args": ["http://localhost:3000"]},
+  {"action": "fill", "args": ["#email", "test@test.com"]},
+  {"action": "click", "args": ["#submit"]},
+  {"action": "wait", "args": ["#dashboard"]},
+  {"action": "wait", "args": ["#status", "textContent", "완료"]},
+  {"action": "screenshot", "args": ["full"]}
+]
+```
+지원 액션: navigate, click, dblclick, drag, fill, type, wait, screenshot, evaluate
+
 ### evaluate.ts — JS 실행
 ```bash
 npx tsx {script_path}/evaluate.ts <js-expression>

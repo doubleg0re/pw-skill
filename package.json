@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "description": "Playwright CLI Skill for Claude Code — persistent browser, modular skills, minimal tokens",
   "type": "module",
+  "exports": {
+    ".": "./skills/pw-browse/scripts/common.ts"
+  },
   "bin": {
     "pw": "./skills/pw-browse/scripts/pw.ts"
   },
   "scripts": {
-    "setup": "cd skills/pw-browse/scripts && npm install && npx playwright install chromium",
+    "setup": "npm install && npx playwright install chromium",
     "postinstall": "npx playwright install chromium"
   },
   "dependencies": {
