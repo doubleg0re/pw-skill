@@ -25,6 +25,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   attr:        { script: 'attr.ts',        desc: 'Read/write DOM attribute' },
   find:        { script: 'find.ts',        desc: 'Query DOM elements' },
   wait:        { script: 'wait.ts',        desc: 'Wait for condition' },
+  fetch:       { script: 'fetch.ts',       desc: 'HTTP request (with auth)' },
   evaluate:    { script: 'evaluate.ts',    desc: 'Run JavaScript' },
   sequence:    { script: 'sequence.ts',    desc: 'Run action sequence' },
   console:     { script: 'console.ts',     desc: 'Console logs' },
@@ -55,7 +56,8 @@ Commands:
   copy <selector> [--format=text|html|outer] Copy text/HTML from element
   attr <selector> <name> [--set=value]       Read/write DOM attribute
   find <selector> [--detail=tag|class|full]  Query DOM elements
-  wait <ms|HH:MM|selector> [--attr --value]  Wait for condition
+  wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
+  fetch <METHOD> <url> [body-json]           HTTP request with auth
   evaluate <js-expression>                   Run JavaScript in page
   sequence <json|file>                       Run action sequence
   console [inject|dump|clear|tail]           Console log capture
