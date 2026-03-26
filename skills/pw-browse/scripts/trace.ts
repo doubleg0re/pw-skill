@@ -29,8 +29,8 @@ run(async ({ page, context, args }) => {
       const snapshots = hasFlag(process.argv.slice(2), 'snapshots');
 
       await context.tracing.start({
-        screenshots: screenshots,
-        snapshots: snapshots || true,
+        screenshots,
+        snapshots,
         sources: false,
       });
 
@@ -43,7 +43,7 @@ run(async ({ page, context, args }) => {
         data: {
           status: 'recording',
           screenshots,
-          snapshots: snapshots || true,
+          snapshots,
         },
       };
     }
@@ -87,13 +87,15 @@ run(async ({ page, context, args }) => {
 
       if (!existsSync(tracePath)) return { success: false, error: `Trace not found: ${tracePath}` };
 
+      // Return path + command — caller decides whether to open GUI
+      const viewCommand = `npx playwright show-trace "${tracePath}"`;
       try {
-        execSync(`npx playwright show-trace "${tracePath}"`, { stdio: 'ignore' });
+        execSync(viewCommand, { stdio: 'ignore', timeout: 5000 });
       } catch {
-        // show-trace opens a browser window and may "fail" when closed
+        // show-trace may not be available (headless/CI) or closed by user
       }
 
-      return { success: true, data: { file: tracePath } };
+      return { success: true, data: { file: tracePath, command: viewCommand } };
     }
 
     case 'status': {

@@ -127,7 +127,10 @@ run(async ({ page, args }) => {
       if (lines) writeFileSync(LOG_FILE, lines + '\n', { flag: 'a' });
       await page.evaluate('window.__PW_NETWORK = []');
 
-      return { success: true, data: { dumped: logs.length, file: LOG_FILE } };
+      return {
+        success: true,
+        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warning: 'Raw mode: sensitive data may be written to disk unmasked' } : {}) },
+      };
     }
 
     case 'clear': {

@@ -136,6 +136,10 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
     const contexts = browser.contexts();
     if (contexts.length > 0) {
       const ctx = contexts[0];
+      if (video) {
+        // Existing context can't enable video — warn via stderr, don't silently ignore
+        process.stderr.write('[pw] Warning: --video ignored — browser already running without video. Close and relaunch with --video.\n');
+      }
       const pages = ctx.pages();
       const page = pages.length > 0 ? pages[0] : await ctx.newPage();
       return { browser, context: ctx, page };
@@ -158,6 +162,9 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
   const contexts = browser.contexts();
   if (contexts.length > 0) {
     const ctx = contexts[0];
+    if (video) {
+      process.stderr.write('[pw] Warning: --video ignored — browser already running without video. Close and relaunch with --video.\n');
+    }
     const pages = ctx.pages();
     const page = pages.length > 0 ? pages[0] : await ctx.newPage();
     // Set viewport
@@ -235,10 +242,11 @@ export async function run(
     const videoEnabled = videoName !== undefined || hasFlag(cliArgs, 'video');
     const { browser, context, page: defaultPage } = await connectBrowser({ headless: !headed, viewport, video: videoEnabled });
 
-    // Save video name for later rename on close
+    // Save video metadata for rename on close
     if (videoEnabled && videoName) {
       ensureStateDir();
-      writeFileSync(join(STATE_DIR, 'video-name.txt'), videoName);
+      const videoPath = await defaultPage.video()?.path()?.catch(() => null) ?? null;
+      writeFileSync(join(STATE_DIR, 'video-meta.json'), JSON.stringify({ name: videoName, file: videoPath }));
     }
 
     // Select specific tab with --tab=N

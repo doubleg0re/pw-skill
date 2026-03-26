@@ -39,7 +39,7 @@ if (!window.__PW_CONSOLE_PATCHED) {
 }
 `;
 
-function toMatcher(pattern: string): (line: string) => boolean {
+export function toMatcher(pattern: string): (line: string) => boolean {
   // /regex/ → RegExp, otherwise plain keyword (case-insensitive)
   if (pattern.startsWith('/') && pattern.endsWith('/')) {
     const re = new RegExp(pattern.slice(1, -1), 'i');
@@ -49,7 +49,7 @@ function toMatcher(pattern: string): (line: string) => boolean {
   return (line) => line.toLowerCase().includes(lower);
 }
 
-function filterLines(lines: string[], cliArgs: string[]): string[] {
+export function filterLines(lines: string[], cliArgs: string[]): string[] {
   const includes: ((line: string) => boolean)[] = [];
   const excludes: ((line: string) => boolean)[] = [];
 
@@ -101,7 +101,10 @@ run(async ({ page, args }) => {
       // Clear browser logs after dump
       await page.evaluate('window.__PW_LOGS = []');
 
-      return { success: true, data: { dumped: logs.length, file: LOG_FILE } };
+      return {
+        success: true,
+        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warning: 'Raw mode: log entries written without truncation' } : {}) },
+      };
     }
 
     case 'clear': {

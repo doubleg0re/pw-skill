@@ -2,43 +2,23 @@
 // Usage:
 //   pw video list                     # List saved videos
 //   pw video path                     # Current recording path (if active)
+//   pw video rename latest <name>     # Rename a video
 //   pw video clear                    # Delete all saved videos
-import { run, ensureStateDir } from './common.js';
+import { run } from './common.js';
 import { join, resolve } from 'path';
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'fs';
+import { existsSync, readdirSync, rmSync } from 'fs';
+import { listVideoFiles } from './video-utils.js';
 
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const VIDEO_DIR = join(STATE_DIR, 'videos');
 
-run(async ({ page, context, args }) => {
+run(async ({ page, args }) => {
   const command = args[0] || 'list';
 
   switch (command) {
     case 'list': {
-      if (!existsSync(VIDEO_DIR)) return { success: true, data: { videos: [] } };
-
-      // Check if there's a pending rename
-      const videoNameFile = join(STATE_DIR, 'video-name.txt');
-      const pendingName = existsSync(videoNameFile)
-        ? readFileSync(videoNameFile, 'utf-8').trim()
-        : null;
-
-      const files = readdirSync(VIDEO_DIR)
-        .filter(f => f.endsWith('.webm'))
-        .map(f => {
-          const fullPath = join(VIDEO_DIR, f);
-          const stat = statSync(fullPath);
-          return { file: fullPath, size: stat.size, created: stat.mtime.toISOString() };
-        })
-        .sort((a, b) => b.created.localeCompare(a.created));
-
-      // Mark the latest file with pending rename
-      if (pendingName && files.length > 0) {
-        const targetName = pendingName.endsWith('.webm') ? pendingName : `${pendingName}.webm`;
-        (files[0] as any).renameOnClose = targetName;
-      }
-
-      return { success: true, data: { count: files.length, pendingName, videos: files } };
+      const result = listVideoFiles(STATE_DIR);
+      return { success: true, data: result };
     }
 
     case 'path': {

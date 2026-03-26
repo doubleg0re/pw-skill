@@ -1,32 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-// Extract filterLines logic for testing (same implementation as console.ts)
-function toMatcher(pattern: string): (line: string) => boolean {
-  if (pattern.startsWith('/') && pattern.endsWith('/')) {
-    const re = new RegExp(pattern.slice(1, -1), 'i');
-    return (line) => re.test(line);
-  }
-  const lower = pattern.toLowerCase();
-  return (line) => line.toLowerCase().includes(lower);
-}
-
-function filterLines(lines: string[], cliArgs: string[]): string[] {
-  const includes: ((line: string) => boolean)[] = [];
-  const excludes: ((line: string) => boolean)[] = [];
-
-  for (const arg of cliArgs) {
-    if (arg.startsWith('+')) includes.push(toMatcher(arg.slice(1)));
-    else if (arg.startsWith('-') && !arg.startsWith('--')) excludes.push(toMatcher(arg.slice(1)));
-  }
-
-  if (includes.length === 0 && excludes.length === 0) return lines;
-
-  return lines.filter(line => {
-    if (includes.length > 0 && !includes.some(fn => fn(line))) return false;
-    if (excludes.length > 0 && excludes.some(fn => fn(line))) return false;
-    return true;
-  });
-}
+import { filterLines } from '../skills/pw-browse/scripts/console.js';
 
 const SAMPLE_LOGS = [
   '[2026-03-27T00:00:00.000Z] [LOG] page loaded',
