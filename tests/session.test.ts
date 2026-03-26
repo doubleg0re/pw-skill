@@ -1,64 +1,33 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, unlinkSync } from 'fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-
-// We can't import session.ts directly because it uses homedir() for the global path.
-// Instead we test the pure logic by importing and calling the functions,
-// but we need to mock the global state dir.
-// For now, we test via the exported functions with a patched GLOBAL path.
-
-// Since session.ts hardcodes homedir(), we test the logic patterns here
-// and import the utility functions that don't depend on homedir().
 import {
+  createSessionStore,
   generateSessionId,
   isProcessAlive,
+  type SessionStore,
 } from '../skills/pw-browse/scripts/session.js';
 
-const TEST_DIR = join(tmpdir(), `pw-session-test-${Date.now()}`);
-const SESSIONS_DIR = join(TEST_DIR, 'sessions');
+const TEST_GLOBAL = join(tmpdir(), `pw-test-global-${Date.now()}`);
+const TEST_LOCAL = join(tmpdir(), `pw-test-local-${Date.now()}`);
+
+let store: SessionStore;
 
 function setup() {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
+  store = createSessionStore({ globalDir: TEST_GLOBAL, localDir: TEST_LOCAL });
 }
 
 function cleanup() {
-  if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true, force: true });
+  if (existsSync(TEST_GLOBAL)) rmSync(TEST_GLOBAL, { recursive: true, force: true });
+  if (existsSync(TEST_LOCAL)) rmSync(TEST_LOCAL, { recursive: true, force: true });
 }
 
-// Helper: create session at test dir (mirrors session.ts createSession format)
-function createTestSession(name: string, port: number, pid: number, video: string | null = null) {
-  const dir = join(SESSIONS_DIR, name);
-  mkdirSync(join(dir, 'user-data'), { recursive: true });
-  const session = {
-    id: generateSessionId(),
-    name,
-    port,
-    pid,
-    startedAt: new Date().toISOString(),
-    video,
-  };
-  writeFileSync(join(dir, 'session.json'), JSON.stringify(session, null, 2));
-  return session;
-}
+// --- Pure functions ---
 
-function getTestSession(name: string) {
-  const file = join(SESSIONS_DIR, name, 'session.json');
-  if (!existsSync(file)) return null;
-  return JSON.parse(readFileSync(file, 'utf-8'));
-}
-
-function listTestSessions() {
-  const { readdirSync } = require('fs');
-  return readdirSync(SESSIONS_DIR)
-    .map((d: string) => getTestSession(d))
-    .filter(Boolean);
-}
-
-describe('Session — generateSessionId', () => {
+describe('generateSessionId', () => {
   it('generates 8 char hex string', () => {
-    const id = generateSessionId();
-    expect(id).toMatch(/^[0-9a-f]{8}$/);
+    expect(generateSessionId()).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it('generates unique IDs', () => {
@@ -67,140 +36,250 @@ describe('Session — generateSessionId', () => {
   });
 });
 
-describe('Session — isProcessAlive', () => {
+describe('isProcessAlive', () => {
   it('returns true for current process', () => {
     expect(isProcessAlive(process.pid)).toBe(true);
   });
 
   it('returns false for non-existent PID', () => {
-    // PID 99999999 is extremely unlikely to exist
     expect(isProcessAlive(99999999)).toBe(false);
   });
 });
 
-describe('Session — CRUD (file-level)', () => {
+// --- CRUD ---
+
+describe('SessionStore — createSession / getSession', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('creates a session with metadata and user-data dir', () => {
-    const session = createTestSession('dev', 9222, 12345);
+  it('creates and retrieves a session', () => {
+    const session = store.createSession('dev', 9222, 12345);
     expect(session.name).toBe('dev');
     expect(session.port).toBe(9222);
     expect(session.pid).toBe(12345);
     expect(session.id).toMatch(/^[0-9a-f]{8}$/);
-    expect(existsSync(join(SESSIONS_DIR, 'dev', 'session.json'))).toBe(true);
-    expect(existsSync(join(SESSIONS_DIR, 'dev', 'user-data'))).toBe(true);
+    expect(session.startedAt).toBeTruthy();
+    expect(session.video).toBeNull();
+
+    const retrieved = store.getSession('dev');
+    expect(retrieved).not.toBeNull();
+    expect(retrieved!.name).toBe('dev');
+    expect(retrieved!.port).toBe(9222);
   });
 
-  it('reads a session back with all fields', () => {
-    createTestSession('staging', 9333, 54321, 'my-video');
-    const session = getTestSession('staging');
-    expect(session).not.toBeNull();
-    expect(session.name).toBe('staging');
-    expect(session.port).toBe(9333);
-    expect(session.pid).toBe(54321);
+  it('creates session with video', () => {
+    const session = store.createSession('rec', 9333, 111, 'my-video');
     expect(session.video).toBe('my-video');
-    expect(session.startedAt).toBeTruthy();
   });
 
   it('returns null for missing session', () => {
-    expect(getTestSession('nonexistent')).toBeNull();
+    expect(store.getSession('nonexistent')).toBeNull();
   });
 
-  it('lists multiple sessions', () => {
-    createTestSession('dev', 9222, 111);
-    createTestSession('staging', 9333, 222);
-    createTestSession('prod', 9444, 333);
-    const sessions = listTestSessions();
+  it('creates user-data directory', () => {
+    store.createSession('dev', 9222, 12345);
+    expect(existsSync(join(TEST_GLOBAL, 'sessions', 'dev', 'user-data'))).toBe(true);
+  });
+});
+
+describe('SessionStore — updateSession', () => {
+  beforeEach(setup);
+  afterEach(cleanup);
+
+  it('updates specific fields', () => {
+    store.createSession('dev', 9222, 12345);
+    store.updateSession('dev', { port: 9999 });
+    const updated = store.getSession('dev');
+    expect(updated!.port).toBe(9999);
+    expect(updated!.pid).toBe(12345); // unchanged
+  });
+});
+
+describe('SessionStore — deleteSession', () => {
+  beforeEach(setup);
+  afterEach(cleanup);
+
+  it('keeps user-data when keepProfile=true', () => {
+    store.createSession('dev', 9222, 12345);
+    store.deleteSession('dev', true);
+    expect(store.getSession('dev')).toBeNull();
+    expect(existsSync(join(TEST_GLOBAL, 'sessions', 'dev', 'user-data'))).toBe(true);
+  });
+
+  it('removes everything when keepProfile=false', () => {
+    store.createSession('temp', 9222, 12345);
+    store.deleteSession('temp', false);
+    expect(existsSync(join(TEST_GLOBAL, 'sessions', 'temp'))).toBe(false);
+  });
+});
+
+describe('SessionStore — listSessions', () => {
+  beforeEach(setup);
+  afterEach(cleanup);
+
+  it('lists all sessions', () => {
+    store.createSession('dev', 9001, 1);
+    store.createSession('staging', 9002, 2);
+    store.createSession('prod', 9003, 3);
+    const sessions = store.listSessions();
     expect(sessions).toHaveLength(3);
-    expect(sessions.map((s: any) => s.name).sort()).toEqual(['dev', 'prod', 'staging']);
+    expect(sessions.map(s => s.name).sort()).toEqual(['dev', 'prod', 'staging']);
+  });
+
+  it('returns empty array when no sessions', () => {
+    expect(store.listSessions()).toEqual([]);
+  });
+
+  it('excludes deleted sessions', () => {
+    store.createSession('a', 9001, 1);
+    store.createSession('b', 9002, 2);
+    store.deleteSession('a', true);
+    expect(store.listSessions()).toHaveLength(1);
+    expect(store.listSessions()[0].name).toBe('b');
   });
 });
 
-describe('Session — profile isolation', () => {
+// --- Liveness ---
+
+describe('SessionStore — liveness', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('each session has independent user-data dir', () => {
-    createTestSession('a', 9001, 1);
-    createTestSession('b', 9002, 2);
-    const dirA = join(SESSIONS_DIR, 'a', 'user-data');
-    const dirB = join(SESSIONS_DIR, 'b', 'user-data');
-    expect(existsSync(dirA)).toBe(true);
-    expect(existsSync(dirB)).toBe(true);
-    expect(dirA).not.toBe(dirB);
+  it('isSessionAlive returns true for alive process', () => {
+    store.createSession('alive', 9222, process.pid);
+    expect(store.isSessionAlive('alive')).toBe(true);
+  });
+
+  it('isSessionAlive returns false for dead process', () => {
+    store.createSession('dead', 9222, 99999999);
+    expect(store.isSessionAlive('dead')).toBe(false);
+  });
+
+  it('cleanupDeadSessions removes dead ones', () => {
+    store.createSession('alive', 9001, process.pid);
+    store.createSession('dead1', 9002, 99999998);
+    store.createSession('dead2', 9003, 99999999);
+
+    const cleaned = store.cleanupDeadSessions();
+    expect(cleaned.sort()).toEqual(['dead1', 'dead2']);
+    expect(store.listSessions()).toHaveLength(1);
+    expect(store.listSessions()[0].name).toBe('alive');
+  });
+
+  it('cleanupDeadSessions keeps user-data for resume', () => {
+    store.createSession('dead', 9222, 99999999);
+    store.cleanupDeadSessions();
+    expect(existsSync(join(TEST_GLOBAL, 'sessions', 'dead', 'user-data'))).toBe(true);
   });
 });
 
-describe('Session — binding (current-session.txt)', () => {
+// --- Binding ---
+
+describe('SessionStore — binding', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('writes and reads binding', () => {
-    const bindFile = join(TEST_DIR, 'current-session.txt');
-    writeFileSync(bindFile, 'dev');
-    expect(readFileSync(bindFile, 'utf-8').trim()).toBe('dev');
+  it('bind and get bound session', () => {
+    store.bindSession('dev');
+    expect(store.getBoundSession()).toBe('dev');
   });
 
-  it('unbind removes the file', () => {
-    const bindFile = join(TEST_DIR, 'current-session.txt');
-    writeFileSync(bindFile, 'dev');
-    unlinkSync(bindFile);
-    expect(existsSync(bindFile)).toBe(false);
+  it('returns null when not bound', () => {
+    expect(store.getBoundSession()).toBeNull();
   });
 
-  it('overwrites previous binding', () => {
-    const bindFile = join(TEST_DIR, 'current-session.txt');
-    writeFileSync(bindFile, 'dev');
-    writeFileSync(bindFile, 'staging');
-    expect(readFileSync(bindFile, 'utf-8').trim()).toBe('staging');
+  it('unbind clears binding', () => {
+    store.bindSession('dev');
+    store.unbindSession();
+    expect(store.getBoundSession()).toBeNull();
+  });
+
+  it('rebind overwrites previous', () => {
+    store.bindSession('dev');
+    store.bindSession('staging');
+    expect(store.getBoundSession()).toBe('staging');
   });
 });
 
-describe('Session — cleanup (keepProfile)', () => {
+// --- Resolution ---
+
+describe('SessionStore — resolveSession', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('keeps user-data when deleting session metadata', () => {
-    createTestSession('dev', 9222, 12345);
-    const metaFile = join(SESSIONS_DIR, 'dev', 'session.json');
-    unlinkSync(metaFile);
-    expect(existsSync(metaFile)).toBe(false);
-    expect(existsSync(join(SESSIONS_DIR, 'dev', 'user-data'))).toBe(true);
+  it('resolves explicit session by name', () => {
+    store.createSession('dev', 9222, process.pid);
+    const resolved = store.resolveSession('dev');
+    expect(resolved.name).toBe('dev');
   });
 
-  it('removes everything with full delete', () => {
-    createTestSession('temp', 9222, 12345);
-    rmSync(join(SESSIONS_DIR, 'temp'), { recursive: true, force: true });
-    expect(existsSync(join(SESSIONS_DIR, 'temp'))).toBe(false);
+  it('throws for missing explicit session', () => {
+    expect(() => store.resolveSession('ghost')).toThrow('not found');
+  });
+
+  it('throws for dead explicit session', () => {
+    store.createSession('dead', 9222, 99999999);
+    expect(() => store.resolveSession('dead')).toThrow('not running');
+  });
+
+  it('resolves bound session', () => {
+    store.createSession('dev', 9222, process.pid);
+    store.bindSession('dev');
+    const resolved = store.resolveSession();
+    expect(resolved.name).toBe('dev');
+  });
+
+  it('auto-selects when only one alive session', () => {
+    store.createSession('only', 9222, process.pid);
+    const resolved = store.resolveSession();
+    expect(resolved.name).toBe('only');
+  });
+
+  it('throws when no sessions', () => {
+    expect(() => store.resolveSession()).toThrow('No active sessions');
+  });
+
+  it('throws when multiple alive sessions without binding', () => {
+    store.createSession('a', 9001, process.pid);
+    store.createSession('b', 9002, process.pid);
+    expect(() => store.resolveSession()).toThrow('Multiple active sessions');
+  });
+
+  it('falls through dead bound session to auto-select', () => {
+    store.createSession('dead', 9001, 99999999);
+    store.createSession('alive', 9002, process.pid);
+    store.bindSession('dead');
+    const resolved = store.resolveSession();
+    expect(resolved.name).toBe('alive');
   });
 });
 
-describe('Session — resolution logic', () => {
+// --- Profile ---
+
+describe('SessionStore — profile', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('auto-selects when only one session exists', () => {
-    createTestSession('only', 9222, process.pid);
-    const sessions = listTestSessions();
-    const alive = sessions.filter((s: any) => isProcessAlive(s.pid));
-    expect(alive).toHaveLength(1);
-    expect(alive[0].name).toBe('only');
+  it('sessionUserDataDir creates and returns path', () => {
+    const dir = store.sessionUserDataDir('dev');
+    expect(dir).toContain('dev');
+    expect(existsSync(dir)).toBe(true);
   });
 
-  it('dead sessions are not auto-selected', () => {
-    createTestSession('dead', 9222, 99999999); // fake dead PID
-    const sessions = listTestSessions();
-    const alive = sessions.filter((s: any) => isProcessAlive(s.pid));
-    expect(alive).toHaveLength(0);
+  it('hasProfile after session creation', () => {
+    store.createSession('dev', 9222, 12345);
+    expect(store.hasProfile('dev')).toBe(true);
   });
 
-  it('multiple alive sessions require explicit selection', () => {
-    createTestSession('a', 9001, process.pid);
-    createTestSession('b', 9002, process.pid);
-    const sessions = listTestSessions();
-    const alive = sessions.filter((s: any) => isProcessAlive(s.pid));
-    expect(alive).toHaveLength(2);
-    // Should not auto-select → caller must specify
+  it('hasProfile survives session delete with keepProfile', () => {
+    store.createSession('dev', 9222, 12345);
+    store.deleteSession('dev', true);
+    expect(store.hasProfile('dev')).toBe(true);
+  });
+
+  it('hasProfile false after full delete', () => {
+    store.createSession('dev', 9222, 12345);
+    store.deleteSession('dev', false);
+    expect(store.hasProfile('dev')).toBe(false);
   });
 });

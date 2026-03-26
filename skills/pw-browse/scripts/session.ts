@@ -1,27 +1,10 @@
-// session.ts — Global session manager
-// Sessions live in ~/.playwright-state/sessions/{name}/
-// Local project state lives in {cwd}/.playwright-state/
+// session.ts — Global session manager with dependency injection
+// Sessions live in {globalDir}/sessions/{name}/
+// Local project state lives in {localDir}/.playwright-state/
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { randomBytes } from 'crypto';
-
-// --- Paths ---
-
-const GLOBAL_STATE_DIR = join(homedir(), '.playwright-state');
-const GLOBAL_SESSIONS_DIR = join(GLOBAL_STATE_DIR, 'sessions');
-
-export function localStateDir(cwd?: string): string {
-  return join(cwd || process.cwd(), '.playwright-state');
-}
-
-export function globalSessionDir(name: string): string {
-  return join(GLOBAL_SESSIONS_DIR, name);
-}
-
-function ensureDir(dir: string): void {
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-}
 
 // --- Session Types ---
 
@@ -34,163 +17,210 @@ export interface SessionInfo {
   video: string | null;
 }
 
+export interface SessionStoreOptions {
+  globalDir: string;
+  localDir: string;
+}
+
 // --- ID Generation ---
 
 export function generateSessionId(): string {
-  return randomBytes(4).toString('hex'); // 8 char hex
+  return randomBytes(4).toString('hex');
 }
 
-// --- Session CRUD ---
-
-export function createSession(name: string, port: number, pid: number, video: string | null = null): SessionInfo {
-  const sessionDir = globalSessionDir(name);
-  ensureDir(sessionDir);
-  ensureDir(join(sessionDir, 'user-data'));
-
-  const session: SessionInfo = {
-    id: generateSessionId(),
-    name,
-    port,
-    pid,
-    startedAt: new Date().toISOString(),
-    video,
-  };
-
-  writeFileSync(join(sessionDir, 'session.json'), JSON.stringify(session, null, 2));
-  return session;
-}
-
-export function getSession(name: string): SessionInfo | null {
-  const metaFile = join(globalSessionDir(name), 'session.json');
-  if (!existsSync(metaFile)) return null;
-  try {
-    return JSON.parse(readFileSync(metaFile, 'utf-8'));
-  } catch {
-    return null;
-  }
-}
-
-export function updateSession(name: string, updates: Partial<SessionInfo>): void {
-  const session = getSession(name);
-  if (!session) return;
-  const updated = { ...session, ...updates };
-  writeFileSync(join(globalSessionDir(name), 'session.json'), JSON.stringify(updated, null, 2));
-}
-
-export function deleteSession(name: string, keepProfile: boolean = true): void {
-  const sessionDir = globalSessionDir(name);
-  if (!existsSync(sessionDir)) return;
-  if (keepProfile) {
-    // Only remove session.json, keep user-data for --resume
-    const metaFile = join(sessionDir, 'session.json');
-    if (existsSync(metaFile)) unlinkSync(metaFile);
-  } else {
-    rmSync(sessionDir, { recursive: true, force: true });
-  }
-}
-
-export function listSessions(): SessionInfo[] {
-  ensureDir(GLOBAL_SESSIONS_DIR);
-  const dirs = readdirSync(GLOBAL_SESSIONS_DIR);
-  const sessions: SessionInfo[] = [];
-  for (const dir of dirs) {
-    const session = getSession(dir);
-    if (session) sessions.push(session);
-  }
-  return sessions;
-}
-
-// --- Session Liveness ---
+// --- Process check (standalone, no DI needed) ---
 
 export function isProcessAlive(pid: number): boolean {
   try {
-    process.kill(pid, 0); // signal 0 = check existence
+    process.kill(pid, 0);
     return true;
   } catch {
     return false;
   }
 }
 
-export function isSessionAlive(name: string): boolean {
-  const session = getSession(name);
-  if (!session) return false;
-  return isProcessAlive(session.pid);
+// --- Session Store Factory ---
+
+function ensureDir(dir: string): void {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-/** Find and clean up dead sessions (process gone but session.json remains) */
-export function cleanupDeadSessions(): string[] {
-  const cleaned: string[] = [];
-  for (const session of listSessions()) {
-    if (!isProcessAlive(session.pid)) {
-      deleteSession(session.name, true); // keep profile for resume
-      cleaned.push(session.name);
-    }
-  }
-  return cleaned;
-}
+export function createSessionStore(opts: SessionStoreOptions) {
+  const sessionsDir = join(opts.globalDir, 'sessions');
 
-// --- Session Resolution ---
-
-/** Get the bound session for current project (from current-session.txt) */
-export function getBoundSession(cwd?: string): string | null {
-  const bindFile = join(localStateDir(cwd), 'current-session.txt');
-  if (!existsSync(bindFile)) return null;
-  return readFileSync(bindFile, 'utf-8').trim() || null;
-}
-
-/** Bind a session to current project */
-export function bindSession(name: string, cwd?: string): void {
-  const stateDir = localStateDir(cwd);
-  ensureDir(stateDir);
-  writeFileSync(join(stateDir, 'current-session.txt'), name);
-}
-
-/** Unbind session from current project */
-export function unbindSession(cwd?: string): void {
-  const bindFile = join(localStateDir(cwd), 'current-session.txt');
-  if (existsSync(bindFile)) unlinkSync(bindFile);
-}
-
-/**
- * Resolve which session to use.
- * Priority: --session flag → current-session.txt → only one alive → error
- */
-export function resolveSession(sessionFlag?: string, cwd?: string): SessionInfo {
-  // 1. Explicit --session
-  if (sessionFlag) {
-    const session = getSession(sessionFlag);
-    if (!session) throw new Error(`Session "${sessionFlag}" not found`);
-    if (!isProcessAlive(session.pid)) throw new Error(`Session "${sessionFlag}" is not running (pid ${session.pid} dead)`);
-    return session;
+  function sessionDir(name: string): string {
+    return join(sessionsDir, name);
   }
 
-  // 2. Bound session (pw use)
-  const bound = getBoundSession(cwd);
-  if (bound) {
-    const session = getSession(bound);
-    if (session && isProcessAlive(session.pid)) return session;
-    // Bound session is dead — fall through
-  }
+  return {
+    // --- CRUD ---
 
-  // 3. Only one alive session → auto-select
-  const alive = listSessions().filter(s => isProcessAlive(s.pid));
-  if (alive.length === 1) return alive[0];
-  if (alive.length === 0) throw new Error('No active sessions. Run `pw launch` first.');
-  throw new Error(
-    `Multiple active sessions. Specify --session=<name> or run \`pw use <name>\`.\n` +
-    `Active: ${alive.map(s => s.name).join(', ')}`
-  );
+    createSession(name: string, port: number, pid: number, video: string | null = null): SessionInfo {
+      const dir = sessionDir(name);
+      ensureDir(dir);
+      ensureDir(join(dir, 'user-data'));
+
+      const session: SessionInfo = {
+        id: generateSessionId(),
+        name,
+        port,
+        pid,
+        startedAt: new Date().toISOString(),
+        video,
+      };
+
+      writeFileSync(join(dir, 'session.json'), JSON.stringify(session, null, 2));
+      return session;
+    },
+
+    getSession(name: string): SessionInfo | null {
+      const metaFile = join(sessionDir(name), 'session.json');
+      if (!existsSync(metaFile)) return null;
+      try {
+        return JSON.parse(readFileSync(metaFile, 'utf-8'));
+      } catch {
+        return null;
+      }
+    },
+
+    updateSession(name: string, updates: Partial<SessionInfo>): void {
+      const session = this.getSession(name);
+      if (!session) return;
+      const updated = { ...session, ...updates };
+      writeFileSync(join(sessionDir(name), 'session.json'), JSON.stringify(updated, null, 2));
+    },
+
+    deleteSession(name: string, keepProfile: boolean = true): void {
+      const dir = sessionDir(name);
+      if (!existsSync(dir)) return;
+      if (keepProfile) {
+        const metaFile = join(dir, 'session.json');
+        if (existsSync(metaFile)) unlinkSync(metaFile);
+      } else {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+
+    listSessions(): SessionInfo[] {
+      ensureDir(sessionsDir);
+      const dirs = readdirSync(sessionsDir);
+      const sessions: SessionInfo[] = [];
+      for (const dir of dirs) {
+        const session = this.getSession(dir);
+        if (session) sessions.push(session);
+      }
+      return sessions;
+    },
+
+    // --- Liveness ---
+
+    isSessionAlive(name: string): boolean {
+      const session = this.getSession(name);
+      if (!session) return false;
+      return isProcessAlive(session.pid);
+    },
+
+    cleanupDeadSessions(): string[] {
+      const cleaned: string[] = [];
+      for (const session of this.listSessions()) {
+        if (!isProcessAlive(session.pid)) {
+          this.deleteSession(session.name, true);
+          cleaned.push(session.name);
+        }
+      }
+      return cleaned;
+    },
+
+    // --- Binding ---
+
+    getBoundSession(): string | null {
+      const bindFile = join(opts.localDir, 'current-session.txt');
+      if (!existsSync(bindFile)) return null;
+      return readFileSync(bindFile, 'utf-8').trim() || null;
+    },
+
+    bindSession(name: string): void {
+      ensureDir(opts.localDir);
+      writeFileSync(join(opts.localDir, 'current-session.txt'), name);
+    },
+
+    unbindSession(): void {
+      const bindFile = join(opts.localDir, 'current-session.txt');
+      if (existsSync(bindFile)) unlinkSync(bindFile);
+    },
+
+    // --- Resolution ---
+
+    resolveSession(sessionFlag?: string): SessionInfo {
+      // 1. Explicit --session
+      if (sessionFlag) {
+        const session = this.getSession(sessionFlag);
+        if (!session) throw new Error(`Session "${sessionFlag}" not found`);
+        if (!isProcessAlive(session.pid)) throw new Error(`Session "${sessionFlag}" is not running (pid ${session.pid} dead)`);
+        return session;
+      }
+
+      // 2. Bound session (pw use)
+      const bound = this.getBoundSession();
+      if (bound) {
+        const session = this.getSession(bound);
+        if (session && isProcessAlive(session.pid)) return session;
+      }
+
+      // 3. Only one alive session → auto-select
+      const alive = this.listSessions().filter(s => isProcessAlive(s.pid));
+      if (alive.length === 1) return alive[0];
+      if (alive.length === 0) throw new Error('No active sessions. Run `pw launch` first.');
+      throw new Error(
+        `Multiple active sessions. Specify --session=<name> or run \`pw use <name>\`.\n` +
+        `Active: ${alive.map(s => s.name).join(', ')}`
+      );
+    },
+
+    // --- Profile ---
+
+    sessionUserDataDir(name: string): string {
+      const dir = join(sessionDir(name), 'user-data');
+      ensureDir(dir);
+      return dir;
+    },
+
+    hasProfile(name: string): boolean {
+      return existsSync(join(sessionDir(name), 'user-data'));
+    },
+
+    // --- Paths (for external use) ---
+
+    get globalDir() { return opts.globalDir; },
+    get localDir() { return opts.localDir; },
+    globalSessionDir: sessionDir,
+  };
 }
 
-// --- Profile (user-data) ---
+export type SessionStore = ReturnType<typeof createSessionStore>;
 
-export function sessionUserDataDir(name: string): string {
-  const dir = join(globalSessionDir(name), 'user-data');
-  ensureDir(dir);
-  return dir;
-}
+// --- Default instance (production) ---
 
-/** Check if a session profile exists (for --resume) */
-export function hasProfile(name: string): boolean {
-  return existsSync(join(globalSessionDir(name), 'user-data'));
+const defaultStore = createSessionStore({
+  globalDir: join(homedir(), '.playwright-state'),
+  localDir: join(process.cwd(), '.playwright-state'),
+});
+
+// Re-export all methods from default store for backward compatibility
+export const createSession = defaultStore.createSession.bind(defaultStore);
+export const getSession = defaultStore.getSession.bind(defaultStore);
+export const updateSession = defaultStore.updateSession.bind(defaultStore);
+export const deleteSession = defaultStore.deleteSession.bind(defaultStore);
+export const listSessions = defaultStore.listSessions.bind(defaultStore);
+export const isSessionAlive = defaultStore.isSessionAlive.bind(defaultStore);
+export const cleanupDeadSessions = defaultStore.cleanupDeadSessions.bind(defaultStore);
+export const getBoundSession = defaultStore.getBoundSession.bind(defaultStore);
+export const bindSession = defaultStore.bindSession.bind(defaultStore);
+export const unbindSession = defaultStore.unbindSession.bind(defaultStore);
+export const resolveSession = defaultStore.resolveSession.bind(defaultStore);
+export const sessionUserDataDir = defaultStore.sessionUserDataDir.bind(defaultStore);
+export const hasProfile = defaultStore.hasProfile.bind(defaultStore);
+export const globalSessionDir = defaultStore.globalSessionDir.bind(defaultStore);
+export function localStateDir(cwd?: string): string {
+  return cwd ? join(cwd, '.playwright-state') : defaultStore.localDir;
 }
