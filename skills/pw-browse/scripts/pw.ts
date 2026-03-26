@@ -14,10 +14,14 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   screenshot:  { script: 'screenshot.ts',  desc: '페이지 캡처' },
   click:       { script: 'click.ts',       desc: '요소 클릭' },
   dblclick:    { script: 'dblclick.ts',    desc: '더블 클릭' },
+  hover:       { script: 'hover.ts',       desc: '마우스 오버' },
   drag:        { script: 'drag.ts',        desc: '드래그 앤 드롭' },
+  scroll:      { script: 'scroll.ts',      desc: '스크롤' },
   fill:        { script: 'fill.ts',        desc: '입력 필드 채우기' },
   type:        { script: 'type.ts',        desc: '키보드 타이핑' },
   select:      { script: 'select.ts',      desc: '드롭다운 선택' },
+  upload:      { script: 'upload.ts',      desc: '파일 업로드' },
+  copy:        { script: 'copy.ts',        desc: '텍스트/HTML 복사' },
   attr:        { script: 'attr.ts',        desc: 'DOM 속성 읽기/쓰기' },
   find:        { script: 'find.ts',        desc: 'DOM 요소 탐색' },
   wait:        { script: 'wait.ts',        desc: '조건부 대기' },
@@ -41,12 +45,16 @@ Commands:
   screenshot [selector] [--full]          페이지 캡처
   click <target> [--mode=selector|text|coord]  요소 클릭
   dblclick <target> [--mode=...]          더블 클릭
+  hover <target> [--mode=...]             마우스 오버
   drag <source> <target> [--mode=...]     드래그 앤 드롭
-  select <selector> [--value|--label|--index]  드롭다운 선택
-  attr <selector> <name> [--set=value]    DOM 속성 읽기/쓰기
-  find <selector> [--detail=tag|class|full]  DOM 요소 탐색
+  scroll <up|down|top|bottom|selector>    스크롤
   fill <selector> <text>                  입력 필드 채우기
   type <text> [--delay=ms]                키보드 타이핑
+  select <selector> [--value|--label|--index]  드롭다운 선택
+  upload <selector> <file-path...>        파일 업로드
+  copy <selector> [--format=text|html|outer]  텍스트/HTML 복사
+  attr <selector> <name> [--set=value]    DOM 속성 읽기/쓰기
+  find <selector> [--detail=tag|class|full]  DOM 요소 탐색
   wait <ms|selector> [--attr=x --value=y]  조건부 대기
   evaluate <js-expression>                JS 실행
   sequence <json|file>                    액션 시퀀스 실행
