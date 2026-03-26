@@ -152,6 +152,27 @@ run(async ({ page, args: cliArgs }) => {
           }
           break;
 
+        case 'submit':
+          if (a[0]) await page.locator(a[0]).first().evaluate((form: HTMLFormElement) => form.submit());
+          else await page.keyboard.press('Enter');
+          await page.waitForTimeout(1000);
+          break;
+
+        case 'fetch': {
+          const method = (a[0] || 'GET').toUpperCase();
+          const fetchUrl = a[1];
+          const fetchBody = a[2];
+          await page.evaluate(
+            async ({ method, url, body }) => {
+              const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
+              if (body && method !== 'GET') opts.body = body;
+              await fetch(url, opts);
+            },
+            { method, url: fetchUrl, body: fetchBody },
+          );
+          break;
+        }
+
         case 'screenshot':
           const path = screenshotPath();
           await page.screenshot({ path, fullPage: a[0] === 'full' });
