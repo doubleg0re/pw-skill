@@ -113,7 +113,10 @@ function spawnChromium(headless: boolean): Promise<number> {
 interface LaunchOptions {
   headless?: boolean;
   viewport?: { width: number; height: number };
+  video?: boolean;
 }
+
+const VIDEO_DIR = join(STATE_DIR, 'videos');
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
 
@@ -124,6 +127,7 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
 }> {
   const headless = options.headless ?? true;
   const viewport = options.viewport ?? DEFAULT_VIEWPORT;
+  const video = options.video ?? false;
 
   // 1. Try connecting to existing CDP port
   let port = loadCdpPort();
@@ -137,7 +141,10 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
       return { browser, context: ctx, page };
     }
     // No context found, create a new one
-    const ctx = await browser.newContext({ viewport });
+    const ctx = await browser.newContext({
+      viewport,
+      ...(video ? { recordVideo: { dir: VIDEO_DIR, size: viewport } } : {}),
+    });
     const page = await ctx.newPage();
     return { browser, context: ctx, page };
   }
@@ -224,7 +231,15 @@ export async function run(
       ? { width: parseInt(viewportStr.split('x')[0]), height: parseInt(viewportStr.split('x')[1]) }
       : DEFAULT_VIEWPORT;
 
-    const { browser, context, page: defaultPage } = await connectBrowser({ headless: !headed, viewport });
+    const videoName = parseFlag(cliArgs, 'video');
+    const videoEnabled = videoName !== undefined || hasFlag(cliArgs, 'video');
+    const { browser, context, page: defaultPage } = await connectBrowser({ headless: !headed, viewport, video: videoEnabled });
+
+    // Save video name for later rename on close
+    if (videoEnabled && videoName) {
+      ensureStateDir();
+      writeFileSync(join(STATE_DIR, 'video-name.txt'), videoName);
+    }
 
     // Select specific tab with --tab=N
     const tabStr = parseFlag(cliArgs, 'tab');

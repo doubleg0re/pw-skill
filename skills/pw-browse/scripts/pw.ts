@@ -32,6 +32,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   console:     { script: 'console.ts',     desc: 'Console logs' },
   network:     { script: 'network.ts',     desc: 'Network requests' },
   trace:       { script: 'trace.ts',       desc: 'Record trace' },
+  video:       { script: 'video.ts',       desc: 'Manage videos' },
   tab:         { script: 'tab.ts',         desc: 'Manage tabs' },
   status:      { script: 'status.ts',      desc: 'Session status' },
 };
@@ -66,6 +67,7 @@ Commands:
   console [inject|dump|clear|tail]           Console log capture
   network [inject|dump|clear|tail|find]      Network request capture
   trace [start|stop|view|status]             Record and view traces
+  video [list|path|clear]                    Manage recorded videos
   tab [new|list|close] [args...]             Manage browser tabs
   status [current|pages|all]                 Session status
   close                                      Close browser
@@ -85,7 +87,7 @@ if (command === 'close') {
   const portFile = join(stateDir, 'cdp-port.txt');
   try {
     if (existsSync(portFile)) {
-      const { readFileSync, unlinkSync } = await import('fs');
+      const { readFileSync, unlinkSync, readdirSync, renameSync } = await import('fs');
       const port = readFileSync(portFile, 'utf-8').trim();
       if (process.platform === 'win32') {
         execSync(`for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /PID %a /F 2>nul`, { stdio: 'ignore', shell: 'cmd.exe' });
@@ -93,6 +95,22 @@ if (command === 'close') {
         execSync(`lsof -ti :${port} | xargs kill 2>/dev/null || true`, { stdio: 'ignore' });
       }
       unlinkSync(portFile);
+
+      // Auto-rename video if --video=name was used
+      const videoNameFile = join(stateDir, 'video-name.txt');
+      if (existsSync(videoNameFile)) {
+        const videoName = readFileSync(videoNameFile, 'utf-8').trim();
+        const videoDir = join(stateDir, 'videos');
+        if (existsSync(videoDir)) {
+          const videos = readdirSync(videoDir).filter(f => f.endsWith('.webm')).sort();
+          if (videos.length > 0) {
+            const latest = join(videoDir, videos[videos.length - 1]);
+            const target = join(videoDir, videoName.endsWith('.webm') ? videoName : `${videoName}.webm`);
+            try { renameSync(latest, target); } catch {}
+          }
+        }
+        unlinkSync(videoNameFile);
+      }
     }
     console.log(JSON.stringify({ success: true, data: 'Browser closed' }));
   } catch {
