@@ -1,0 +1,6 @@
+node_modules/
+.playwright-state/
+package-lock.json
+*.png
+*.jpg
+.DS_Store
