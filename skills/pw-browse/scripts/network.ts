@@ -7,6 +7,46 @@ import { writeFileSync, readFileSync, existsSync } from 'fs';
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const LOG_FILE = join(STATE_DIR, 'network.log');
 
+const SENSITIVE_HEADERS = new Set([
+  'authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token',
+]);
+
+const SENSITIVE_FIELDS = /^(password|token|secret|api_key|apiKey|access_token|refresh_token)$/i;
+
+const MAX_BODY_LENGTH = 5000;
+
+function maskHeaders(headers: Record<string, string>): Record<string, string> {
+  const masked: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    masked[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[MASKED]' : value;
+  }
+  return masked;
+}
+
+function maskSensitive(text: string): string {
+  try {
+    const obj = JSON.parse(text);
+    const maskObj = (o: any): any => {
+      if (Array.isArray(o)) return o.map(maskObj);
+      if (o && typeof o === 'object') {
+        const result: any = {};
+        for (const [k, v] of Object.entries(o)) {
+          result[k] = SENSITIVE_FIELDS.test(k) ? '[MASKED]' : maskObj(v);
+        }
+        return result;
+      }
+      return o;
+    };
+    return JSON.stringify(maskObj(obj));
+  } catch {
+    return text;
+  }
+}
+
+function truncate(text: string, limit: number): string {
+  return text.length > limit ? text.substring(0, limit) + '...(truncated)' : text;
+}
+
 const INJECT_SCRIPT = `
 if (!window.__PW_NETWORK_PATCHED) {
   window.__PW_NETWORK_PATCHED = true;
@@ -74,10 +114,13 @@ run(async ({ page, args }) => {
       ensureStateDir();
 
       const lines = logs.map((l: any) => {
-        const req = l.reqBody ? ` req=${JSON.stringify(l.reqBody)}` : '';
-        const res = l.resBody ? ` res=${JSON.stringify(l.resBody).substring(0, 300)}` : '';
+        const reqRaw = l.reqBody ? maskSensitive(JSON.stringify(l.reqBody)) : '';
+        const req = reqRaw ? ` req=${truncate(reqRaw, MAX_BODY_LENGTH)}` : '';
+        const resRaw = l.resBody ? maskSensitive(JSON.stringify(l.resBody)) : '';
+        const res = resRaw ? ` res=${truncate(resRaw, MAX_BODY_LENGTH)}` : '';
         const err = l.error ? ` error=${l.error}` : '';
-        return `[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.method} ${l.url} → ${l.status}${req}${res}${err}`;
+        const hdrs = l.headers ? ` headers=${JSON.stringify(maskHeaders(l.headers))}` : '';
+        return `[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.method} ${l.url} → ${l.status}${req}${res}${hdrs}${err}`;
       }).join('\n');
 
       if (lines) writeFileSync(LOG_FILE, lines + '\n', { flag: 'a' });

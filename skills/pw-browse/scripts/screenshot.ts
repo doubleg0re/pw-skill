@@ -1,20 +1,22 @@
 // ~/.claude/skills/pw-browse/scripts/screenshot.ts
 import { run, hasFlag, parseFlag, screenshotPath } from './common.js';
+import { actionScreenshot } from './actions.js';
 
 run(async ({ page, args }) => {
   const selector = args[0];
   const fullPage = hasFlag(process.argv.slice(2), 'full');
   const name = parseFlag(process.argv.slice(2), 'name');
-  const path = screenshotPath(name);
 
-  if (selector && /^\d+,\d+,\d+,\d+$/.test(selector)) {
-    const [x, y, width, height] = selector.split(',').map(Number);
-    await page.screenshot({ path, clip: { x, y, width, height } });
+  // Build args for actionScreenshot
+  const actionArgs: string[] = [];
+  if (fullPage) {
+    actionArgs.push('full');
   } else if (selector) {
-    await page.locator(selector).first().screenshot({ path });
-  } else {
-    await page.screenshot({ path, fullPage });
+    actionArgs.push(selector);
   }
+  if (name) actionArgs.push(name);
 
-  return { success: true, screenshot: path };
+  const { result } = await actionScreenshot(page, actionArgs);
+
+  return { success: true, screenshot: (result as any).screenshot };
 });

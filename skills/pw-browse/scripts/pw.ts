@@ -1,13 +1,13 @@
 #!/usr/bin/env npx tsx
 // pw CLI — Playwright Skill unified command
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 const command = args[0];
-const rest = args.slice(1).join(' ');
+const restArgs = args.slice(1);
 
 const COMMANDS: Record<string, { script: string; desc: string }> = {
   navigate:    { script: 'navigate.ts',    desc: 'Go to URL' },
@@ -112,10 +112,13 @@ const globalScript = join(SCRIPTS_DIR, cmd.script);
 const scriptPath = existsSync(localScript) ? localScript : globalScript;
 
 try {
-  execSync(`npx tsx "${scriptPath}" ${rest}`, {
+  const result = spawnSync(process.execPath, [...process.execArgv, scriptPath, ...restArgs], {
     stdio: 'inherit',
     cwd: process.cwd(),
   });
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
 } catch {
   process.exit(1);
 }

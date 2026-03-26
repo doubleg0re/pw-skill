@@ -1,13 +1,13 @@
 // ~/.claude/skills/pw-browse/scripts/navigate.ts
 import { run, hasFlag, screenshotPath } from './common.js';
+import { actionNavigate } from './actions.js';
 
 run(async ({ page, args }) => {
   const url = args[0];
   if (!url) return { success: false, error: 'URL required. Usage: navigate.ts <url> [--screenshot]' };
 
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const { result } = await actionNavigate(page, [url]);
 
-  const title = await page.title();
   const takeScreenshot = hasFlag(process.argv.slice(2), 'screenshot');
 
   let screenshot: string | undefined;
@@ -16,5 +16,5 @@ run(async ({ page, args }) => {
     await page.screenshot({ path: screenshot, fullPage: false });
   }
 
-  return { success: true, data: { url, title }, ...(screenshot ? { screenshot } : {}) };
+  return { success: true, data: result, ...(screenshot ? { screenshot } : {}) };
 });

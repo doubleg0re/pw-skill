@@ -164,11 +164,18 @@ export async function connectBrowser(options: LaunchOptions = {}): Promise<{
 
 // --- Result output ---
 
+interface ErrorContext {
+  url?: string;
+  title?: string;
+  tab?: number;
+}
+
 interface Result {
   success: boolean;
   screenshot?: string;
   data?: unknown;
   error?: string;
+  context?: ErrorContext;
 }
 
 export function output(result: Result): void {
@@ -241,7 +248,42 @@ export async function run(
     // CDP disconnect — browser process stays alive
     process.exit(0);
   } catch (err) {
-    output({ success: false, error: err instanceof Error ? err.message : String(err) });
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorResult: Result = { success: false, error: errorMessage };
+
+    // Capture diagnostic context from the page if available
+    try {
+      const ctx = await connectBrowser({ headless: true });
+      const cliArgs = parseArgs();
+      const tabStr = parseFlag(cliArgs, 'tab');
+      let diagnosticPage = ctx.page;
+
+      const errorContext: ErrorContext = {};
+
+      if (tabStr !== undefined) {
+        const tabIdx = parseInt(tabStr);
+        const pages = ctx.context.pages();
+        if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < pages.length) {
+          diagnosticPage = pages[tabIdx];
+        }
+        errorContext.tab = parseInt(tabStr);
+      }
+
+      errorContext.url = diagnosticPage.url();
+      errorContext.title = await diagnosticPage.title().catch(() => undefined);
+      errorResult.context = errorContext;
+
+      // Capture error screenshot
+      const errorScreenshotPath = screenshotPath(`error-${Date.now()}`);
+      await diagnosticPage.screenshot({ path: errorScreenshotPath }).catch(() => {});
+      if (existsSync(errorScreenshotPath)) {
+        errorResult.screenshot = errorScreenshotPath;
+      }
+    } catch {
+      // If we can't gather diagnostics, proceed with the basic error
+    }
+
+    output(errorResult);
     process.exit(1);
   }
 }

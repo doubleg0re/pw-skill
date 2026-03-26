@@ -5,6 +5,7 @@
 //   pw attr "#div" data-id --set=123          # write
 //   pw attr "#el" textContent                 # read textContent
 import { run, parseFlag } from './common.js';
+import { actionAttr } from './actions.js';
 
 run(async ({ page, args }) => {
   const selector = args[0];
@@ -14,27 +15,10 @@ run(async ({ page, args }) => {
   const setValue = parseFlag(process.argv.slice(2), 'set');
 
   if (setValue !== undefined) {
-    await page.locator(selector).first().evaluate(
-      (el, { name, value }) => {
-        if (name === 'textContent') el.textContent = value;
-        else if (name === 'innerText') (el as HTMLElement).innerText = value;
-        else if (name === 'value') (el as HTMLInputElement).value = value;
-        else el.setAttribute(name, value);
-      },
-      { name, value: setValue },
-    );
+    await actionAttr(page, [selector, name, setValue]);
     return { success: true, data: { selector, attr: name, value: setValue, action: 'set' } };
   }
 
-  const value = await page.locator(selector).first().evaluate(
-    (el, name) => {
-      if (name === 'textContent') return el.textContent?.trim() ?? null;
-      if (name === 'innerText') return (el as HTMLElement).innerText?.trim() ?? null;
-      if (name === 'value') return (el as HTMLInputElement).value ?? null;
-      return el.getAttribute(name);
-    },
-    name,
-  );
-
-  return { success: true, data: { selector, attr: name, value } };
+  const { result } = await actionAttr(page, [selector, name]);
+  return { success: true, data: { selector, attr: name, value: result } };
 });

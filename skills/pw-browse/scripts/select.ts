@@ -4,6 +4,7 @@
 //   pw select "#size" --label=Large
 //   pw select "#color" --index=2
 import { run, parseFlag, screenshotPath } from './common.js';
+import { actionSelect } from './actions.js';
 
 run(async ({ page, args }) => {
   const selector = args[0];
@@ -13,20 +14,26 @@ run(async ({ page, args }) => {
   const label = parseFlag(process.argv.slice(2), 'label');
   const index = parseFlag(process.argv.slice(2), 'index');
 
-  let selected: string[];
+  let optionValue: string;
+  let mode: string;
 
   if (value) {
-    selected = await page.locator(selector).first().selectOption({ value });
+    optionValue = value;
+    mode = 'value';
   } else if (label) {
-    selected = await page.locator(selector).first().selectOption({ label });
+    optionValue = label;
+    mode = 'label';
   } else if (index) {
-    selected = await page.locator(selector).first().selectOption({ index: parseInt(index) });
+    optionValue = index;
+    mode = 'index';
   } else {
     return { success: false, error: 'Specify one of: --value=x, --label=x, --index=n' };
   }
 
+  await actionSelect(page, [selector, optionValue, mode]);
+
   const path = screenshotPath();
   await page.screenshot({ path });
 
-  return { success: true, screenshot: path, data: { selector, selected } };
+  return { success: true, screenshot: path, data: { selector, [mode]: optionValue } };
 });

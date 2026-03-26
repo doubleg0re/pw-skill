@@ -7,6 +7,12 @@ import { writeFileSync, readFileSync, existsSync } from 'fs';
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const LOG_FILE = join(STATE_DIR, 'console.log');
 
+const MAX_LOG_ENTRY_LENGTH = 2000;
+
+function truncate(text: string, limit: number): string {
+  return text.length > limit ? text.substring(0, limit) + '...(truncated)' : text;
+}
+
 // Console patching code to inject into the browser
 const INJECT_SCRIPT = `
 if (!window.__PW_CONSOLE_PATCHED) {
@@ -52,7 +58,7 @@ run(async ({ page, args }) => {
 
       // Append to file
       const lines = logs.map((l: any) =>
-        `[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.text}`
+        truncate(`[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.text}`, MAX_LOG_ENTRY_LENGTH)
       ).join('\n');
 
       if (lines) writeFileSync(LOG_FILE, lines + '\n', { flag: 'a' });

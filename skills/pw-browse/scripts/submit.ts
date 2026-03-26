@@ -4,7 +4,8 @@
 //   pw submit "#login-form"                            # Submit form by selector
 //   pw submit "#login-form" --wait=/dashboard          # Submit + wait for URL
 //   pw submit --url=/api/projects --method=POST --body='{"name":"test"}' --wait=/projects
-import { run, parseFlag, hasFlag, screenshotPath } from './common.js';
+import { run, parseFlag, screenshotPath } from './common.js';
+import { actionSubmit } from './actions.js';
 
 run(async ({ page, args }) => {
   const selector = args[0];
@@ -41,17 +42,11 @@ run(async ({ page, args }) => {
     return { success: true, screenshot: path, data: { method, url, response, navigated: page.url() } };
   }
 
-  // UI form submit
-  if (selector) {
-    await page.locator(selector).first().evaluate((form: HTMLFormElement) => form.submit());
-  } else {
-    await page.keyboard.press('Enter');
-  }
+  // UI form submit via shared action
+  await actionSubmit(page, selector ? [selector] : []);
 
   if (waitUrl) {
     await page.waitForURL(waitUrl.includes('*') ? waitUrl : `**${waitUrl}*`, { timeout: 30000 });
-  } else {
-    await page.waitForTimeout(1000);
   }
 
   const path = screenshotPath();
