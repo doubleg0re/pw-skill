@@ -1,67 +1,67 @@
 ---
 name: pw-test
-description: Playwright E2E 테스트 작성 및 실행. "테스트 작성해", "이 페이지 테스트", "E2E 돌려" 등. 테스트 방향 확인 → 작성 → 실행 → 리포트.
+description: Write and run Playwright E2E tests. Triggered by "write a test", "test this page", "run E2E", etc. Flow: confirm test direction → write → run → report.
 ---
 
-# Playwright E2E 테스트
+# Playwright E2E Tests
 
-테스트 방향을 사용자에게 확인한 후, 테스트 코드를 작성하고 실행하여 결과를 리포트한다.
+Confirm the test direction with the user, then write the test code, run it, and report the results.
 
-## 트리거
+## Triggers
 
-- E2E 테스트 작성/실행 요청
-- 웹 페이지 기능 검증 요청
-- "테스트 진행해줘" 같은 포괄적 테스트 요청
+- Requests to write or run E2E tests
+- Requests to validate web page functionality
+- Broad test requests like "run the tests for me"
 
-## 사전 조건
+## Prerequisites
 
-1. `.playwright-state/` 디렉토리가 없으면 `pw-launch` 스킬을 먼저 호출
-2. `playwright.config.ts`가 없으면 `pw-launch`가 자동 생성
+1. If the `.playwright-state/` directory does not exist, invoke the `pw-launch` skill first
+2. If `playwright.config.ts` does not exist, `pw-launch` will create it automatically
 
-## 워크플로
+## Workflow
 
-### 1. 테스트 방향 확인
+### 1. Confirm test direction
 
-사용자에게 질문:
-- 무엇을 테스트할 것인지 (페이지, 플로우, 기능)
-- 어디까지 테스트할 것인지 (스모크, 기능, 전체 플로우)
-- 특별히 확인해야 할 엣지 케이스가 있는지
+Ask the user:
+- What to test (page, flow, feature)
+- How far to test (smoke, functional, full flow)
+- Any edge cases that need special attention
 
-### 2. 테스트 코드 작성
+### 2. Write test code
 
-`tests/e2e/` 디렉토리에 `.spec.ts` 파일을 작성:
+Write a `.spec.ts` file in the `tests/e2e/` directory:
 
 ```typescript
 import { test, expect } from '@playwright/test';
 
-test.describe('기능명', () => {
-  test('시나리오 설명', async ({ page }) => {
+test.describe('Feature name', () => {
+  test('scenario description', async ({ page }) => {
     await page.goto('/target-page');
-    // 테스트 로직
+    // test logic
     await expect(page.locator('selector')).toBeVisible();
   });
 });
 ```
 
-### 3. 테스트 실행
+### 3. Run the test
 
 ```bash
-npx playwright test tests/e2e/{파일명}.spec.ts
+npx playwright test tests/e2e/{filename}.spec.ts
 ```
 
-### 4. 결과 분석 및 리포트
+### 4. Analyze results and report
 
-- 통과: 통과한 테스트 수와 소요 시간 보고
-- 실패: 실패 원인 분석 + 스크린샷 확인 + 수정 제안
-- 실패 시 `--headed` 모드로 재시도 제안
+- Pass: Report number of passing tests and elapsed time
+- Fail: Analyze failure cause + review screenshot + suggest fix
+- On failure: Suggest retrying with `--headed` mode
 
-### 5. headless 실패 시 재시도
+### 5. Retry on headless failure
 
 ```bash
-npx playwright test tests/e2e/{파일명}.spec.ts --headed
+npx playwright test tests/e2e/{filename}.spec.ts --headed
 ```
 
-## 체이닝
+## Chaining
 
-- 브라우저 미구동 → `pw-launch` 먼저 실행
-- 테스트 완료 → `pw-close` 자동 호출
+- Browser not running → run `pw-launch` first
+- Tests complete → auto-call `pw-close`

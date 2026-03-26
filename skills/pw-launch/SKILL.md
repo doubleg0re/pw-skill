@@ -1,28 +1,28 @@
 ---
 name: pw-launch
-description: Playwright 브라우저 구동. "브라우저 열어", "페이지 띄워", "playwright 시작", 또는 pw-browse/pw-test가 브라우저 미구동 감지 시 자동 호출.
+description: Launch Playwright browser. Triggered by "open browser", "launch page", "start playwright", or auto-called when pw-browse/pw-test detects browser is not running.
 ---
 
-# Playwright 브라우저 구동
+# Playwright Browser Launch
 
-브라우저를 구동하고 `.playwright-state/` 상태 디렉토리를 초기화한다.
+Launch the browser and initialize the `.playwright-state/` state directory.
 
-## 트리거
+## Triggers
 
-- 사용자가 브라우저 구동을 요청할 때
-- `pw-browse` 또는 `pw-test` 스킬이 브라우저 미구동을 감지했을 때 (자동 체이닝)
+- When the user requests to launch a browser
+- When `pw-browse` or `pw-test` detects the browser is not running (auto-chaining)
 
-## 동작
+## Steps
 
-### 1. playwright 설치 확인
+### 1. Check playwright installation
 
 ```bash
 npx playwright --version || npx playwright install chromium
 ```
 
-### 2. playwright.config.ts 확인
+### 2. Check playwright.config.ts
 
-프로젝트 루트에 `playwright.config.ts`가 없으면 생성:
+If `playwright.config.ts` does not exist at the project root, create it:
 
 ```bash
 cat > playwright.config.ts << 'PWEOF'
@@ -44,40 +44,40 @@ export default defineConfig({
 PWEOF
 ```
 
-### 3. 상태 디렉토리 초기화
+### 3. Initialize state directory
 
 ```bash
 mkdir -p .playwright-state/screenshots
 ```
 
-### 4. .gitignore에 추가
+### 4. Add to .gitignore
 
-`.playwright-state/`가 `.gitignore`에 없으면 추가.
+If `.playwright-state/` is not in `.gitignore`, add it.
 
-### 5. 구동 확인
+### 5. Verify launch
 
-navigate 스크립트로 대상 URL에 접속하여 확인:
+Navigate to the target URL using the navigate script to confirm:
 
 ```bash
 npx tsx ~/.claude/skills/pw-browse/scripts/navigate.ts <URL> --screenshot
 ```
 
-스크립트 탐색 순서:
-1. `{project}/scripts/playwright/navigate.ts` (로컬)
-2. `~/.claude/skills/pw-browse/scripts/navigate.ts` (글로벌)
+Script lookup order:
+1. `{project}/scripts/playwright/navigate.ts` (local)
+2. `~/.claude/skills/pw-browse/scripts/navigate.ts` (global)
 
-### 기본값
+### Defaults
 
-| 옵션 | 기본값 | 오버라이드 |
-|------|--------|-----------|
-| headless | `true` | `--headed` 플래그 추가 |
-| browser | chromium | (현재 chromium 고정) |
-| viewport | 1920x1080 | `--viewport=WxH` 플래그 추가 |
+| Option | Default | Override |
+|--------|---------|----------|
+| headless | `true` | Add `--headed` flag |
+| browser | chromium | (chromium only for now) |
+| viewport | 1920x1080 | Add `--viewport=WxH` flag |
 
-### headless 실패 시
+### If headless fails
 
-headless 모드에서 테스트 실패하면 `--headed` 플래그를 추가하여 재시도.
+If a test fails in headless mode, retry with the `--headed` flag.
 
-## 체이닝
+## Chaining
 
-이 스킬 완료 후 원래 요청한 작업(pw-browse 또는 pw-test)을 이어서 실행.
+After this skill completes, resume the original request (pw-browse or pw-test).

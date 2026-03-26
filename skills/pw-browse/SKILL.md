@@ -1,161 +1,207 @@
 ---
 name: pw-browse
-description: Playwright 브라우저 조작. 스크린샷, 클릭, 입력, 네비게이션 등 브라우저 조작이 필요할 때 사용. "스크린샷 찍어", "버튼 클릭해", "이 페이지 가줘" 등.
+description: Playwright browser control. Use when browser interaction is needed — screenshots, clicks, input, navigation, etc. Triggered by "take a screenshot", "click the button", "go to this page", etc.
 ---
 
-# Playwright 브라우저 조작
+# Playwright Browser Control
 
-범용 스크립트를 사용하여 브라우저를 조작한다.
+Control the browser using general-purpose scripts.
 
-## 트리거
+## Triggers
 
-- 스크린샷, 클릭, 입력, 네비게이션 등 브라우저 조작 요청
-- 웹 페이지 확인이나 UI 검증이 필요한 상황
+- Requests for browser interaction: screenshots, clicks, input, navigation, etc.
+- Situations requiring web page inspection or UI validation
 
-## 사전 조건
+## Prerequisites
 
-`.playwright-state/` 디렉토리가 없으면 `pw-launch` 스킬을 먼저 호출.
+If the `.playwright-state/` directory does not exist, invoke the `pw-launch` skill first.
 
-## 스크립트 탐색 순서
+## Script Lookup Order
 
-1. `{project}/scripts/playwright/{name}.ts` (로컬 — 프로젝트별 커스텀)
-2. `~/.claude/skills/pw-browse/scripts/{name}.ts` (글로벌 — 기본)
+1. `{project}/scripts/playwright/{name}.ts` (local — project-specific custom)
+2. `~/.claude/skills/pw-browse/scripts/{name}.ts` (global — default)
 
-로컬에 동일한 이름의 스크립트가 있으면 로컬을 우선 사용.
+If a script with the same name exists locally, the local version takes priority.
 
-## 실행 방식
+## Execution
 
 ```bash
-# 로컬 스크립트 존재 시
+# When local script exists
 npx tsx scripts/playwright/{name}.ts [args...]
 
-# 글로벌 폴백
+# Global fallback
 npx tsx ~/.claude/skills/pw-browse/scripts/{name}.ts [args...]
 ```
 
-## 범용 스크립트 목록
+## General-purpose Script Reference
 
-### navigate.ts — URL 이동
+### navigate.ts — Navigate to URL
 ```bash
 npx tsx {script_path}/navigate.ts <url> [--screenshot] [--headed] [--viewport=WxH]
 ```
 
-### screenshot.ts — 페이지 캡처
+### screenshot.ts — Capture page
 ```bash
 npx tsx {script_path}/screenshot.ts [selector] [--full] [--headed]
 ```
-- `selector`: CSS 셀렉터 (없으면 전체 페이지)
-- `--full`: 전체 페이지 스크롤 캡처
+- `selector`: CSS selector (omit for full page)
+- `--full`: Full-page scroll capture
 
-### click.ts — 요소 클릭
+### click.ts — Click an element
 ```bash
 npx tsx {script_path}/click.ts <target> [--mode=selector|text|coord]
 ```
-- 자동 감지: `#id` `.class` → selector, `350,200` → coord, 그 외 → text
-- `--mode`: 명시적 모드 지정
+- Auto-detection: `#id` `.class` → selector, `350,200` → coord, otherwise → text
+- `--mode`: Explicitly specify mode
 
-### dblclick.ts — 더블 클릭
+### dblclick.ts — Double-click an element
 ```bash
 npx tsx {script_path}/dblclick.ts <target> [--mode=selector|text|coord]
 ```
-- click.ts와 동일한 인터페이스, 더블 클릭 동작
+- Same interface as click.ts, performs a double-click
 
-### drag.ts — 드래그 앤 드롭
+### drag.ts — Drag and drop
 ```bash
 npx tsx {script_path}/drag.ts <source> <target> [--mode=selector|coord]
 ```
-- `--mode=selector`: 셀렉터 간 dragTo (기본)
-- `--mode=coord`: 좌표 기반 (예: `drag.ts 100,200 300,400 --mode=coord`)
+- `--mode=selector`: dragTo between selectors (default)
+- `--mode=coord`: Coordinate-based (e.g., `drag.ts 100,200 300,400 --mode=coord`)
 
-### fill.ts — 셀렉터 클릭 + 텍스트 입력
+### fill.ts — Click selector + type text
 ```bash
 npx tsx {script_path}/fill.ts <selector> <text>
 ```
 
-### type.ts — 현재 포커스에 타이핑
+### type.ts — Type into current focus
 ```bash
 npx tsx {script_path}/type.ts <text> [--delay=ms]
 ```
-- 클릭 후 이어서 사용 (click.ts → type.ts)
+- Use after a click (click.ts → type.ts)
 
-### wait.ts — 조건부 대기
+### hover.ts — Hover over an element
+```bash
+npx tsx {script_path}/hover.ts <target> [--mode=selector|text|coord]
+```
+- Same interface as click.ts, performs a hover
+
+### scroll.ts — Scroll the page
+```bash
+npx tsx {script_path}/scroll.ts [selector] [--direction=down|up|left|right] [--amount=px]
+```
+- `selector`: Scroll within a specific element (omit for window scroll)
+- `--direction`: Scroll direction (default: down)
+- `--amount`: Scroll amount in pixels
+
+### upload.ts — File upload
+```bash
+npx tsx {script_path}/upload.ts <selector> <file-path>
+```
+- `selector`: File input element selector
+- `file-path`: Absolute or relative path to the file to upload
+
+### copy.ts — Copy text to clipboard
+```bash
+npx tsx {script_path}/copy.ts <selector|text>
+```
+- Copies the text content of the target element or the given string to the clipboard
+
+### find.ts — Find elements
+```bash
+npx tsx {script_path}/find.ts <selector> [--attr=name] [--text]
+```
+- `--attr=name`: Return attribute value of the found element
+- `--text`: Return text content of the found element
+
+### attr.ts — Get/set element attribute
+```bash
+npx tsx {script_path}/attr.ts <selector> <attr-name> [value]
+```
+- Omit `value` to read the attribute; provide `value` to set it
+
+### select.ts — Select dropdown option
+```bash
+npx tsx {script_path}/select.ts <selector> <value|label>
+```
+- Selects an option in a `<select>` element by value or visible label
+
+### wait.ts — Conditional wait
 ```bash
 npx tsx {script_path}/wait.ts <ms|selector> [--attr=name --value=expected] [--timeout=ms]
 ```
-- 숫자: 시간 대기 (ms)
-- 셀렉터: visible 될 때까지 대기
-- `--attr` + `--value`: 셀렉터의 속성이 특정 값이 될 때까지 대기
-  - 예: `wait.ts "#status" --attr=textContent --value=완료`
+- Number: Wait for a duration (ms)
+- Selector: Wait until visible
+- `--attr` + `--value`: Wait until the selector's attribute reaches a specific value
+  - e.g., `wait.ts "#status" --attr=textContent --value=Done`
 
-### sequence.ts — 액션 시퀀스 실행
+### sequence.ts — Run action sequence
 ```bash
 npx tsx {script_path}/sequence.ts <json-string | json-file-path>
 ```
-JSON 배열로 여러 액션을 순차 실행. 실패 시 중단 + 에러 스크린샷.
+Runs multiple actions sequentially from a JSON array. Stops on failure with an error screenshot.
 ```json
 [
   {"action": "navigate", "args": ["http://localhost:3000"]},
   {"action": "fill", "args": ["#email", "test@test.com"]},
   {"action": "click", "args": ["#submit"]},
   {"action": "wait", "args": ["#dashboard"]},
-  {"action": "wait", "args": ["#status", "textContent", "완료"]},
+  {"action": "wait", "args": ["#status", "textContent", "Done"]},
   {"action": "screenshot", "args": ["full"]}
 ]
 ```
-지원 액션: navigate, click, dblclick, drag, fill, type, wait, screenshot, evaluate
+Supported actions: navigate, click, dblclick, drag, fill, type, hover, scroll, upload, copy, find, attr, select, wait, screenshot, evaluate
 
-### evaluate.ts — JS 실행
+### evaluate.ts — Execute JavaScript
 ```bash
 npx tsx {script_path}/evaluate.ts <js-expression>
 ```
 
-### console.ts — 콘솔 로그 수집
+### console.ts — Collect console logs
 ```bash
 npx tsx {script_path}/console.ts [inject|dump|clear|tail]
 ```
-- `inject`: 브라우저에 console 패칭 주입 (최초 1회, dump 시 자동 inject)
-- `dump`: 수집된 로그를 `.playwright-state/console.log`에 append 후 브라우저 로그 비움
-- `clear`: 브라우저 + 파일 로그 모두 초기화
-- `tail`: 파일에서 최근 20줄 반환
-- console.log/warn/error/info/debug + 페이지 에러 + unhandled rejection 전부 캡처
+- `inject`: Inject console patching into the browser (once; auto-injected on dump)
+- `dump`: Append collected logs to `.playwright-state/console.log` and clear browser logs
+- `clear`: Clear both browser and file logs
+- `tail`: Return the last 20 lines from the file
+- Captures: console.log/warn/error/info/debug + page errors + unhandled rejections
 
-### network.ts — 네트워크 요청 수집
+### network.ts — Collect network requests
 ```bash
 npx tsx {script_path}/network.ts [inject|dump|clear|tail|find <pattern>]
 ```
-- `inject`: fetch/XHR 패칭 주입 (dump 시 자동 inject)
-- `dump`: 수집된 요청을 `.playwright-state/network.log`에 append
-- `clear`: 로그 초기화
-- `tail`: 최근 20건 반환
-- `find <pattern>`: URL 패턴으로 필터 (예: `find /api/projects`)
-- method, url, status, request body, response body 전부 캡처
+- `inject`: Inject fetch/XHR patching (auto-injected on dump)
+- `dump`: Append collected requests to `.playwright-state/network.log`
+- `clear`: Clear the log
+- `tail`: Return the last 20 entries
+- `find <pattern>`: Filter by URL pattern (e.g., `find /api/projects`)
+- Captures: method, url, status, request body, response body
 
-### status.ts — 세션 상태 조회
+### status.ts — Query session state
 ```bash
 npx tsx {script_path}/status.ts [current|pages|all]
 ```
-- `current`: 현재 프로젝트 브라우저 상태 (포트, 페이지 목록)
-- `pages`: 열린 탭/페이지 목록 (title, url)
-- `all`: 전체 워크스페이스에서 떠있는 브라우저 세션 조회
+- `current`: Current project browser state (port, page list)
+- `pages`: List of open tabs/pages (title, url)
+- `all`: All browser sessions running across the workspace
 
-### tab.ts — 탭 관리
+### tab.ts — Tab management
 ```bash
 npx tsx {script_path}/tab.ts [new [url] | list | close <index>]
 ```
-- `new [url]`: 새 탭 열기, index 반환
-- `list`: 열린 탭 목록 (index, title, url)
-- `close <index>`: 탭 닫기
+- `new [url]`: Open a new tab, returns index
+- `list`: List open tabs (index, title, url)
+- `close <index>`: Close a tab
 
-### 모든 스크립트에서 `--tab=N` 지원
+### All scripts support `--tab=N`
 ```bash
 npx tsx {script_path}/click.ts "#btn" --tab=1
 npx tsx {script_path}/screenshot.ts --full --tab=2
 ```
-특정 탭을 타겟. 생략하면 첫 번째 탭(0).
+Target a specific tab. Defaults to the first tab (0) if omitted.
 
-## 반환 형식
+## Return Format
 
-모든 스크립트는 stdout에 JSON을 반환:
+All scripts return JSON to stdout:
 ```json
 {
   "success": true,
@@ -164,16 +210,16 @@ npx tsx {script_path}/screenshot.ts --full --tab=2
 }
 ```
 
-## 커스텀 스크립트
+## Custom Scripts
 
-기존 스크립트로 불가능한 복잡한 조작은 임시 스크립트를 작성하여 실행:
+For complex interactions not possible with existing scripts, write a temporary script:
 
 ```typescript
-// 임시 스크립트 예시
+// Example temporary script
 import { run, screenshotPath } from '~/.claude/skills/pw-browse/scripts/common.js';
 
 run(async ({ page }) => {
-  // 복잡한 조작 로직
+  // Complex interaction logic
   await page.goto('http://localhost:3000');
   await page.locator('#dropdown').click();
   await page.locator('[data-value="option1"]').click();
@@ -184,10 +230,10 @@ run(async ({ page }) => {
 });
 ```
 
-임시 스크립트는 프로젝트의 `scripts/playwright/` 디렉토리에 작성.
-작업 완료 후 불필요한 임시 스크립트는 `pw-close` 시 정리.
+Write temporary scripts in the project's `scripts/playwright/` directory.
+Clean up unnecessary temporary scripts when running `pw-close`.
 
-## 체이닝
+## Chaining
 
-- 브라우저 미구동 → `pw-launch` 먼저 실행
-- 조작 완료 후 → 브라우저 유지 (명시적 종료 전까지)
+- Browser not running → run `pw-launch` first
+- After interaction → keep browser open (until explicitly closed)

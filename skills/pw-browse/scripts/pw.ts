@@ -1,5 +1,5 @@
 #!/usr/bin/env npx tsx
-// pw CLI — Playwright Skill 통합 커맨드
+// pw CLI — Playwright Skill unified command
 import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
@@ -10,30 +10,30 @@ const command = args[0];
 const rest = args.slice(1).join(' ');
 
 const COMMANDS: Record<string, { script: string; desc: string }> = {
-  navigate:    { script: 'navigate.ts',    desc: 'URL 이동' },
-  screenshot:  { script: 'screenshot.ts',  desc: '페이지 캡처' },
-  click:       { script: 'click.ts',       desc: '요소 클릭' },
-  dblclick:    { script: 'dblclick.ts',    desc: '더블 클릭' },
-  hover:       { script: 'hover.ts',       desc: '마우스 오버' },
-  drag:        { script: 'drag.ts',        desc: '드래그 앤 드롭' },
-  scroll:      { script: 'scroll.ts',      desc: '스크롤' },
-  fill:        { script: 'fill.ts',        desc: '입력 필드 채우기' },
-  type:        { script: 'type.ts',        desc: '키보드 타이핑' },
-  select:      { script: 'select.ts',      desc: '드롭다운 선택' },
-  upload:      { script: 'upload.ts',      desc: '파일 업로드' },
-  copy:        { script: 'copy.ts',        desc: '텍스트/HTML 복사' },
-  attr:        { script: 'attr.ts',        desc: 'DOM 속성 읽기/쓰기' },
-  find:        { script: 'find.ts',        desc: 'DOM 요소 탐색' },
-  wait:        { script: 'wait.ts',        desc: '조건부 대기' },
-  evaluate:    { script: 'evaluate.ts',    desc: 'JS 실행' },
-  sequence:    { script: 'sequence.ts',    desc: '액션 시퀀스 실행' },
-  console:     { script: 'console.ts',     desc: '콘솔 로그' },
-  network:     { script: 'network.ts',     desc: '네트워크 요청' },
-  tab:         { script: 'tab.ts',         desc: '탭 관리' },
-  status:      { script: 'status.ts',      desc: '세션 상태' },
+  navigate:    { script: 'navigate.ts',    desc: 'Go to URL' },
+  screenshot:  { script: 'screenshot.ts',  desc: 'Capture page' },
+  click:       { script: 'click.ts',       desc: 'Click element' },
+  dblclick:    { script: 'dblclick.ts',    desc: 'Double-click element' },
+  hover:       { script: 'hover.ts',       desc: 'Hover over element' },
+  drag:        { script: 'drag.ts',        desc: 'Drag and drop' },
+  scroll:      { script: 'scroll.ts',      desc: 'Scroll page' },
+  fill:        { script: 'fill.ts',        desc: 'Fill input field' },
+  type:        { script: 'type.ts',        desc: 'Type on keyboard' },
+  select:      { script: 'select.ts',      desc: 'Select dropdown option' },
+  upload:      { script: 'upload.ts',      desc: 'Upload file' },
+  copy:        { script: 'copy.ts',        desc: 'Copy text/HTML' },
+  attr:        { script: 'attr.ts',        desc: 'Read/write DOM attribute' },
+  find:        { script: 'find.ts',        desc: 'Query DOM elements' },
+  wait:        { script: 'wait.ts',        desc: 'Wait for condition' },
+  evaluate:    { script: 'evaluate.ts',    desc: 'Run JavaScript' },
+  sequence:    { script: 'sequence.ts',    desc: 'Run action sequence' },
+  console:     { script: 'console.ts',     desc: 'Console logs' },
+  network:     { script: 'network.ts',     desc: 'Network requests' },
+  tab:         { script: 'tab.ts',         desc: 'Manage tabs' },
+  status:      { script: 'status.ts',      desc: 'Session status' },
 };
 
-// 도움말
+// Help
 if (!command || command === 'help' || command === '--help') {
   console.log(`
 pw — Playwright CLI Skill
@@ -41,39 +41,39 @@ pw — Playwright CLI Skill
 Usage: pw <command> [args...]
 
 Commands:
-  navigate <url> [--screenshot]           URL 이동
-  screenshot [selector] [--full]          페이지 캡처
-  click <target> [--mode=selector|text|coord]  요소 클릭
-  dblclick <target> [--mode=...]          더블 클릭
-  hover <target> [--mode=...]             마우스 오버
-  drag <source> <target> [--mode=...]     드래그 앤 드롭
-  scroll <up|down|top|bottom|selector>    스크롤
-  fill <selector> <text>                  입력 필드 채우기
-  type <text> [--delay=ms]                키보드 타이핑
-  select <selector> [--value|--label|--index]  드롭다운 선택
-  upload <selector> <file-path...>        파일 업로드
-  copy <selector> [--format=text|html|outer]  텍스트/HTML 복사
-  attr <selector> <name> [--set=value]    DOM 속성 읽기/쓰기
-  find <selector> [--detail=tag|class|full]  DOM 요소 탐색
-  wait <ms|selector> [--attr=x --value=y]  조건부 대기
-  evaluate <js-expression>                JS 실행
-  sequence <json|file>                    액션 시퀀스 실행
-  console [inject|dump|clear|tail]        콘솔 로그
-  network [inject|dump|clear|tail|find]   네트워크 요청
-  tab [new|list|close] [args...]          탭 관리
-  status [current|pages|all]              세션 상태
-  close                                   브라우저 종료
-  help                                    도움말
+  navigate <url> [--screenshot]              Go to URL
+  screenshot [selector] [--full]             Capture page or element
+  click <target> [--mode=selector|text|coord] Click element
+  dblclick <target> [--mode=...]             Double-click element
+  hover <target> [--mode=...]                Hover over element
+  drag <source> <target> [--mode=...]        Drag and drop
+  scroll <up|down|top|bottom|selector>       Scroll page
+  fill <selector> <text>                     Fill input field
+  type <text> [--delay=ms]                   Type on keyboard
+  select <selector> [--value|--label|--index] Select dropdown option
+  upload <selector> <file-path...>           Upload file
+  copy <selector> [--format=text|html|outer] Copy text/HTML from element
+  attr <selector> <name> [--set=value]       Read/write DOM attribute
+  find <selector> [--detail=tag|class|full]  Query DOM elements
+  wait <ms|HH:MM|selector> [--attr --value]  Wait for condition
+  evaluate <js-expression>                   Run JavaScript in page
+  sequence <json|file>                       Run action sequence
+  console [inject|dump|clear|tail]           Console log capture
+  network [inject|dump|clear|tail|find]      Network request capture
+  tab [new|list|close] [args...]             Manage browser tabs
+  status [current|pages|all]                 Session status
+  close                                      Close browser
+  help                                       Show this help
 
 Global flags:
-  --tab=N       특정 탭 타겟 (기본: 0)
-  --headed      브라우저 표시
-  --viewport=WxH  뷰포트 크기 (기본: 1920x1080)
+  --tab=N        Target specific tab (default: 0)
+  --headed       Show browser window
+  --viewport=WxH Viewport size (default: 1920x1080)
 `.trim());
   process.exit(0);
 }
 
-// close는 특수 처리
+// Close is special
 if (command === 'close') {
   const stateDir = resolve(process.cwd(), '.playwright-state');
   const portFile = join(stateDir, 'cdp-port.txt');
@@ -91,14 +91,14 @@ if (command === 'close') {
   process.exit(0);
 }
 
-// 스크립트 실행
+// Run script
 const cmd = COMMANDS[command];
 if (!cmd) {
   console.error(`Unknown command: ${command}\nRun 'pw help' for usage.`);
   process.exit(1);
 }
 
-// 로컬 우선 → 글로벌 폴백
+// Local first, global fallback
 const localScript = join(process.cwd(), 'scripts', 'playwright', cmd.script);
 const globalScript = join(SCRIPTS_DIR, cmd.script);
 const scriptPath = existsSync(localScript) ? localScript : globalScript;
@@ -109,6 +109,5 @@ try {
     cwd: process.cwd(),
   });
 } catch {
-  // 스크립트가 자체적으로 JSON 에러를 출력하므로 여기선 무시
   process.exit(1);
 }
