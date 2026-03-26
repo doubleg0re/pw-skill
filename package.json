@@ -11,7 +11,12 @@
   },
   "scripts": {
     "setup": "npm install && npx playwright install chromium",
-    "postinstall": "npx playwright install chromium"
+    "postinstall": "npx playwright install chromium",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
   },
   "dependencies": {
     "playwright": "^1.51.0",

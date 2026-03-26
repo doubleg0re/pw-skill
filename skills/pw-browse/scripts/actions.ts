@@ -144,8 +144,18 @@ export async function actionSubmit(page: Page, a: string[]): Promise<{ result?: 
 
 export async function actionFetch(page: Page, a: string[]): Promise<{ result?: any }> {
   const method = (a[0] || 'GET').toUpperCase();
-  const fetchUrl = a[1];
+  const rawUrl = a[1];
   const fetchBody = a[2];
+
+  // Resolve relative URLs against the current page origin
+  const fetchUrl = rawUrl.startsWith('http')
+    ? rawUrl
+    : await page.evaluate((path) => {
+        const origin = window.location.origin;
+        if (!origin || origin === 'null') throw new Error(`Cannot resolve relative URL "${path}" — no page loaded (current: ${window.location.href})`);
+        return new URL(path, origin).href;
+      }, rawUrl);
+
   const fetchResult = await page.evaluate(
     async ({ method, url, body }) => {
       const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };

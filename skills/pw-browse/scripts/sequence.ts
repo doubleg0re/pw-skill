@@ -60,7 +60,7 @@ interface StepResult {
 
 // --- Variable store ---
 
-class VarStore {
+export class VarStore {
   private vars: Record<string, any> = {};
 
   set(name: string, value: any): void {
@@ -103,7 +103,7 @@ class VarStore {
 
 // --- Action executor ---
 
-async function executeAction(
+export async function executeAction(
   page: Page,
   action: string,
   rawArgs: string[],
@@ -117,7 +117,7 @@ async function executeAction(
 
 // --- Flow engine ---
 
-async function runSteps(
+export async function runSteps(
   page: Page,
   steps: Step[],
   vars: VarStore,
