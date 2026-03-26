@@ -49,6 +49,8 @@ test.describe('Feature name', () => {
 npx playwright test tests/e2e/{filename}.spec.ts
 ```
 
+Use `--session=N` to run tests against a specific named session when multiple sessions are active.
+
 ### 4. Analyze results and report
 
 - Pass: Report number of passing tests and elapsed time

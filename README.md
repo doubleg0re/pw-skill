@@ -1,16 +1,18 @@
 # pw-skill
 
-Playwright CLI Skill for Claude Code. Replaces Playwright MCP with a modular, token-efficient, persistent browser approach.
+Playwright CLI Skill for Claude Code. Persistent browser sessions, modular skills, token-efficient, full flow engine.
 
 ## Why not MCP?
 
 | | MCP | pw-skill |
 |---|---|---|
 | Token cost | ~3,500+ tokens always loaded | ~850 tokens per skill, only when needed |
-| Browser session | New browser per action | Persistent via CDP |
-| Debug tools | None | Console logs, network capture |
+| Browser session | New browser per action | Persistent via CDP, named sessions |
+| Session management | None | Named sessions with isolated profiles |
+| Debug tools | None | Console, network, trace, video |
 | Tab management | None | Full tab control |
-| CLI access | No | `pw` command |
+| Flow engine | None | Sequence with variables, conditions, loops |
+| CLI access | No | `pw` command (27+ subcommands) |
 
 ## Install
 
@@ -37,147 +39,342 @@ cp -r pw-skill/skills/pw-* ~/.claude/skills/
 cd ~/.claude/skills/pw-browse/scripts && npm install && npx playwright install chromium
 ```
 
-## Usage
-
-### CLI
+## Quick Start
 
 ```bash
-# Navigation
+# Launch a named browser session
+pw launch --name=dev
+
+# Navigate and interact
 pw navigate http://localhost:3000 --screenshot
-
-# Interaction
-pw click "#login-btn"
-pw dblclick "#editable-cell"
-pw hover "#tooltip-trigger"
-pw drag "#item-1" "#drop-zone"
-pw scroll bottom
-pw fill "#email" "user@test.com"
-pw type "password123"
-pw select "#country" --value=kr
-pw upload "#file-input" ./report.pdf
-pw submit "#login-form" --wait=/dashboard
-pw submit --url=/api/projects --method=POST --body='{"name":"test"}' --wait=/projects
-
-# Observation
-pw screenshot --full
-pw copy "#article" --format=html
-pw find ".card" --detail=full
-pw attr "#input" value
-pw attr "#div" data-id --set=123
-pw evaluate "document.title"
-pw wait 3000
-pw wait 14:30
+pw fill "#email" "admin@test.com"
+pw fill "#password" "secret"
+pw click "Sign in"
 pw wait /dashboard
-pw wait "#modal"
-pw wait "#status" --attr=textContent --value=Done
 
-# HTTP
-pw fetch GET /api/projects
-pw fetch POST /api/projects '{"name":"test"}'
-pw fetch PUT /api/projects/1 '{"name":"updated"}'
-pw fetch DELETE /api/projects/1
-
-# Debug
-pw console inject
+# Observe
+pw screenshot --full
 pw console dump
-pw console tail
-pw network inject
-pw network dump
-pw network find /api
 
-# Automation
-pw sequence ./login-flow.json
-
-# Session
-pw tab new http://localhost:3000/admin
-pw tab list
-pw tab close 2
-pw status
-pw close
+# Close when done
+pw close --session=dev
 ```
 
-### Claude Code (automatic)
+## Session Management
 
-Claude automatically uses these skills when you say things like:
-- "Open the browser and check the login page"
-- "Take a screenshot of the dashboard"
-- "Run E2E tests on the project list"
-- "Check the console for errors"
-- "What does the /api/projects endpoint return?"
+Sessions are the core of pw-skill. Each session is a named, persistent Chromium process with its own user-data directory stored globally at `~/.playwright-state/sessions/`.
 
-## Skills
+```bash
+# Launch a named session
+pw launch --name=dev
+pw launch --name=staging --headed
 
-| Skill | Tokens | Trigger |
-|---|---|---|
-| `pw-launch` | ~540 | "Open browser", or auto when needed |
-| `pw-browse` | ~850 | "Screenshot", "Click", "Navigate" |
-| `pw-test` | ~470 | "Run tests", "E2E" |
-| `pw-close` | ~300 | "Close browser", or auto after tests |
+# Resume a previous session (reuses cookies, localStorage, profile)
+pw launch --resume=dev
 
-Skills load **only when needed**. Idle cost: **0 tokens**.
+# Bind a session to the current project
+pw use dev
 
-## Scripts (24)
+# List all sessions (shows name, port, pid, status)
+pw sessions
+
+# Close a specific session
+pw close --session=dev
+
+# Close all sessions
+pw close --all
+```
+
+Session resolution order:
+1. Explicit `--session=name` flag on any command
+2. Bound session via `pw use`
+3. Auto-select if only one session is alive
+
+Multiple sessions can run simultaneously. Each gets isolated user-data, so login state and cookies never bleed between sessions.
+
+## CLI Reference
 
 ### Navigation
-| Script | Description |
+
+| Command | Description |
 |---|---|
-| `navigate.ts` | Go to URL + optional screenshot |
+| `pw navigate <url> [--screenshot]` | Go to URL |
 
 ### Interaction
-| Script | Description |
+
+| Command | Description |
 |---|---|
-| `click.ts` | Click by selector, text, or coordinates |
-| `dblclick.ts` | Double-click by selector, text, or coordinates |
-| `hover.ts` | Hover over element (tooltips, dropdown menus) |
-| `drag.ts` | Drag and drop by selector or coordinates |
-| `scroll.ts` | Scroll page (up/down/top/bottom/to element/by px) |
-| `fill.ts` | Click + fill input field |
-| `type.ts` | Type on keyboard with optional delay |
-| `select.ts` | Select dropdown option (by value/label/index) |
-| `upload.ts` | Upload file(s) to input |
-| `submit.ts` | Submit form (Enter, selector, or direct HTTP POST) |
+| `pw click <selector\|text\|x,y>` | Click element |
+| `pw dblclick <selector\|text\|x,y>` | Double-click element |
+| `pw hover <selector\|text>` | Hover (tooltips, menus) |
+| `pw drag <source> <target>` | Drag and drop (selector or coordinates) |
+| `pw scroll <up\|down\|top\|bottom\|selector\|px>` | Scroll page |
+| `pw fill <selector> <text>` | Click + fill input |
+| `pw type <text> [--delay=ms]` | Type on keyboard |
+| `pw select <selector> [--value\|--label\|--index]` | Select dropdown option |
+| `pw upload <selector> <file...>` | Upload file(s) |
+| `pw submit [selector] [--wait=/url]` | Submit form (Enter or selector) |
+| `pw submit --url=/api/x --method=POST --body='{}'` | Direct HTTP form submission |
 
 ### Observation
-| Script | Description |
+
+| Command | Description |
 |---|---|
-| `screenshot.ts` | Capture full page or element |
-| `copy.ts` | Copy text/HTML/outerHTML from element |
-| `find.ts` | Query DOM elements (tag/class/full detail, children, attr filter) |
-| `attr.ts` | Read/write DOM attribute (textContent, value, data-*, ...) |
-| `evaluate.ts` | Execute JavaScript in page |
-| `wait.ts` | Wait for ms, clock time (HH:MM), URL pattern, selector, or attribute value |
+| `pw screenshot` | Capture viewport |
+| `pw screenshot --full` | Capture full page |
+| `pw screenshot <selector>` | Capture element |
+| `pw screenshot <x,y,w,h>` | Capture coordinate region |
+| `pw screenshot --name=login` | Custom screenshot filename |
+| `pw copy <selector> [--format=text\|html\|outer]` | Copy text/HTML from element |
+| `pw find <selector> [--detail=tag\|class\|full]` | Query DOM elements |
+| `pw attr <selector> <name> [--set=value]` | Read/write DOM attribute |
+| `pw evaluate <js-expression>` | Execute JavaScript in page |
+| `pw wait <ms\|HH:MM\|/url\|selector>` | Wait for condition |
+| `pw wait <selector> --attr=textContent --value=Done` | Wait for attribute value |
 
 ### HTTP
-| Script | Description |
-|---|---|
-| `fetch.ts` | HTTP request with browser cookies/auth (GET/POST/PUT/DELETE/PATCH) |
 
-### Debug
-| Script | Description |
+| Command | Description |
 |---|---|
-| `console.ts` | Console log capture via browser inject (inject/dump/clear/tail) |
-| `network.ts` | Network request capture via fetch/XHR inject (inject/dump/clear/tail/find) |
+| `pw fetch GET /api/projects` | HTTP GET with browser auth |
+| `pw fetch POST /api/projects '{"name":"test"}'` | HTTP POST with browser auth |
+| `pw fetch PUT\|DELETE\|PATCH ...` | All standard methods supported |
 
 ### Automation
-| Script | Description |
+
+| Command | Description |
 |---|---|
-| `sequence.ts` | Run action sequence from JSON file or string (supports all commands) |
+| `pw sequence <json-string\|file>` | Run action sequence (see Flow Engine below) |
 
-### Session
-| Script | Description |
+### Session & Tabs
+
+| Command | Description |
 |---|---|
-| `tab.ts` | Tab management (new/list/close) |
-| `status.ts` | Session status (current/pages/all) |
+| `pw launch [url] [--name=N] [--resume=N]` | Launch browser session |
+| `pw use <name>` | Bind session to project |
+| `pw sessions` | List all sessions |
+| `pw close [--session=N] [--all]` | Close session(s) |
+| `pw tab new [url]` | Open new tab |
+| `pw tab list` | List open tabs |
+| `pw tab close <index>` | Close tab |
+| `pw status` | Session status (pages, URL, title) |
 
-### Global flags
+### Debugging
 
-All scripts support these flags:
+| Command | Description |
+|---|---|
+| `pw console inject` | Inject console capture |
+| `pw console dump [+include] [-exclude] [/regex/]` | Dump console logs |
+| `pw console tail [+include] [-exclude]` | Show last 20 log lines |
+| `pw console clear` | Clear captured logs |
+| `pw network inject` | Inject network capture |
+| `pw network dump [+include] [-exclude] [/regex/]` | Dump network logs |
+| `pw network tail` | Show last 20 network entries |
+| `pw network find /api` | Search network logs |
+| `pw network clear` | Clear captured logs |
+| `pw trace start [--screenshots] [--snapshots]` | Start trace recording |
+| `pw trace stop [--name=flow-name]` | Stop and save trace |
+| `pw trace view [name]` | Open trace viewer |
+| `pw trace status` | Check recording status |
+| `pw video list` | List recorded videos |
+| `pw video path` | Current recording path |
+| `pw video rename latest <name>` | Rename a video |
+| `pw video clear` | Delete all videos |
+
+### Global Flags
+
+All commands support these flags:
+
+```
+--session=N    Target specific session
+--tab=N        Target specific tab (default: 0)
+--headed       Show browser window
+--viewport=WxH Viewport size (default: 1920x1080)
+--video[=name] Enable video recording
+--raw          Bypass truncation/masking in console/network dump
+```
+
+## Sequence Flow Engine
+
+Sequence is a full flow engine that runs JSON action lists with variables, branching, loops, and functions.
 
 ```bash
---tab=N          Target specific tab (default: 0)
---headed         Show browser window
---viewport=WxH   Viewport size (default: 1920x1080)
+pw sequence ./login-flow.json
+pw sequence '[{"action":"navigate","args":["http://localhost:3000"]}]'
 ```
+
+### Variables
+
+Store action results and interpolate them in later steps:
+
+```json
+[
+  {"action": "fetch", "args": ["GET", "/api/user"], "out": "user"},
+  {"action": "log", "text": "User: {{user.name}}"},
+  {"action": "fill", "args": ["#name", "{{user.name}}"]}
+]
+```
+
+### Args Format
+
+Args accept both array and object format:
+
+```json
+{"action": "fill", "args": ["#email", "admin@test.com"]}
+{"action": "fill", "args": {"selector": "#email", "value": "admin@test.com"}}
+```
+
+### Condition
+
+Branch based on variable values. Supports `eq`, `neq`, `gt`, `lt`, `contains`, `exists`:
+
+```json
+{
+  "action": "condition",
+  "ref": "user.role",
+  "eq": "admin",
+  "then": [{"action": "navigate", "args": ["/admin"]}],
+  "else": [{"action": "navigate", "args": ["/dashboard"]}]
+}
+```
+
+### Each
+
+Iterate over arrays or objects. Supports `{k,v}` destructuring for objects:
+
+```json
+{"action": "fetch", "args": ["GET", "/api/items"], "out": "items"},
+{
+  "action": "each",
+  "ref": "items",
+  "as": "item",
+  "do": [{"action": "log", "text": "{{item.name}}"}]
+}
+```
+
+Object iteration with destructure:
+
+```json
+{
+  "action": "each",
+  "ref": "config",
+  "as": "{k, v}",
+  "do": [{"action": "log", "text": "{{k}} = {{v}}"}]
+}
+```
+
+### Loop
+
+Repeat N times. `{{$index}}` available in body:
+
+```json
+{"action": "loop", "count": 3, "do": [
+  {"action": "click", "args": [".next-page"]}
+]}
+```
+
+### Label / Goto
+
+Jump to labeled steps (max 100 jumps to prevent infinite loops):
+
+```json
+[
+  {"label": "start"},
+  {"action": "click", "args": [".retry"]},
+  {"action": "wait", "args": ["1000"]},
+  {"action": "goto", "label": "start"}
+]
+```
+
+### Def / Call
+
+Define reusable functions with parameters:
+
+```json
+[
+  {"action": "def", "name": "login", "params": ["email", "pass"], "do": [
+    {"action": "fill", "args": ["#email", "{{email}}"]},
+    {"action": "fill", "args": ["#password", "{{pass}}"]},
+    {"action": "click", "args": ["Sign in"]}
+  ]},
+  {"action": "call", "name": "login", "args": ["admin@test.com", "secret"]},
+  {"action": "call", "name": "login", "args": {"email": "user@test.com", "pass": "pw123"}}
+]
+```
+
+### Log
+
+Print variable values for debugging:
+
+```json
+{"action": "log", "ref": "user"},
+{"action": "log", "text": "Count: {{items.length}}"},
+{"action": "log"}
+```
+
+## Debugging
+
+### Trace Recording
+
+Record Playwright traces for step-by-step debugging with screenshots, DOM snapshots, and network:
+
+```bash
+pw trace start --screenshots --snapshots
+# ... perform actions ...
+pw trace stop --name=login-flow
+pw trace view login-flow
+```
+
+### Video Recording
+
+Record browser sessions as video. Enable via the `--video` flag on any command:
+
+```bash
+pw navigate http://localhost:3000 --video=signup-flow
+# ... perform actions ...
+pw close  # video auto-saved and renamed
+pw video list
+```
+
+### Console Capture
+
+Patches `console.*` in the browser to capture logs across CDP disconnects:
+
+```bash
+pw console inject
+pw console dump                    # all logs
+pw console dump +error             # only lines containing "error"
+pw console dump -verbose           # exclude "verbose"
+pw console dump +/api/ -/health/   # regex include/exclude
+pw console dump --raw              # no truncation
+pw console tail +error             # last 20 matching lines
+```
+
+### Network Capture
+
+Patches `fetch` and `XMLHttpRequest` to capture all network traffic:
+
+```bash
+pw network inject
+pw network dump                    # all requests
+pw network dump --raw              # no truncation or masking
+pw network find /api/users         # search by URL pattern
+```
+
+### Sensitive Data Masking
+
+Network and console dumps automatically mask sensitive data:
+- **Headers**: `authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token`
+- **JSON fields**: `password`, `token`, `secret`, `api_key`, `access_token`, `refresh_token`
+
+Use `--raw` to bypass masking when you need full output.
+
+### Error Context
+
+When a command fails, pw-skill automatically captures:
+- Current URL and page title
+- Active tab index and session name
+- Error screenshot saved to `.playwright-state/screenshots/`
 
 ## Custom Scripts
 
@@ -203,43 +400,96 @@ run(async ({ page }) => {
 pw login  # auto-discovers scripts/playwright/login.ts
 ```
 
+Local scripts in `scripts/playwright/` override global scripts with the same name.
+
 ## Architecture
 
 ```
+~/.playwright-state/              # Global state
+  sessions/
+    dev/
+      session.json                # {id, name, port, pid, startedAt, video}
+      user-data/                  # Isolated Chromium profile
+    staging/
+      session.json
+      user-data/
+
+<project>/.playwright-state/      # Local state (per project)
+  current-session.txt             # Bound session name (pw use)
+  state.json                      # storageState
+  screenshots/
+  videos/
+  traces/
+  console.log
+  network.log
+
 pw-skill/
-├── .claude-plugin/          # Claude Code plugin metadata
-├── skills/
-│   ├── pw-launch/SKILL.md   # Browser launch skill
-│   ├── pw-browse/           # Browser interaction skill
-│   │   ├── SKILL.md
-│   │   └── scripts/         # 24 utility scripts + common.ts + pw.ts
-│   ├── pw-test/SKILL.md     # E2E test skill
-│   └── pw-close/SKILL.md    # Browser close skill
-└── package.json             # npm package with `pw` CLI
+  .claude-plugin/                 # Claude Code plugin metadata
+  skills/
+    pw-launch/SKILL.md
+    pw-browse/
+      SKILL.md
+      scripts/                    # 31 files
+        pw.ts                     # CLI entry point
+        common.ts                 # Shared: connect, run wrapper, flags, screenshotPath
+        session.ts                # Global session store (DI-based)
+        session-commands.ts       # launch/use/sessions/close implementations
+        actions.ts                # Shared action module (CLI + sequence)
+        sequence.ts               # Flow engine
+        trace.ts                  # Trace recording
+        video.ts                  # Video management
+        video-utils.ts            # Video rename helpers
+        navigate.ts, click.ts, dblclick.ts, hover.ts, drag.ts,
+        scroll.ts, fill.ts, type.ts, select.ts, upload.ts,
+        submit.ts, screenshot.ts, copy.ts, find.ts, attr.ts,
+        evaluate.ts, wait.ts, fetch.ts, console.ts, network.ts,
+        tab.ts, status.ts
+    pw-test/SKILL.md
+    pw-close/SKILL.md
+  tests/                          # 89 tests (vitest)
+  package.json
 ```
 
-### Key design decisions
+### Key Design Decisions
 
-- **CDP persistent browser**: Chromium stays alive across script invocations. DOM, JS state, scroll position, form data — all preserved.
+- **CDP persistent browser**: Chromium stays alive across script invocations. DOM, JS state, scroll position, form data -- all preserved.
+- **Global sessions, local state**: Session processes and profiles live in `~/.playwright-state/` (shared across projects). Screenshots, logs, and bindings are per-project.
+- **Shared action module**: `actions.ts` provides one implementation used by both CLI scripts and the sequence engine. No duplication.
+- **Safe arg passing**: CLI uses `spawnSync` with argument arrays, never shell string concatenation.
 - **4 modular skills**: Only the relevant skill loads into Claude's context. Zero tokens when idle.
-- **Local-first fallback**: Project scripts in `scripts/playwright/` override global scripts.
 - **Console/Network inject**: Patches browser globals to capture logs even between CDP disconnects.
 - **Browser auth in HTTP**: `fetch` and `submit` use browser cookies, so API calls are authenticated automatically.
+- **Windows compatible**: Uses `taskkill` for session close on Windows.
+- **Sensitive data masking**: Network and console dumps mask auth headers and credential fields by default.
+- **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
+
+## Tests
+
+89 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, and action dispatch.
+
+```bash
+npm test           # run all tests
+npm run test:watch # watch mode
+```
 
 ## Comparison
 
 | Feature | pw-skill | lackeyjb | willmarple |
 |---|---|---|---|
 | Token efficiency | 4 skills, load on demand | 1 skill, always loaded (14KB) | 1 skill, always loaded (10KB) |
-| Browser persistence | CDP, full state preserved | None, new browser each time | Playwright CLI sessions |
-| Scripts | 24 (full browser + HTTP + debug + automation) | 2 (run.js, helpers.js) | 11 bin scripts |
-| Console capture | inject + file log | None | Via playwright-cli |
-| Network capture | inject + file log | None | Via playwright-cli |
+| Browser persistence | CDP, named sessions with profiles | None, new browser each time | Playwright CLI sessions |
+| Session management | Named sessions, resume, multi-session | None | None |
+| Scripts | 27+ (browser, HTTP, debug, trace, video, flow) | 2 (run.js, helpers.js) | 11 bin scripts |
+| Flow engine | Variables, conditions, each, loop, def/call, goto | None | None |
+| Console capture | Inject + file log + filters + regex | None | Via playwright-cli |
+| Network capture | Inject + file log + masking + filters | None | Via playwright-cli |
+| Trace recording | start/stop/view/status | None | None |
+| Video recording | --video flag, auto-rename, list/rename/clear | None | None |
 | HTTP requests | `fetch` + `submit` with browser auth | None | None |
 | Tab management | Full (new/list/close/--tab=N) | None | None |
-| Action sequence | JSON-based, all 24 commands, clock time wait | None | None |
 | DOM query | `find` + `attr` + `copy` | None | Via snapshot |
-| CLI | `pw` command (24 subcommands) | None | bin/ scripts |
+| CLI | `pw` command (27+ subcommands) | None | bin/ scripts |
+| Platform | Windows + Linux + macOS | Linux/macOS | Linux/macOS |
 
 ## License
 

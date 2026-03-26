@@ -5,14 +5,61 @@ description: Launch Playwright browser. Triggered by "open browser", "launch pag
 
 # Playwright Browser Launch
 
-Launch the browser and initialize the `.playwright-state/` state directory.
+Launch the browser and initialize a named session.
 
 ## Triggers
 
 - When the user requests to launch a browser
 - When `pw-browse` or `pw-test` detects the browser is not running (auto-chaining)
 
-## Steps
+## Primary Command
+
+```bash
+npx tsx ~/.claude/skills/pw-browse/scripts/pw.ts launch [url] [flags]
+```
+
+This is the standard way to start a browser session. The `pw launch` command handles installation checks, session creation, and optional navigation in one step.
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--name=N` | Name the session (default: auto-generated `s-<id>`) |
+| `--resume=N` | Resume a previous session by name (reuses user-data profile) |
+| `--headed` | Show the browser window (default: headless) |
+| `--video[=name]` | Enable video recording; optional name for auto-rename on close |
+| `--viewport=WxH` | Viewport size (default: `1920x1080`) |
+
+### Examples
+
+```bash
+# Launch headless, auto-named
+pw launch http://localhost:3000
+
+# Named session, headed, with video
+pw launch http://localhost:3000 --name=dev --headed --video=login-flow
+
+# Resume a previous session (reuses cookies/profile)
+pw launch --resume=dev
+```
+
+## Session Management
+
+Sessions are stored globally at `~/.playwright-state/sessions/{name}/`. Each session has:
+- `session.json` — PID, port, metadata
+- `user-data/` — Chromium profile (persists across resume)
+
+After launch, the session is automatically bound to the current project via `pw use`. This means all subsequent `pw` commands in the project target this session without needing `--session`.
+
+### Bind a session manually
+
+```bash
+pw use <name>          # Bind session to current project
+pw use                 # Show current binding
+pw sessions            # List all sessions
+```
+
+## Steps (when not using `pw launch`)
 
 ### 1. Check playwright installation
 
@@ -53,18 +100,6 @@ mkdir -p .playwright-state/screenshots
 ### 4. Add to .gitignore
 
 If `.playwright-state/` is not in `.gitignore`, add it.
-
-### 5. Verify launch
-
-Navigate to the target URL using the navigate script to confirm:
-
-```bash
-npx tsx ~/.claude/skills/pw-browse/scripts/navigate.ts <URL> --screenshot
-```
-
-Script lookup order:
-1. `{project}/scripts/playwright/navigate.ts` (local)
-2. `~/.claude/skills/pw-browse/scripts/navigate.ts` (global)
 
 ### Defaults
 

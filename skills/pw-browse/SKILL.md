@@ -33,7 +33,19 @@ npx tsx scripts/playwright/{name}.ts [args...]
 npx tsx ~/.claude/skills/pw-browse/scripts/{name}.ts [args...]
 ```
 
-## General-purpose Script Reference
+## Global Flags
+
+All scripts support the following flags:
+
+| Flag | Description |
+|------|-------------|
+| `--session=N` | Target a specific named session (default: auto-resolved via `pw use` binding or single active session) |
+| `--tab=N` | Target a specific tab (default: 0) |
+| `--headed` | Show browser window |
+| `--viewport=WxH` | Viewport size (default: 1920x1080) |
+| `--video[=name]` | Enable video recording |
+
+## General-purpose Script Reference (25 scripts)
 
 ### navigate.ts — Navigate to URL
 ```bash
@@ -102,6 +114,16 @@ npx tsx {script_path}/upload.ts <selector> <file-path>
 - `selector`: File input element selector
 - `file-path`: Absolute or relative path to the file to upload
 
+### submit.ts — Form submission (UI or direct HTTP)
+```bash
+npx tsx {script_path}/submit.ts [form-selector] [--wait=/url]
+npx tsx {script_path}/submit.ts --url=/api/data --method=POST --body='{"key":"val"}' [--wait=/redirect]
+```
+- No args: Press Enter
+- `selector`: Submit a specific form element
+- `--url` + `--method` + `--body`: Direct HTTP submit from browser context (with cookies/auth)
+- `--wait`: Wait for navigation after submit
+
 ### copy.ts — Copy text to clipboard
 ```bash
 npx tsx {script_path}/copy.ts <selector|text>
@@ -135,6 +157,18 @@ npx tsx {script_path}/wait.ts <ms|selector> [--attr=name --value=expected] [--ti
 - Selector: Wait until visible
 - `--attr` + `--value`: Wait until the selector's attribute reaches a specific value
   - e.g., `wait.ts "#status" --attr=textContent --value=Done`
+
+### fetch.ts — HTTP request with browser auth
+```bash
+npx tsx {script_path}/fetch.ts <METHOD> <url> [body-json]
+```
+- Executes HTTP requests from the browser context (inherits cookies/session)
+- Methods: GET, POST, PUT, DELETE, PATCH
+
+### evaluate.ts — Execute JavaScript
+```bash
+npx tsx {script_path}/evaluate.ts <js-expression>
+```
 
 ### sequence.ts — Flow engine with variables, conditions, loops, and functions
 ```bash
@@ -277,14 +311,11 @@ Operators: `eq`, `neq`, `gt`, `lt`, `contains`, `exists`
 - Supports `out` to capture the last step's result
 - Definitions are shared globally — usable inside condition, each, loop, or other calls
 
-### evaluate.ts — Execute JavaScript
-```bash
-npx tsx {script_path}/evaluate.ts <js-expression>
-```
+## Debugging Tools
 
 ### console.ts — Collect console logs
 ```bash
-npx tsx {script_path}/console.ts [inject|dump|clear|tail]
+npx tsx {script_path}/console.ts [inject|dump|clear|tail] [filters...] [--raw]
 ```
 - `inject`: Inject console patching into the browser (once; auto-injected on dump)
 - `dump`: Append collected logs to `.playwright-state/console.log` and clear browser logs
@@ -292,9 +323,18 @@ npx tsx {script_path}/console.ts [inject|dump|clear|tail]
 - `tail`: Return the last 20 lines from the file
 - Captures: console.log/warn/error/info/debug + page errors + unhandled rejections
 
+**Filters** (apply to `dump` and `tail`):
+- `+keyword`: Include only lines containing keyword
+- `-keyword`: Exclude lines containing keyword
+- `+/regex/`: Include only lines matching regex
+- `-/regex/`: Exclude lines matching regex
+- Multiple filters can be combined: `+error -verbose +/api\/.*/`
+
+**`--raw`**: Disable log entry truncation (default: entries are truncated at 2000 chars)
+
 ### network.ts — Collect network requests
 ```bash
-npx tsx {script_path}/network.ts [inject|dump|clear|tail|find <pattern>]
+npx tsx {script_path}/network.ts [inject|dump|clear|tail|find <pattern>] [--raw]
 ```
 - `inject`: Inject fetch/XHR patching (auto-injected on dump)
 - `dump`: Append collected requests to `.playwright-state/network.log`
@@ -302,6 +342,36 @@ npx tsx {script_path}/network.ts [inject|dump|clear|tail|find <pattern>]
 - `tail`: Return the last 20 entries
 - `find <pattern>`: Filter by URL pattern (e.g., `find /api/projects`)
 - Captures: method, url, status, request body, response body
+
+**Sensitive data masking** (default on, disabled by `--raw`):
+- Headers: `authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token` → `[MASKED]`
+- Body fields: `password`, `token`, `secret`, `api_key`, `apiKey`, `access_token`, `refresh_token` → `[MASKED]`
+- Request/response bodies are truncated at 5000 chars
+
+**`--raw`**: Disable masking and truncation. Warning: sensitive data will be written to disk.
+
+### trace.ts — Record and view traces
+```bash
+npx tsx {script_path}/trace.ts [start|stop|view|status]
+```
+- `start`: Start recording a trace
+  - `--screenshots`: Include screenshots per action
+  - `--snapshots`: Include DOM snapshots per action
+- `stop`: Stop recording and save to `.playwright-state/traces/`
+  - `--name=trace-name`: Custom trace filename (default: `trace-<timestamp>`)
+- `view [name]`: Open the trace viewer (latest trace, or specific name)
+- `status`: Check if recording is active + list saved traces
+
+### video.ts — Manage recorded videos
+```bash
+npx tsx {script_path}/video.ts [list|path|rename|clear]
+```
+- `list`: List saved videos with sizes and timestamps
+- `path`: Get the current recording file path (if active)
+- `rename <latest|filename> <new-name>`: Rename a video file
+- `clear`: Delete all saved videos
+
+Videos are recorded when using `--video[=name]` flag on launch or any script. Videos are saved in `.playwright-state/videos/`. When a session name is provided via `--video=name`, the video is auto-renamed on `pw close`.
 
 ### status.ts — Query session state
 ```bash
@@ -318,13 +388,6 @@ npx tsx {script_path}/tab.ts [new [url] | list | close <index>]
 - `new [url]`: Open a new tab, returns index
 - `list`: List open tabs (index, title, url)
 - `close <index>`: Close a tab
-
-### All scripts support `--tab=N`
-```bash
-npx tsx {script_path}/click.ts "#btn" --tab=1
-npx tsx {script_path}/screenshot.ts --full --tab=2
-```
-Target a specific tab. Defaults to the first tab (0) if omitted.
 
 ## Return Format
 

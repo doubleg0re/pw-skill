@@ -12,33 +12,42 @@ Terminate the browser process and clean up temporary files.
 - When the user requests to close the browser
 - Auto-called after `pw-test` completes
 
+## Primary Command
+
+```bash
+npx tsx ~/.claude/skills/pw-browse/scripts/pw.ts close [flags]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--session=N` | Close a specific named session |
+| `--all` | Close all active sessions |
+
+If no flag is provided, closes the bound session (via `pw use`) or the only active session.
+
 ## Steps
 
-### 1. Terminate browser process
+### 1. Terminate browser process (PID-based)
 
-Read the port from `.playwright-state/cdp-port.txt` and kill only the process using that port:
+The `pw close` command reads `session.json` from `~/.playwright-state/sessions/{name}/` and kills the browser by PID. This works cross-platform (macOS, Linux, Windows).
 
-**macOS / Linux:**
-```bash
-CDP_PORT=$(cat .playwright-state/cdp-port.txt 2>/dev/null)
-if [ -n "$CDP_PORT" ]; then
-  lsof -ti :$CDP_PORT | xargs kill 2>/dev/null || true
-fi
-rm -f .playwright-state/cdp-port.txt
-```
+- Sends `SIGTERM` first, waits 500ms
+- Falls back to `SIGKILL` on Unix if the process survives
+- Reports actionable error if the process refuses to terminate
 
-**Windows:**
-```bash
-CDP_PORT=$(cat .playwright-state/cdp-port.txt 2>/dev/null)
-if [ -n "$CDP_PORT" ]; then
-  cmd.exe /c "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :$CDP_PORT') do taskkill /PID %a /F 2>nul"
-fi
-rm -f .playwright-state/cdp-port.txt
-```
+### 2. Auto-rename video on close
 
-> Note: `pw close` command handles platform detection automatically.
+If `--video=name` was used during launch, the recorded `.webm` file is automatically renamed from the Playwright-generated UUID to the specified name before session cleanup.
 
-### 2. Preserve storageState
+### 3. Clean up session metadata
+
+- `session.json` is removed from `~/.playwright-state/sessions/{name}/`
+- `user-data/` profile directory is preserved (allows `pw launch --resume=N`)
+- Project binding (`current-session.txt`) is cleared if this was the bound session
+
+### 4. Preserve storageState
 
 `.playwright-state/state.json` is kept (can be reused in the next session).
 If the user explicitly requests deletion:
@@ -47,10 +56,18 @@ If the user explicitly requests deletion:
 rm -rf .playwright-state/
 ```
 
-### 3. Clean up temporary scripts
+### 5. Clean up temporary scripts
 
 Clean up temporary scripts in the `scripts/playwright/` directory (those not explicitly created by the user).
 Confirm with the user before cleaning up.
+
+## Examples
+
+```bash
+pw close                   # Close bound/only session
+pw close --session=dev     # Close specific session
+pw close --all             # Close all sessions
+```
 
 ## Chaining
 
