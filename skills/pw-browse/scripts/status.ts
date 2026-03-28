@@ -30,15 +30,25 @@ async function main() {
   switch (command) {
     case 'current': {
       const stateDir = resolve(process.cwd(), '.playwright-state');
-      const portFile = join(stateDir, 'cdp-port.txt');
-      if (!existsSync(portFile)) {
-        console.log(JSON.stringify({ success: true, data: { status: 'no browser', project: basename(process.cwd()) } }));
+      const sessionFile = join(stateDir, 'current-session.txt');
+      let sessionName = 'default';
+      if (existsSync(sessionFile)) {
+        sessionName = readFileSync(sessionFile, 'utf-8').trim();
+      }
+
+      const globalStateDir = join(homedir(), '.playwright-state', 'sessions');
+      const sessionJsonFile = join(globalStateDir, sessionName, 'session.json');
+      
+      if (!existsSync(sessionJsonFile)) {
+        console.log(JSON.stringify({ success: true, data: { status: 'no browser', project: basename(process.cwd()), session: sessionName } }));
         return;
       }
-      const port = parseInt(readFileSync(portFile, 'utf-8').trim());
+      
+      const sessionData = JSON.parse(readFileSync(sessionJsonFile, 'utf-8'));
+      const port = sessionData.port;
       const info = await isPortAlive(port);
       if (!info) {
-        console.log(JSON.stringify({ success: true, data: { status: 'dead', port, project: basename(process.cwd()) } }));
+        console.log(JSON.stringify({ success: true, data: { status: 'dead', port, session: sessionName } }));
         return;
       }
       const pages = await getPages(port);
@@ -49,6 +59,7 @@ async function main() {
         success: true,
         data: {
           status: 'alive',
+          session: sessionName,
           port,
           project: basename(process.cwd()),
           browser: info.Browser,
