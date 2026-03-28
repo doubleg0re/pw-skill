@@ -12,7 +12,7 @@ Playwright CLI Skill for Claude Code. Persistent browser sessions, modular skill
 | Debug tools | None | Console, network, trace, video |
 | Tab management | None | Full tab control |
 | Flow engine | None | Sequence with variables, conditions, loops |
-| CLI access | No | `pw` command (27+ subcommands) |
+| CLI access | No | `pw` command (35+ subcommands) |
 
 ## Install
 
@@ -115,6 +115,12 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | `pw upload <selector> <file...>` | Upload file(s) |
 | `pw submit [selector] [--wait=/url]` | Submit form (Enter or selector) |
 | `pw submit --url=/api/x --method=POST --body='{}'` | Direct HTTP form submission |
+| `pw download <target> [--async] [--dir=path]` | Download file (sync or async) |
+| `pw download status` | Check pending downloads |
+| `pw download list` | List downloaded files |
+| `pw paste` | Paste (Ctrl+V at current focus) |
+| `pw paste [selector] --text="hello"` | Set clipboard and paste text |
+| `pw paste [selector] --image=./photo.png` | Paste image |
 
 ### Observation
 
@@ -125,7 +131,7 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | `pw screenshot <selector>` | Capture element |
 | `pw screenshot <x,y,w,h>` | Capture coordinate region |
 | `pw screenshot --name=login` | Custom screenshot filename |
-| `pw copy <selector> [--format=text\|html\|outer]` | Copy text/HTML from element |
+| `pw copy <selector> [--format=text\|html\|outer\|image]` | Copy text/HTML/image from element. `--format=image` copies element to clipboard as PNG + saves file. `--save-only` to skip clipboard. |
 | `pw find <selector> [--detail=tag\|class\|full]` | Query DOM elements |
 | `pw attr <selector> <name> [--set=value]` | Read/write DOM attribute |
 | `pw evaluate <js-expression>` | Execute JavaScript in page |
@@ -376,6 +382,35 @@ When a command fails, pw-skill automatically captures:
 - Active tab index and session name
 - Error screenshot saved to `.playwright-state/screenshots/`
 
+## Package Management (rary)
+
+Larry the Cat's package and extension ecosystem. Install, inspect, activate, and manage browser add-ons.
+
+```bash
+# Install a package
+pw rary get doubleg0re/pw-persistws
+pw rary get ./local-package
+
+# Inspect
+pw rary toybox            # List installed packages
+pw rary peek <package>    # Show package details
+
+# Activate/deactivate extensions
+pw rary put <package>     # Activate extension (runs hooks on launch/close)
+pw rary yoink <package>   # Deactivate without removing
+
+# Setup and maintenance
+pw rary rolling <package> # Run first-time setup
+pw rary need-repair       # Check for broken packages
+pw rary destroy <package> # Remove package (alias: kick)
+```
+
+Packages live in `~/.playwright-state/toybox/`. Each package has a `larry.json` manifest defining commands, hooks (launch/load/close), and setup entries.
+
+Extension hooks integrate with session lifecycle:
+- `launch` hooks run after `pw launch`
+- `close` hooks run before `pw close`
+
 ## Custom Scripts
 
 Write project-specific scripts using `import { run } from 'pw-skill'`:
@@ -413,6 +448,10 @@ Local scripts in `scripts/playwright/` override global scripts with the same nam
     staging/
       session.json
       user-data/
+  toybox/                         # Installed packages (rary)
+    package-name/
+      larry.json                  # Package manifest
+  extensions.json                 # Active extension registry
 
 <project>/.playwright-state/      # Local state (per project)
   current-session.txt             # Bound session name (pw use)
@@ -429,7 +468,7 @@ pw-skill/
     pw-launch/SKILL.md
     pw-browse/
       SKILL.md
-      scripts/                    # 31 files
+      scripts/                    # 35+ files
         pw.ts                     # CLI entry point
         common.ts                 # Shared: connect, run wrapper, flags, screenshotPath
         session.ts                # Global session store (DI-based)
@@ -446,7 +485,7 @@ pw-skill/
         tab.ts, status.ts
     pw-test/SKILL.md
     pw-close/SKILL.md
-  tests/                          # 89 tests (vitest)
+  tests/                          # 124 tests (vitest)
   package.json
 ```
 
@@ -462,10 +501,12 @@ pw-skill/
 - **Windows compatible**: Uses `taskkill` for session close on Windows.
 - **Sensitive data masking**: Network and console dumps mask auth headers and credential fields by default.
 - **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
+- **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.
+- **Standardized result schema**: All environment-dependent operations report `warnings: string[]` array and consistent status fields.
 
 ## Tests
 
-89 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, and action dispatch.
+124 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, and rary store operations.
 
 ```bash
 npm test           # run all tests
