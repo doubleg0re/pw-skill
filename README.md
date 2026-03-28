@@ -491,7 +491,7 @@ pw-skill/
 
 ### Key Design Decisions
 
-- **Persistent browser process**: Chromium stays alive across script invocations via `launchServer`. Cookies and localStorage are preserved via `storageState`. The last URL is restored on reconnect. Note: DOM state, scroll position, and in-progress form data are **not** preserved between commands (each command creates a fresh context).
+- **Persistent browser with DOM state**: Chromium stays alive via `launchServer` + CDP. On reconnect, the existing context and page are reused — DOM state, scroll position, JS variables, and in-progress form data are all preserved. Cookies and localStorage persist via `storageState`.
 - **Global sessions, local state**: Session processes and profiles live in `~/.playwright-state/` (shared across projects). Screenshots, logs, and bindings are per-project.
 - **Shared action module**: `actions.ts` provides one implementation used by both CLI scripts and the sequence engine. No duplication.
 - **Safe arg passing**: CLI uses `spawnSync` with argument arrays, never shell string concatenation.
