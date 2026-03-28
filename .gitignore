@@ -2,5 +2,6 @@ node_modules/
 .playwright-state/
 package-lock.json
 *.png
+!larry.png
 *.jpg
 .DS_Store

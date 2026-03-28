@@ -443,6 +443,10 @@ When a command fails, pw-skill automatically captures:
 
 ## Package Management (rary)
 
+<p align="center">
+  <img src="larry.png" alt="Larry the Cat — Larry's Live-rary" width="280" />
+</p>
+
 Larry the Cat's package and extension ecosystem. Install, inspect, activate, and manage browser add-ons.
 
 ```bash
