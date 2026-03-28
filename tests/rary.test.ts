@@ -7,6 +7,9 @@ import {
   type RaryStore,
   type LarryManifest,
 } from '../skills/pw-browse/scripts/rary.js';
+import {
+  createRaryCommands,
+} from '../skills/pw-browse/scripts/rary-commands.js';
 
 const TEST_DIR = join(tmpdir(), `pw-rary-test-${Date.now()}`);
 const TOYBOX_DIR = join(TEST_DIR, 'toybox');
@@ -212,40 +215,132 @@ describe('RaryStore — checkRepair', () => {
   });
 });
 
-// --- Command router ---
+// --- Command router (injected store — no global filesystem side effects) ---
 
-describe('rary command router', () => {
+describe('rary commands (injected store)', () => {
+  beforeEach(setup);
+  afterEach(cleanup);
+
+  function cmds() {
+    return createRaryCommands(store);
+  }
+
   it('help returns Larry banner', async () => {
-    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
-    const result = await raryRouter(['help']);
+    const result = await cmds().router(['help']);
     expect(result.success).toBe(true);
     expect(result.data.message).toContain('Larry the Cat');
   });
 
   it('unknown command returns error', async () => {
-    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
-    const result = await raryRouter(['nonexistent']);
+    const result = await cmds().router(['nonexistent']);
     expect(result.success).toBe(false);
   });
 
-  it('get/peek/destroy require arguments', async () => {
-    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
+  it('all commands require arguments', async () => {
+    const c = cmds();
     for (const cmd of ['get', 'peek', 'destroy', 'rolling', 'put', 'yoink']) {
-      const result = await raryRouter([cmd]);
+      const result = await c.router([cmd]);
       expect(result.success).toBe(false);
       expect(result.error).toContain('Usage');
     }
   });
 
-  it('toybox works with empty toybox', async () => {
-    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
-    const result = await raryRouter(['toybox']);
+  it('toybox lists seeded packages', async () => {
+    seedPackage('hello', { name: 'hello', version: '1.0.0', description: 'hi' });
+    const result = cmds().toybox();
     expect(result.success).toBe(true);
+    expect(result.data.packages).toHaveLength(1);
+    expect(result.data.packages[0].name).toBe('hello');
   });
 
-  it('need-repair works', async () => {
-    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
-    const result = await raryRouter(['need-repair']);
+  it('toybox returns empty message for empty toybox', async () => {
+    const result = cmds().toybox();
+    expect(result.data.packages).toHaveLength(0);
+    expect(result.data.message).toContain('empty');
+  });
+
+  it('peek shows package details', async () => {
+    seedPackage('pkg', {
+      name: 'pkg', version: '2.0.0', type: 'extension', description: 'test ext',
+      commands: [{ name: 'do', entry: 'do.js' }],
+      hooks: { launch: { entry: 'hooks/launch.js' } },
+    });
+    const result = cmds().peek(['pkg']);
     expect(result.success).toBe(true);
+    expect(result.data.name).toBe('pkg');
+    expect(result.data.version).toBe('2.0.0');
+    expect(result.data.type).toBe('extension');
+    expect(result.data.commands).toHaveLength(1);
+    expect(result.data.hooks).toContain('launch');
+  });
+
+  it('peek fails for missing package', () => {
+    const result = cmds().peek(['ghost']);
+    expect(result.success).toBe(false);
+  });
+
+  it('put activates extension', () => {
+    seedPackage('ext', { name: 'ext', version: '1.0.0', type: 'extension' });
+    const c = cmds();
+    expect(store.isExtensionActive('ext')).toBe(false);
+    const result = c.put(['ext']);
+    expect(result.success).toBe(true);
+    expect(store.isExtensionActive('ext')).toBe(true);
+  });
+
+  it('put rejects non-extension packages', () => {
+    seedPackage('script', { name: 'script', version: '1.0.0', type: 'script' });
+    const result = cmds().put(['script']);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not an extension');
+  });
+
+  it('yoink deactivates extension', () => {
+    seedPackage('ext', { name: 'ext', version: '1.0.0', type: 'extension' });
+    store.activateExtension('ext');
+    const result = cmds().yoink(['ext']);
+    expect(result.success).toBe(true);
+    expect(store.isExtensionActive('ext')).toBe(false);
+  });
+
+  it('destroy removes package and deactivates', () => {
+    seedPackage('bye', { name: 'bye', version: '1.0.0', type: 'extension' });
+    store.activateExtension('bye');
+    const result = cmds().destroy(['bye']);
+    expect(result.success).toBe(true);
+    expect(result.data.wasActive).toBe(true);
+    expect(store.isInstalled('bye')).toBe(false);
+    expect(store.isExtensionActive('bye')).toBe(false);
+  });
+
+  it('kick is alias for destroy', async () => {
+    seedPackage('kicked', { name: 'kicked', version: '1.0.0' });
+    const result = await cmds().router(['kick', 'kicked']);
+    expect(result.success).toBe(true);
+    expect(store.isInstalled('kicked')).toBe(false);
+  });
+
+  it('need-repair detects ghost extension', () => {
+    store.activateExtension('ghost');
+    const result = cmds().needRepair();
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings!.some(w => w.includes('ghost'))).toBe(true);
+  });
+
+  it('need-repair passes for healthy toybox', () => {
+    seedPackage('good', { name: 'good', version: '1.0.0', entry: 'index.js' }, { 'index.js': 'export default {}' });
+    const result = cmds().needRepair();
+    expect(result.data.issues).toHaveLength(0);
+  });
+
+  it('get with local path installs package', async () => {
+    // Create a source package outside toybox
+    const sourceDir = join(TEST_DIR, 'source-pkg');
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, 'larry.json'), JSON.stringify({ name: 'source-pkg', version: '1.0.0' }));
+
+    const result = await cmds().get([sourceDir]);
+    expect(result.success).toBe(true);
+    expect(store.isInstalled('source-pkg')).toBe(true);
   });
 });
