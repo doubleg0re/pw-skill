@@ -62,6 +62,10 @@ Session management:
   sessions                                  List all sessions
   close [--session=N] [--all]               Close session(s)
 
+Diagnostics:
+  analyze                                   Diagnose sessions, bindings, artifacts
+  clean <dead|stale|orphans|broken|all>     Safe cleanup of dead/stale resources
+
 Package management (Larry's toybox):
   rary get <repo|path>                      Fetch a toy into the toybox
   rary toybox                               List installed packages
@@ -110,6 +114,35 @@ Global flags:
   --viewport=WxH Viewport size (default: 1920x1080)
   --video[=name] Enable video recording
 `.trim());
+  process.exit(0);
+}
+
+// --- analyze ---
+if (command === 'analyze') {
+  const { analyze } = await import('./analyze.js');
+  const result = analyze();
+  console.log(JSON.stringify({ success: true, data: result }));
+  process.exit(0);
+}
+
+// --- clean ---
+if (command === 'clean') {
+  const target = restArgs.filter(a => !a.startsWith('--'))[0];
+  const { cleanDead, cleanStale, cleanOrphans, cleanBroken, cleanAll } = await import('./clean.js');
+
+  let result;
+  switch (target) {
+    case 'dead':     result = { cleaned: { dead: cleanDead() } }; break;
+    case 'stale':    result = { cleaned: { stale: cleanStale() } }; break;
+    case 'orphans':  result = { cleaned: { orphaned: cleanOrphans() } }; break;
+    case 'broken':   result = { cleaned: { broken: cleanBroken() } }; break;
+    case 'all':      result = cleanAll(); break;
+    default:
+      console.log(JSON.stringify({ success: false, error: 'Usage: pw clean <dead|stale|orphans|broken|all>' }));
+      process.exit(1);
+  }
+
+  console.log(JSON.stringify({ success: true, data: result }));
   process.exit(0);
 }
 
