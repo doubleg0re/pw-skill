@@ -1,5 +1,5 @@
 // rary-commands.ts — CLI handlers for pw rary subcommands
-import { execSync, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 import {
@@ -54,12 +54,11 @@ export async function raryGet(args: string[]): Promise<Result> {
       return { success: false, error: `Copy appeared to succeed but target directory not found: ${targetDir}` };
     }
   } else {
-    // Git clone
-    try {
-      const gitUrl = repo.includes('://') ? repo : `https://github.com/${repo}.git`;
-      execSync(`git clone --depth 1 "${gitUrl}" "${targetDir}"`, { stdio: 'ignore' });
-    } catch (err) {
-      return { success: false, error: `Failed to clone "${repo}": ${err instanceof Error ? err.message : String(err)}` };
+    // Git clone (array args, no shell)
+    const gitUrl = repo.includes('://') ? repo : `https://github.com/${repo}.git`;
+    const cloneResult = spawnSync('git', ['clone', '--depth', '1', gitUrl, targetDir], { stdio: 'ignore' });
+    if (cloneResult.status !== 0) {
+      return { success: false, error: `Failed to clone "${repo}" (exit code ${cloneResult.status})` };
     }
   }
 
