@@ -81,9 +81,17 @@ export class VarStore {
     return current;
   }
 
-  /** Replace {{var.path}} templates with actual values */
-  interpolate(str: string): string {
-    return str.replace(/\{\{([^}]+)\}\}/g, (_, path) => {
+  /** Replace {{var.path}} templates with actual values. If the whole string is a template, returns original type. */
+  interpolate(val: any): any {
+    if (typeof val !== 'string') return val;
+    
+    // Check if the entire string is a single {{variable}}
+    const singleMatch = val.match(/^\{\{([^}]+)\}\}$/);
+    if (singleMatch) {
+      return this.get(singleMatch[1].trim());
+    }
+
+    return val.replace(/\{\{([^}]+)\}\}/g, (_, path) => {
       const value = this.get(path.trim());
       if (value === undefined || value === null) return '';
       if (typeof value === 'object') return JSON.stringify(value);
@@ -91,9 +99,16 @@ export class VarStore {
     });
   }
 
-  /** Interpolate the entire args array */
-  interpolateArgs(args: string[]): string[] {
-    return args.map(a => this.interpolate(a));
+  /** Interpolate the entire args array or object */
+  interpolateArgs(args: string[] | Record<string, any>): any {
+    if (Array.isArray(args)) {
+      return args.map(a => this.interpolate(a));
+    }
+    const result: Record<string, any> = {};
+    for (const [k, v] of Object.entries(args)) {
+      result[k] = this.interpolate(v);
+    }
+    return result;
   }
 
   snapshot(): Record<string, any> {
@@ -106,13 +121,21 @@ export class VarStore {
 export async function executeAction(
   page: Page,
   action: string,
-  rawArgs: string[],
+  rawArgs: string[] | Record<string, any>,
   vars: VarStore,
 ): Promise<{ result?: any }> {
   const a = vars.interpolateArgs(rawArgs);
   const fn = ACTION_MAP[action];
   if (!fn) throw new Error(`Unknown action: ${action}`);
-  return fn(page, a);
+
+  // ACTION_MAP functions expect an array of strings in most cases, 
+  // but some might support object args in the future. 
+  // For now, convert object args to the specific order defined in the action map if needed,
+  // or pass as is if the action supports it.
+  // Most actions in actions.ts expect (page, args: string[])
+  
+  const argsArray = Array.isArray(a) ? a : Object.values(a).map(String);
+  return fn(page, argsArray);
 }
 
 // --- Flow engine ---
@@ -334,9 +357,8 @@ export async function runSteps(
       }
 
       // --- General action ---
-      // args: use as-is if array, convert object values to array
-      const rawArgs = !step.args ? [] : Array.isArray(step.args) ? step.args : Object.values(step.args).map(String);
-      const { result } = await executeAction(page, step.action!, rawArgs, vars);
+      // args: pass as-is (array or object) to the executor
+      const { result } = await executeAction(page, step.action!, step.args || [], vars);
 
       if (step.out) {
         vars.set(step.out, result);

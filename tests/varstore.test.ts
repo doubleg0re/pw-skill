@@ -59,10 +59,16 @@ describe('VarStore', () => {
       expect(vars.interpolate('val={{data.value}}')).toBe('val=');
     });
 
-    it('serializes objects as JSON', () => {
+    it('returns original object for single template', () => {
       const vars = new VarStore();
       vars.set('obj', { a: 1 });
-      expect(vars.interpolate('{{obj}}')).toBe('{"a":1}');
+      expect(vars.interpolate('{{obj}}')).toEqual({ a: 1 });
+    });
+
+    it('serializes objects as JSON when embedded in string', () => {
+      const vars = new VarStore();
+      vars.set('obj', { a: 1 });
+      expect(vars.interpolate('data: {{obj}}')).toBe('data: {"a":1}');
     });
 
     it('handles multiple replacements in one string', () => {

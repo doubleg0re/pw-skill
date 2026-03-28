@@ -33,9 +33,22 @@ export function generateSessionId(): string {
 
 // --- Process check (standalone, no DI needed) ---
 
+import { execSync } from 'child_process';
+
 export function isProcessAlive(pid: number): boolean {
   try {
+    // Basic signal check (works on Unix, limited on Windows)
     process.kill(pid, 0);
+    
+    // Additional check for Windows to avoid zombie/incorrect matches
+    if (process.platform === 'win32') {
+      try {
+        const output = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+        return output.includes(pid.toString());
+      } catch {
+        return false;
+      }
+    }
     return true;
   } catch {
     return false;

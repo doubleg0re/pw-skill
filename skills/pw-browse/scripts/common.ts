@@ -418,10 +418,13 @@ export async function run(
       if (currentUrl && currentUrl !== 'about:blank') {
         updateSession(session.name, { lastUrl: currentUrl });
       }
+      // CRITICAL: Must await storageState before exiting
       await context.storageState({ path: join(LOCAL_STATE_DIR, 'state.json') }).catch(() => {});
     } catch {}
 
     output(result);
+    // CDP: disconnect only, don't kill the browser process
+    // browser.close() would terminate the shared browser — just exit instead
     process.exit(0);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -429,30 +432,33 @@ export async function run(
 
     // Capture diagnostic context
     try {
-      const conn = await connectBrowser({ headless: true });
-      const cliArgs = parseArgs();
-      const tabStr = parseFlag(cliArgs, 'tab');
+      // Use headless: true for diagnostics to avoid popping windows
+      const conn = await connectBrowser({ headless: true }).catch(() => null);
+      if (conn) {
+        const cliArgs = parseArgs();
+        const tabStr = parseFlag(cliArgs, 'tab');
 
-      const errorContext: ErrorContext = { session: conn.session.name };
-      let diagnosticPage = conn.page;
+        const errorContext: ErrorContext = { session: conn.session.name };
+        let diagnosticPage = conn.page;
 
-      if (tabStr !== undefined) {
-        const tabIdx = parseInt(tabStr);
-        const pages = conn.context.pages();
-        if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < pages.length) {
-          diagnosticPage = pages[tabIdx];
+        if (tabStr !== undefined) {
+          const tabIdx = parseInt(tabStr);
+          const pages = conn.context.pages();
+          if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < pages.length) {
+            diagnosticPage = pages[tabIdx];
+          }
+          errorContext.tab = tabIdx;
         }
-        errorContext.tab = tabIdx;
-      }
 
-      errorContext.url = diagnosticPage.url();
-      errorContext.title = await diagnosticPage.title().catch(() => undefined);
-      errorResult.context = errorContext;
+        errorContext.url = diagnosticPage.url();
+        errorContext.title = await diagnosticPage.title().catch(() => undefined);
+        errorResult.context = errorContext;
 
-      const errorScreenshotPath = screenshotPath(`error-${Date.now()}`);
-      await diagnosticPage.screenshot({ path: errorScreenshotPath }).catch(() => {});
-      if (existsSync(errorScreenshotPath)) {
-        errorResult.screenshot = errorScreenshotPath;
+        const errorScreenshotPath = screenshotPath(`error-${Date.now()}`);
+        await diagnosticPage.screenshot({ path: errorScreenshotPath }).catch(() => {});
+        if (existsSync(errorScreenshotPath)) {
+          errorResult.screenshot = errorScreenshotPath;
+        }
       }
     } catch {
       // If we can't gather diagnostics, proceed with the basic error
