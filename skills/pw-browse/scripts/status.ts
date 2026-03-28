@@ -62,6 +62,23 @@ async function main() {
       const pageList = pages
         .filter((p: any) => p.type === 'page')
         .map((p: any) => ({ title: p.title, url: p.url }));
+
+      // Check for bot challenge in the current page
+      let challengeDetected = false;
+      if (pageList.length > 0) {
+        // Simple heuristic for status command: look for common challenge keywords or URLs
+        const currentUrl = pageList[0].url;
+        const currentTitle = pageList[0].title;
+        if (
+          currentUrl.includes('/sorry/index') || 
+          currentUrl.includes('/captcha') || 
+          currentTitle.toLowerCase().includes('captcha') ||
+          currentTitle.toLowerCase().includes('challenge')
+        ) {
+          challengeDetected = true;
+        }
+      }
+
       console.log(JSON.stringify({
         success: true,
         data: {
@@ -71,6 +88,7 @@ async function main() {
           project: basename(process.cwd()),
           browser: info.Browser,
           pages: pageList,
+          challengeDetected, // Added standard field
         },
       }));
       return;

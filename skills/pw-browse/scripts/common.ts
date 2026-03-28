@@ -311,6 +311,12 @@ export async function launchSession(opts: {
 
 // --- Result output ---
 
+export interface ChallengeInfo {
+  detected: boolean;
+  type?: string;
+  url?: string;
+}
+
 interface ErrorContext {
   url?: string;
   title?: string;
@@ -324,6 +330,7 @@ interface Result {
   data?: unknown;
   error?: string;
   context?: ErrorContext;
+  challenge?: ChallengeInfo; // Standard challenge status
 }
 
 export function output(result: Result): void {
@@ -352,6 +359,74 @@ export function parseFlag(args: string[], flag: string): string | undefined {
 
 export function hasFlag(args: string[], flag: string): boolean {
   return args.includes(`--${flag}`);
+}
+
+// --- Challenge detection ---
+
+/** Core: Heuristic-based bot challenge detection (Language-neutral) */
+export async function detectChallenge(page: Page): Promise<ChallengeInfo> {
+  try {
+    const url = page.url();
+    
+    // Technical markers that are consistent across languages
+    const result = await page.evaluate(() => {
+      const selectors = {
+        // Cloudflare uses consistent IDs/classes globally
+        cloudflare: [
+          '#challenge-running', 
+          '.ctp-checkbox-container', 
+          '#cf-turnstile', 
+          '.cf-turnstile', 
+          '#challenge-error',
+          '#challenge-stage'
+        ],
+        // Google reCAPTCHA uses consistent classes and iframe sources
+        recaptcha: [
+          '.g-recaptcha', 
+          'iframe[src*="google.com/recaptcha"]', 
+          'iframe[title*="reCAPTCHA"]',
+          '#captcha-form'
+        ],
+        // hCaptcha
+        hcaptcha: [
+          '.h-captcha', 
+          'iframe[src*="hcaptcha.com"]',
+          'iframe[title*="hCaptcha"]'
+        ],
+        // General patterns
+        generic: [
+          'iframe[src*="captcha"]',
+          'iframe[src*="challenge"]',
+          'meta[name="referrer"][content="no-referrer"]' // Often used in challenge pages
+        ]
+      };
+
+      for (const [type, sels] of Object.entries(selectors)) {
+        if (sels.some(s => document.querySelector(s) !== null)) {
+          return { detected: true, type };
+        }
+      }
+
+      // Check for common script names in the page
+      const scripts = Array.from(document.scripts).map(s => s.src.toLowerCase());
+      if (scripts.some(s => s.includes('recaptcha') || s.includes('turnstile') || s.includes('hcaptcha'))) {
+        return { detected: true, type: 'security-script-found' };
+      }
+
+      return { detected: false };
+    });
+
+    // Check URL patterns (e.g., Google's /sorry/ page)
+    if (!result.detected) {
+      if (url.includes('/sorry/index') || url.includes('/captcha') || url.includes('challenge-platform')) {
+        return { detected: true, type: 'url-pattern-match', url };
+      }
+    }
+
+    return { ...result, url };
+  } catch {
+    return { detected: false };
+  }
 }
 
 // --- Safe execution wrapper ---
@@ -404,6 +479,10 @@ export async function run(
       }
     }
 
+    // --- Core: Run 'load' hooks for active extensions ---
+    const { runHooks } = await import('./rary.js');
+    await runHooks('load', { browser, context, page, session }).catch(() => {});
+
     const result = await fn({
       browser,
       context,
@@ -412,32 +491,32 @@ export async function run(
       session,
     });
 
+    // --- Core: Check for bot challenge after action ---
+    const challenge = await detectChallenge(page);
+    if (challenge.detected) {
+      result.challenge = challenge;
+    }
+
     // Save current URL + storageState for next connection
     try {
       const currentUrl = page.url();
       if (currentUrl && currentUrl !== 'about:blank') {
         updateSession(session.name, { lastUrl: currentUrl });
       }
-      // CRITICAL: Must await storageState before exiting
       await context.storageState({ path: join(LOCAL_STATE_DIR, 'state.json') }).catch(() => {});
     } catch {}
 
     output(result);
-    // CDP: disconnect only, don't kill the browser process
-    // browser.close() would terminate the shared browser — just exit instead
     process.exit(0);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     const errorResult: Result = { success: false, error: errorMessage };
 
-    // Capture diagnostic context
     try {
-      // Use headless: true for diagnostics to avoid popping windows
       const conn = await connectBrowser({ headless: true }).catch(() => null);
       if (conn) {
         const cliArgs = parseArgs();
         const tabStr = parseFlag(cliArgs, 'tab');
-
         const errorContext: ErrorContext = { session: conn.session.name };
         let diagnosticPage = conn.page;
 
@@ -454,15 +533,20 @@ export async function run(
         errorContext.title = await diagnosticPage.title().catch(() => undefined);
         errorResult.context = errorContext;
 
+        // --- Core: Check for bot challenge on error ---
+        const challenge = await detectChallenge(diagnosticPage);
+        if (challenge.detected) {
+          errorResult.challenge = challenge;
+          errorResult.error = `[BOT CHALLENGE DETECTED: ${challenge.type?.toUpperCase()}] ${errorMessage}`;
+        }
+
         const errorScreenshotPath = screenshotPath(`error-${Date.now()}`);
         await diagnosticPage.screenshot({ path: errorScreenshotPath }).catch(() => {});
         if (existsSync(errorScreenshotPath)) {
           errorResult.screenshot = errorScreenshotPath;
         }
       }
-    } catch {
-      // If we can't gather diagnostics, proceed with the basic error
-    }
+    } catch {}
 
     output(errorResult);
     process.exit(1);
