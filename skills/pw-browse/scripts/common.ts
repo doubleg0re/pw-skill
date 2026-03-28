@@ -55,18 +55,18 @@ async function isWsAlive(wsEndpoint: string): Promise<boolean> {
 
 // --- Chromium CDP process management ---
 
-export async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; pid: number; port: number }> {
+export async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }> {
   const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
-  return new Promise<{ wsEndpoint: string; pid: number; port: number }>((res, reject) => {
+  return new Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }>((res, reject) => {
     const child = spawn(process.execPath, [
       ...process.execArgv,
       serverScript,
       ...(headless ? ['--headless'] : []),
-      ...(userDataDir ? [`--user-data-dir=${userDataDir}`] : []),
     ], {
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
+      windowsHide: true,
     });
     child.unref();
 
@@ -86,12 +86,20 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
           if (data.wsEndpoint) {
             clearTimeout(timeout);
             const portMatch = data.wsEndpoint.match(/:(\d+)\//);
-            res({ wsEndpoint: data.wsEndpoint, pid: data.pid, port: portMatch ? parseInt(portMatch[1]) : 0 });
+            res({
+              wsEndpoint: data.wsEndpoint,
+              cdpEndpoint: data.cdpEndpoint || '',
+              pid: data.pid,
+              port: portMatch ? parseInt(portMatch[1]) : 0,
+            });
             return;
           }
         } catch {}
       }
     });
+
+    let stderrOutput = '';
+    child.stderr?.on('data', (chunk: Buffer) => { stderrOutput += chunk.toString(); });
 
     child.on('error', (err) => {
       clearTimeout(timeout);
@@ -101,7 +109,7 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
     child.on('exit', (code) => {
       clearTimeout(timeout);
       if (!output.includes('wsEndpoint')) {
-        reject(new Error(`Browser server exited with code ${code}`));
+        reject(new Error(`Browser server exited with code ${code}. stderr: ${stderrOutput.slice(0, 500)}`));
       }
     });
   });
@@ -143,11 +151,50 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
     return launchNewSession({ headless, viewport, video, videoDir });
   }
 
-  // Try connecting to resolved session via WebSocket
+  // Try connecting via CDP (preserves existing contexts/pages/DOM)
+  if (session.cdpEndpoint) {
+    try {
+      const browser = await chromium.connectOverCDP(session.cdpEndpoint);
+      const contexts = browser.contexts();
+
+      if (contexts.length > 0) {
+        const ctx = contexts[0];
+        if (video) {
+          // Need video but existing context doesn't have it — create new one
+          const state = await ctx.storageState().catch(() => undefined);
+          const newCtx = await browser.newContext({
+            viewport,
+            acceptDownloads: true,
+            recordVideo: { dir: videoDir, size: viewport },
+            ...(state ? { storageState: state } : {}),
+          });
+          const page = await newCtx.newPage();
+          return { browser, context: newCtx, page, session };
+        }
+        const pages = ctx.pages();
+        const page = pages.length > 0 ? pages[0] : await ctx.newPage();
+        return { browser, context: ctx, page, session };
+      }
+
+      // No context — create one
+      const stateFile = join(LOCAL_STATE_DIR, 'state.json');
+      const storageState = existsSync(stateFile) ? stateFile : undefined;
+      const ctx = await browser.newContext({
+        viewport,
+        acceptDownloads: true,
+        ...(storageState ? { storageState } : {}),
+        ...(video ? { recordVideo: { dir: videoDir, size: viewport } } : {}),
+      });
+      const page = await ctx.newPage();
+      return { browser, context: ctx, page, session };
+    } catch {
+      // CDP failed — fall through to PW WebSocket or relaunch
+    }
+  }
+
+  // Fallback: PW WebSocket (no context persistence)
   if (session.wsEndpoint && await isWsAlive(session.wsEndpoint)) {
     const browser = await chromium.connect(session.wsEndpoint);
-
-    // Load storageState from local state if available
     const stateFile = join(LOCAL_STATE_DIR, 'state.json');
     const storageState = existsSync(stateFile) ? stateFile : undefined;
 
@@ -159,7 +206,6 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
     });
     const page = await ctx.newPage();
 
-    // Restore last URL if available and not disabled
     const shouldRestore = options.restoreUrl !== false;
     if (shouldRestore && session.lastUrl && session.lastUrl !== 'about:blank') {
       await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
@@ -183,23 +229,50 @@ async function launchNewSession(opts: {
   const sessionName = opts.resumeName || opts.name || `s-${generateSessionId()}`;
   const userDataDir = sessionUserDataDir(sessionName);
 
-  const { wsEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir);
+  const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir);
 
   const session = createSession(sessionName, port, pid, wsEndpoint, opts.video ? sessionName : null);
+  if (cdpEndpoint) {
+    updateSession(sessionName, { cdpEndpoint });
+  }
 
-  const browser = await chromium.connect(wsEndpoint);
+  // Prefer CDP for context persistence, fallback to PW WebSocket
+  const browser = cdpEndpoint
+    ? await chromium.connectOverCDP(cdpEndpoint).catch(() => chromium.connect(wsEndpoint))
+    : await chromium.connect(wsEndpoint);
 
-  // Load storageState if available (e.g., when resuming a session)
-  const stateFile = join(LOCAL_STATE_DIR, 'state.json');
-  const storageState = existsSync(stateFile) ? stateFile : undefined;
+  // Reuse existing default context for DOM persistence (CDP)
+  // Only create new context when video recording is needed
+  let ctx: BrowserContext;
+  let page: Page;
 
-  const ctx = await browser.newContext({
-    viewport: opts.viewport,
-    acceptDownloads: true,
-    ...(storageState ? { storageState } : {}),
-    ...(opts.video ? { recordVideo: { dir: opts.videoDir, size: opts.viewport } } : {}),
-  });
-  const page = await ctx.newPage();
+  const existingContexts = browser.contexts();
+  if (opts.video) {
+    // Video requires a fresh context with recordVideo option
+    const stateFile = join(LOCAL_STATE_DIR, 'state.json');
+    const storageState = existsSync(stateFile) ? stateFile : undefined;
+    ctx = await browser.newContext({
+      viewport: opts.viewport,
+      acceptDownloads: true,
+      recordVideo: { dir: opts.videoDir, size: opts.viewport },
+      ...(storageState ? { storageState } : {}),
+    });
+    page = await ctx.newPage();
+  } else if (existingContexts.length > 0) {
+    // Reuse default context — preserves DOM, scroll, form state
+    ctx = existingContexts[0];
+    const pages = ctx.pages();
+    page = pages.length > 0 ? pages[0] : await ctx.newPage();
+  } else {
+    const stateFile = join(LOCAL_STATE_DIR, 'state.json');
+    const storageState = existsSync(stateFile) ? stateFile : undefined;
+    ctx = await browser.newContext({
+      viewport: opts.viewport,
+      acceptDownloads: true,
+      ...(storageState ? { storageState } : {}),
+    });
+    page = await ctx.newPage();
+  }
   return { browser, context: ctx, page, session };
 }
 

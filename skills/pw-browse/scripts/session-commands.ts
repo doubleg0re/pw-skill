@@ -58,8 +58,9 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
 
   try {
     const userDataDir = sessionUserDataDir(sessionName);
-    const { wsEndpoint, pid, port } = await launchBrowserServer(!headed, userDataDir);
+    const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(!headed, userDataDir);
     const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null));
+    if (cdpEndpoint) updateSession(sessionName, { cdpEndpoint });
 
     // Auto-bind to current project
     bindSession(sessionName);
@@ -69,15 +70,22 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
 
     // Navigate to URL if provided
     if (url) {
-      const browser = await chromium.connect(wsEndpoint);
+      const browser = cdpEndpoint
+        ? await chromium.connectOverCDP(cdpEndpoint).catch(() => chromium.connect(wsEndpoint))
+        : await chromium.connect(wsEndpoint);
 
-      const videoDir = join(localStateDir(), 'videos');
-      if (videoEnabled && !existsSync(videoDir)) mkdirSync(videoDir, { recursive: true });
-
-      const ctx = await browser.newContext({
-        ...(videoEnabled ? { recordVideo: { dir: videoDir, size: { width: 1920, height: 1080 } } } : {}),
-      });
-      const page = await ctx.newPage();
+      // Reuse default context for DOM persistence
+      let ctx, page;
+      if (videoEnabled) {
+        const videoDir = join(localStateDir(), 'videos');
+        if (!existsSync(videoDir)) mkdirSync(videoDir, { recursive: true });
+        ctx = await browser.newContext({ recordVideo: { dir: videoDir, size: { width: 1920, height: 1080 } } });
+        page = await ctx.newPage();
+      } else {
+        ctx = browser.contexts()[0] || await browser.newContext();
+        const pages = ctx.pages();
+        page = pages.length > 0 ? pages[0] : await ctx.newPage();
+      }
 
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       const title = await page.title();

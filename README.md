@@ -157,7 +157,7 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | Command | Description |
 |---|---|
 | `pw launch [url] [--name=N] [--resume=N]` | Launch browser session |
-| `pw use <name>` | Bind session to project |
+| `pw use <name>` | Bind session to project (errors if another is bound; `--force` kills the existing session and switches) |
 | `pw sessions` | List all sessions |
 | `pw close [--session=N] [--all]` | Close session(s) |
 | `pw tab new [url]` | Open new tab |
@@ -491,7 +491,7 @@ pw-skill/
 
 ### Key Design Decisions
 
-- **CDP persistent browser**: Chromium stays alive across script invocations. DOM, JS state, scroll position, form data -- all preserved.
+- **Persistent browser process**: Chromium stays alive across script invocations via `launchServer`. Cookies and localStorage are preserved via `storageState`. The last URL is restored on reconnect. Note: DOM state, scroll position, and in-progress form data are **not** preserved between commands (each command creates a fresh context).
 - **Global sessions, local state**: Session processes and profiles live in `~/.playwright-state/` (shared across projects). Screenshots, logs, and bindings are per-project.
 - **Shared action module**: `actions.ts` provides one implementation used by both CLI scripts and the sequence engine. No duplication.
 - **Safe arg passing**: CLI uses `spawnSync` with argument arrays, never shell string concatenation.

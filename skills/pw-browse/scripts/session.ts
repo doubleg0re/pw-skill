@@ -14,6 +14,7 @@ export interface SessionInfo {
   port: number;
   pid: number;
   wsEndpoint: string;
+  cdpEndpoint?: string;
   startedAt: string;
   video: string | null;
   lastUrl?: string;
