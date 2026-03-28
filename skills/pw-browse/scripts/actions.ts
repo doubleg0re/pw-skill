@@ -82,6 +82,18 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
   if (target === 'user-action') {
     const prompt = (Array.isArray(a) ? a[1] : a.prompt) || 'Complete the action, then click Continue';
     const actions: string[] = (Array.isArray(a) ? undefined : a.actions) || ['continue'];
+    const focus = Array.isArray(a) ? undefined : a.focus;
+    const idle = Number(Array.isArray(a) ? undefined : a.idle) || 0;
+
+    // Focus element if specified
+    if (focus) {
+      await page.locator(String(focus)).first().click().catch(() => {});
+    }
+
+    // Wait for idle period before showing overlay
+    if (idle > 0) {
+      await new Promise(r => setTimeout(r, idle));
+    }
 
     // Inject overlay with action buttons
     await page.evaluate(({ promptMsg, btns }: { promptMsg: string; btns: string[] }) => {
@@ -118,6 +130,125 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
     });
 
     return { result: { waited: 'user-action', prompt, action: clicked } };
+  }
+
+  // wait user-alert: informational overlay, auto-dismiss on click
+  if (target === 'user-alert') {
+    const prompt = (Array.isArray(a) ? a[1] : a.prompt) || 'Please complete the action.';
+
+    await page.evaluate((promptMsg: string) => {
+      const overlay = document.createElement('div');
+      overlay.id = '__pw_user_alert_overlay';
+      overlay.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999999;background:#1a1a2e;color:#fff;padding:16px 24px;border-radius:8px;font-family:system-ui;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:320px;cursor:pointer;';
+      overlay.innerHTML = `
+        <div style="font-weight:600;margin-bottom:8px;">Notice</div>
+        <div style="color:#ccc;">${promptMsg}</div>
+        <div style="color:#666;font-size:12px;margin-top:8px;">Click to dismiss</div>
+      `;
+      overlay.addEventListener('click', () => overlay.remove());
+      document.body.appendChild(overlay);
+    }, prompt);
+
+    // Wait for overlay to be dismissed
+    await page.waitForFunction(() => !document.getElementById('__pw_user_alert_overlay'), {}, { timeout: 0 });
+
+    return { result: { waited: 'user-alert', prompt } };
+  }
+
+  // Observation wait: dom:<selector>, dom:<selector>[field], url:<pattern>, challenge
+  if (typeof target === 'string' && (target.startsWith('dom:') || target.startsWith('url:') || target === 'challenge')) {
+    const timeout = Number((Array.isArray(a) ? undefined : a.timeout) || 30000);
+    const trigger = Array.isArray(a) ? undefined : a.trigger;
+
+    if (target.startsWith('dom:')) {
+      const domPart = target.slice(4); // after "dom:"
+      const fieldMatch = domPart.match(/^(.+)\[(\w+)\]$/);
+      const selector = fieldMatch ? fieldMatch[1] : domPart;
+      const field = fieldMatch ? fieldMatch[2] : null;
+
+      // Get initial value
+      const initial = await page.evaluate(({ sel, field }) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        if (field) {
+          if (field === 'textContent') return el.textContent?.trim();
+          if (field === 'value') return (el as HTMLInputElement).value;
+          return el.getAttribute(field);
+        }
+        return el.outerHTML;
+      }, { sel: selector, field }).catch(() => null);
+
+      // Poll for change
+      const result = await page.waitForFunction(({ sel, field, initial }) => {
+        const el = document.querySelector(sel);
+        if (!el) return initial !== null ? { changed: true, current: null } : null;
+        let current: any;
+        if (field) {
+          if (field === 'textContent') current = el.textContent?.trim();
+          else if (field === 'value') current = (el as HTMLInputElement).value;
+          else current = el.getAttribute(field);
+        } else {
+          current = el.outerHTML;
+        }
+        if (current !== initial) {
+          return { changed: true, current };
+        }
+        return null;
+      }, { sel: selector, field, initial }, { timeout });
+
+      const data = await result.jsonValue() as any;
+
+      return {
+        result: {
+          target,
+          changed: true,
+          selector,
+          ...(field ? { field } : {}),
+          previous: initial,
+          current: data?.current,
+        },
+      };
+    }
+
+    if (target.startsWith('url:')) {
+      const pattern = target.slice(4);
+      const initialUrl = page.url();
+
+      await page.waitForURL(pattern.includes('*') ? pattern : `**${pattern}*`, { timeout });
+
+      return {
+        result: {
+          target,
+          changed: true,
+          previous: initialUrl,
+          current: page.url(),
+        },
+      };
+    }
+
+    if (target === 'challenge') {
+      // Poll for challenge indicators
+      const result = await page.waitForFunction(() => {
+        const body = document.body?.innerHTML || '';
+        const isCf = body.includes('cf-challenge') || body.includes('challenge-platform');
+        const isRecaptcha = !!document.querySelector('.g-recaptcha, [data-sitekey]');
+        if (isCf || isRecaptcha) {
+          return { detected: true, type: isCf ? 'cloudflare' : 'recaptcha' };
+        }
+        return null;
+      }, {}, { timeout });
+
+      const data = await result.jsonValue() as any;
+
+      return {
+        result: {
+          target: 'challenge',
+          changed: true,
+          detected: data?.detected || false,
+          type: data?.type || 'unknown',
+        },
+      };
+    }
   }
 
   if (typeof target === 'number' || /^\d+$/.test(target)) {
