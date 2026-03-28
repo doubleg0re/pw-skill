@@ -73,8 +73,10 @@ interface Step {
   // label / goto
   label?: string;
   // def / call
+  type?: 'func' | 'condition';
   name?: string;
   params?: string[];
+  items?: Step[] | ConditionNode[];
   // log
   text?: string;
   // condition (leaf — backward compat)
@@ -99,8 +101,6 @@ interface Step {
   catch?: Step[];
   finally?: Step[];
   [key: `catch:${string}`]: Step[] | undefined;
-  // def conditions
-  conditions?: ConditionNode;
   // wait user-action
   prompt?: string;
 }
@@ -321,19 +321,24 @@ export async function runSteps(
         continue;
       }
 
-      // --- def (function or condition definition) ---
+      // --- def (func or condition) ---
       if (step.action === 'def') {
-        if (step.conditions) {
-          defs.set(step.name!, { kind: 'condition', condition: step.conditions });
+        const defType = step.type || 'func';
+        if (defType === 'condition') {
+          // items is ConditionNode[] — wrap in "or" if multiple, use single if one
+          const condItems = (step.items || []) as ConditionNode[];
+          const condition: ConditionNode = condItems.length === 1 ? condItems[0] : { or: condItems };
+          defs.set(step.name!, { kind: 'condition', condition });
         } else {
-          defs.set(step.name!, { kind: 'block', params: step.params || [], body: step.do || [] });
+          // func: items is Step[]
+          defs.set(step.name!, { kind: 'block', params: step.params || [], body: (step.items || step.do || []) as Step[] });
         }
-        results.push({ step: stepIndex, action: 'def', success: true, data: { name: step.name, kind: step.conditions ? 'condition' : 'block' } });
+        results.push({ step: stepIndex, action: 'def', success: true, data: { name: step.name, type: defType } });
         i++;
         continue;
       }
 
-      // --- call (function invocation or condition check) ---
+      // --- call (func only — condition defs are used via try catch:<name>) ---
       if (step.action === 'call') {
         const def = defs.get(step.name!);
         if (!def) {
@@ -341,13 +346,9 @@ export async function runSteps(
           return { success: false, failedAt: stepIndex };
         }
 
-        // Condition def: evaluate and return boolean
         if (def.kind === 'condition') {
-          const matched = evaluateCondition(def.condition, vars);
-          results.push({ step: stepIndex, action: 'call', success: true, data: { name: step.name, kind: 'condition', matched } });
-          if (step.out) vars.set(step.out, matched);
-          i++;
-          continue;
+          results.push({ step: stepIndex, action: 'call', success: false, error: `"${step.name}" is a condition def, not a func. Use it in try catch:${step.name} instead.` });
+          return { success: false, failedAt: stepIndex };
         }
 
         // Block def: inject args and run body
@@ -596,8 +597,8 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     // def
     if (action === 'def') {
       if (!step.name) errors.push(`${loc}: def requires "name"`);
-      if (step.do && step.conditions) {
-        errors.push(`${loc}: def cannot have both "do" and "conditions"`);
+      if (step.type && step.type !== 'func' && step.type !== 'condition') {
+        errors.push(`${loc}: def type must be "func" or "condition"`);
       }
     }
 

@@ -570,44 +570,64 @@ describe('validateSteps', () => {
   });
 });
 
-// --- Task 3: def with conditions ---
+// --- Task 3: def type + items ---
 
-describe('Flow Engine — def with conditions', () => {
-  it('defines and evaluates a named condition', async () => {
+describe('Flow Engine — def with type + items', () => {
+  it('def type=condition is used by try catch:<name>', async () => {
     const vars = new VarStore();
     vars.set('url', 'http://localhost/login');
     const results: any[] = [];
     const defs = emptyDefs();
+    const page = mockPage({
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('fail')) })) })),
+    });
 
-    await runSteps(mockPage(), [
+    await runSteps(page, [
       {
-        action: 'def', name: 'isLogin',
-        conditions: { or: [{ ref: 'url', contains: '/login' }, { ref: 'url', contains: '/signin' }] },
-      },
-      { action: 'call', name: 'isLogin', out: 'check' },
-      { action: 'log', ref: 'check' },
+        action: 'def', type: 'condition', name: 'isLogin',
+        items: [{ ref: 'url', contains: '/login' }, { ref: 'url', contains: '/signin' }],
+      } as any,
+      {
+        action: 'try',
+        do: [{ action: 'click', args: ['#x'] }],
+        'catch:isLogin': [{ action: 'log', text: 'redirected to login' }],
+        catch: [{ action: 'log', text: 'generic' }],
+      } as any,
     ], vars, results, defs);
 
-    expect(vars.get('check')).toBe(true);
     const logs = results.filter(r => r.action === 'log');
-    expect(logs[0].data).toBe(true);
+    expect(logs[0].data).toBe('redirected to login');
   });
 
-  it('named condition returns false when not matched', async () => {
+  it('def type=func with items works like do', async () => {
     const vars = new VarStore();
-    vars.set('url', 'http://localhost/dashboard');
     const results: any[] = [];
     const defs = emptyDefs();
 
     await runSteps(mockPage(), [
       {
-        action: 'def', name: 'isLogin',
-        conditions: { ref: 'url', contains: '/login' },
-      },
-      { action: 'call', name: 'isLogin', out: 'check' },
+        action: 'def', type: 'func', name: 'greet', params: ['who'],
+        items: [{ action: 'log', text: 'Hi {{who}}' }],
+      } as any,
+      { action: 'call', name: 'greet', args: ['Alice'] },
     ], vars, results, defs);
 
-    expect(vars.get('check')).toBe(false);
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toBe('Hi Alice');
+  });
+
+  it('call on condition def returns error', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const defs = emptyDefs();
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'def', type: 'condition', name: 'check', items: [{ ref: 'x', eq: 1 }] } as any,
+      { action: 'call', name: 'check' },
+    ], vars, results, defs);
+
+    expect(outcome.success).toBe(false);
+    expect(results.find(r => !r.success)?.error).toContain('condition def');
   });
 });
 
