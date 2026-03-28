@@ -331,6 +331,7 @@ interface Result {
   error?: string;
   context?: ErrorContext;
   challenge?: ChallengeInfo; // Standard challenge status
+  warnings?: string[]; // Non-fatal warnings
 }
 
 export function output(result: Result): void {
@@ -481,7 +482,11 @@ export async function run(
 
     // --- Core: Run 'load' hooks for active extensions ---
     const { runHooks } = await import('./rary.js');
-    await runHooks('load', { browser, context, page, session }).catch(() => {});
+    let hookErrors: string[] = [];
+    try {
+      const hookResult = await runHooks('load', { browser, context, page, session });
+      hookErrors = hookResult.errors;
+    } catch {}
 
     const result = await fn({
       browser,
@@ -490,6 +495,11 @@ export async function run(
       args: cliArgs.filter(a => !a.startsWith('--')),
       session,
     });
+
+    // Merge hook errors into warnings
+    if (hookErrors.length > 0) {
+      result.warnings = [...(result.warnings || []), ...hookErrors.map(e => `Extension hook error: ${e}`)];
+    }
 
     // --- Core: Check for bot challenge after action ---
     const challenge = await detectChallenge(page);
@@ -538,6 +548,11 @@ export async function run(
         if (challenge.detected) {
           errorResult.challenge = challenge;
           errorResult.error = `[BOT CHALLENGE DETECTED: ${challenge.type?.toUpperCase()}] ${errorMessage}`;
+        }
+
+        // Merge hook errors into warnings even on failure
+        if (hookErrors.length > 0) {
+          errorResult.warnings = [...(errorResult.warnings || []), ...hookErrors.map(e => `Extension hook error: ${e}`)];
         }
 
         const errorScreenshotPath = screenshotPath(`error-${Date.now()}`);
