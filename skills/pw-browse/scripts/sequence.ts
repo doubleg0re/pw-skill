@@ -196,6 +196,11 @@ export async function executeAction(
 
 // --- Flow engine ---
 
+export interface RunOptions {
+  allowShell?: boolean;
+  requestPermission?: boolean;
+}
+
 export async function runSteps(
   page: Page,
   steps: Step[],
@@ -203,6 +208,7 @@ export async function runSteps(
   results: StepResult[],
   defs: Map<string, DefEntry>,
   baseIndex: number = 0,
+  options: RunOptions = {},
 ): Promise<{ success: boolean; failedAt?: number; goto?: string }> {
   // Build label → index map
   const labelMap = new Map<string, number>();
@@ -230,7 +236,7 @@ export async function runSteps(
       if (step.action === 'try') {
         const tryBody = step.items || [];
         const finallyBody = step.finally || [];
-        let trySub = await runSteps(page, tryBody, vars, results, defs, stepIndex * 1000);
+        let trySub = await runSteps(page, tryBody, vars, results, defs, stepIndex * 1000, options);
 
         if (!trySub.success) {
           // Classify error
@@ -275,11 +281,11 @@ export async function runSteps(
           results.push({ step: stepIndex, action: 'try', success: true, data: { caught: !!catchBody, errorType } });
 
           if (catchBody) {
-            const catchSub = await runSteps(page, catchBody, vars, results, defs, stepIndex * 2000);
+            const catchSub = await runSteps(page, catchBody, vars, results, defs, stepIndex * 2000, options);
             if (catchSub.goto) {
               // Run finally before goto
               if (finallyBody.length > 0) {
-                await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+                await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000, options);
               }
               if (labelMap.has(catchSub.goto)) {
                 if (++jumpCount > MAX_JUMPS) return { success: false, failedAt: stepIndex };
@@ -291,7 +297,7 @@ export async function runSteps(
           } else {
             // No catch matched — run finally then fail
             if (finallyBody.length > 0) {
-              await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+              await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000, options);
             }
             return { success: false, failedAt: stepIndex };
           }
@@ -301,7 +307,7 @@ export async function runSteps(
           // Handle goto from try body
           if (trySub.goto) {
             if (finallyBody.length > 0) {
-              await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+              await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000, options);
             }
             if (labelMap.has(trySub.goto)) {
               if (++jumpCount > MAX_JUMPS) return { success: false, failedAt: stepIndex };
@@ -314,7 +320,7 @@ export async function runSteps(
 
         // Always run finally
         if (finallyBody.length > 0) {
-          await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+          await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000, options);
         }
 
         i++;
@@ -365,7 +371,7 @@ export async function runSteps(
           }
         }
         results.push({ step: stepIndex, action: 'call', success: true, data: { name: step.name } });
-        const sub = await runSteps(page, def.body, vars, results, defs, stepIndex * 1000);
+        const sub = await runSteps(page, def.body, vars, results, defs, stepIndex * 1000, options);
         if (!sub.success) return sub;
         // Store call result to out (data from the last step)
         if (step.out) {
@@ -437,7 +443,7 @@ export async function runSteps(
         results.push({ step: stepIndex, action: 'condition', success: true, data: condData });
 
         if (branch && branch.length > 0) {
-          const sub = await runSteps(page, branch, vars, results, defs, stepIndex * 1000);
+          const sub = await runSteps(page, branch, vars, results, defs, stepIndex * 1000, options);
           if (!sub.success) return sub;
           // Handle goto bubbling
           if (sub.goto) {
@@ -540,6 +546,48 @@ export async function runSteps(
         continue;
       }
 
+      // --- shell ---
+      if (step.action === 'shell') {
+        if (!options.allowShell) {
+          results.push({ step: stepIndex, action: 'shell', success: false, error: 'Sequence contains shell action. Re-run with --allow-shell to enable local command execution.' });
+          return { success: false, failedAt: stepIndex };
+        }
+
+        const shellArgs = Array.isArray(step.args) ? step.args.map(String) : [];
+        const shellTimeout = (typeof step.args === 'object' && !Array.isArray(step.args)) ? Number(step.args?.timeout || 30000) : 30000;
+
+        if (typeof step.args === 'object' && !Array.isArray(step.args) && step.args?.command) {
+          shellArgs.length = 0;
+          shellArgs.push(...(step.args.command as string[]).map(String));
+        }
+
+        if (shellArgs.length === 0) {
+          results.push({ step: stepIndex, action: 'shell', success: false, error: 'shell requires args (command array)' });
+          return { success: false, failedAt: stepIndex };
+        }
+
+        const { spawnSync } = await import('child_process');
+        const cmd = shellArgs[0];
+        const cmdArgs = shellArgs.slice(1);
+        const proc = spawnSync(cmd, cmdArgs, { timeout: shellTimeout, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+        const shellResult = {
+          exitCode: proc.status ?? -1,
+          stdout: (proc.stdout || '').trim(),
+          stderr: (proc.stderr || '').trim(),
+        };
+
+        if (step.out) vars.set(step.out, shellResult);
+        results.push({ step: stepIndex, action: 'shell', success: proc.status === 0, data: shellResult });
+
+        if (proc.status !== 0) {
+          return { success: false, failedAt: stepIndex };
+        }
+
+        i++;
+        continue;
+      }
+
       // --- General action ---
       // args: pass as-is (array or object) to the executor
       const { result } = await executeAction(page, step.action!, step.args || [], vars);
@@ -570,7 +618,7 @@ export async function runSteps(
 const KNOWN_ACTIONS = new Set([
   'navigate', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'upload', 'attr', 'submit', 'fetch', 'screenshot',
-  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try',
+  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell',
 ]);
 
 export function validateSteps(steps: Step[], prefix: string = ''): string[] {
@@ -647,6 +695,11 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       }
     }
 
+    // shell
+    if (action === 'shell') {
+      if (!step.args) errors.push(`${loc}: shell requires "args"`);
+    }
+
     // goto
     if (action === 'goto') {
       if (!step.label) errors.push(`${loc}: goto requires "label"`);
@@ -673,6 +726,9 @@ run(async ({ page, args: cliArgs }) => {
   const input = cliArgs[0];
   if (!input) return { success: false, error: 'Usage: sequence.ts <json-string | json-file-path>' };
 
+  const allowShell = process.argv.includes('--allow-shell');
+  const requestPermission = process.argv.includes('--request-permission');
+
   let steps: Step[];
   try {
     if (existsSync(input)) {
@@ -695,7 +751,7 @@ run(async ({ page, args: cliArgs }) => {
   const vars = new VarStore();
   const results: StepResult[] = [];
   const defs = new Map<string, DefEntry>();
-  const outcome = await runSteps(page, steps, vars, results, defs);
+  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission });
 
   const path = screenshotPath(outcome.success ? 'sequence-done' : `sequence-error-${Date.now()}`);
   await page.screenshot({ path });

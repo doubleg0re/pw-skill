@@ -775,3 +775,45 @@ describe('validateSteps — out with $ prefix', () => {
     expect(errors.filter(e => e.includes('out'))).toHaveLength(0);
   });
 });
+
+// --- Shell action ---
+
+describe('Flow Engine — shell', () => {
+  it('rejects shell without allowShell', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'shell', args: ['echo', 'hello'] },
+    ], vars, results, emptyDefs(), 0, { allowShell: false });
+
+    expect(outcome.success).toBe(false);
+    expect(results[0].error).toContain('--allow-shell');
+  });
+
+  it('runs shell with allowShell', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'shell', args: ['echo', 'hello'], out: 'res' },
+    ], vars, results, emptyDefs(), 0, { allowShell: true });
+
+    expect(outcome.success).toBe(true);
+    expect(vars.get('res').exitCode).toBe(0);
+    expect(vars.get('res').stdout).toContain('hello');
+  });
+
+  it('shell failure stops sequence', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'shell', args: ['node', '-e', 'process.exit(42)'], out: 'res' },
+      { action: 'log', text: 'should not reach' },
+    ], vars, results, emptyDefs(), 0, { allowShell: true });
+
+    expect(outcome.success).toBe(false);
+    expect(vars.get('res').exitCode).toBe(42);
+  });
+});
