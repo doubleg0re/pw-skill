@@ -68,8 +68,9 @@ describe('SessionStore — createSession / getSession', () => {
   });
 
   it('creates session with video', () => {
-    const session = store.createSession('rec', 9333, 111, 'my-video');
+    const session = store.createSession('rec', 9333, 111, 'ws://localhost:9333/fake', 'my-video');
     expect(session.video).toBe('my-video');
+    expect(session.wsEndpoint).toBe('ws://localhost:9333/fake');
   });
 
   it('returns null for missing session', () => {

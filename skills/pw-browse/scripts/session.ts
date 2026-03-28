@@ -13,8 +13,10 @@ export interface SessionInfo {
   name: string;
   port: number;
   pid: number;
+  wsEndpoint: string;
   startedAt: string;
   video: string | null;
+  lastUrl?: string;
 }
 
 export interface SessionStoreOptions {
@@ -55,7 +57,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
   return {
     // --- CRUD ---
 
-    createSession(name: string, port: number, pid: number, video: string | null = null): SessionInfo {
+    createSession(name: string, port: number, pid: number, wsEndpoint: string = '', video: string | null = null): SessionInfo {
       const dir = sessionDir(name);
       ensureDir(dir);
       ensureDir(join(dir, 'user-data'));
@@ -65,6 +67,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
         name,
         port,
         pid,
+        wsEndpoint,
         startedAt: new Date().toISOString(),
         video,
       };

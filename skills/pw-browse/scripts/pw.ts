@@ -31,6 +31,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   type:        { script: 'type.ts',        desc: 'Type on keyboard' },
   select:      { script: 'select.ts',      desc: 'Select dropdown option' },
   upload:      { script: 'upload.ts',      desc: 'Upload file' },
+  download:    { script: 'download.ts',    desc: 'Download file' },
   submit:      { script: 'submit.ts',      desc: 'Submit form' },
   copy:        { script: 'copy.ts',        desc: 'Copy text/HTML' },
   attr:        { script: 'attr.ts',        desc: 'Read/write DOM attribute' },
@@ -72,6 +73,8 @@ Browser actions:
   type <text> [--delay=ms]                   Type on keyboard
   select <selector> [--value|--label|--index] Select dropdown option
   upload <selector> <file-path...>           Upload file
+  download <target> [--async] [--dir=path]   Download file
+  download [status|list]                     Check downloads
   submit [form-selector] [--wait=/url]       Submit form
   copy <selector> [--format=text|html|outer] Copy text/HTML from element
   attr <selector> <name> [--set=value]       Read/write DOM attribute

@@ -7,6 +7,7 @@ import {
   resolveSession,
   createSession,
   getSession,
+  updateSession,
   isSessionAlive,
   sessionUserDataDir,
   localStateDir,
@@ -38,11 +39,14 @@ export function saveState(context: BrowserContext): Promise<void> {
   return context.storageState({ path: join(LOCAL_STATE_DIR, 'state.json') });
 }
 
-// --- Port liveness check ---
+// --- WebSocket liveness check ---
 
-async function isPortAlive(port: number): Promise<boolean> {
+async function isWsAlive(wsEndpoint: string): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/json/version`);
+    // Extract port from ws://localhost:PORT/... and check HTTP endpoint
+    const match = wsEndpoint.match(/:(\d+)\//);
+    if (!match) return false;
+    const res = await fetch(`http://localhost:${match[1]}/json`);
     return res.ok;
   } catch {
     return false;
@@ -51,38 +55,39 @@ async function isPortAlive(port: number): Promise<boolean> {
 
 // --- Chromium CDP process management ---
 
-function spawnChromium(headless: boolean, userDataDir: string): Promise<{ port: number; pid: number }> {
-  const browserPath = chromium.executablePath();
-  if (!existsSync(userDataDir)) mkdirSync(userDataDir, { recursive: true });
+async function launchBrowserServer(headless: boolean): Promise<{ wsEndpoint: string; pid: number }> {
+  const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
-  const args = [
-    '--remote-debugging-port=0',
-    `--user-data-dir=${userDataDir}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    ...(headless ? ['--headless=new'] : []),
-  ];
-
-  return new Promise<{ port: number; pid: number }>((res, reject) => {
-    const child = spawn(browserPath, args, {
-      stdio: ['ignore', 'ignore', 'pipe'],
+  return new Promise<{ wsEndpoint: string; pid: number }>((res, reject) => {
+    const child = spawn(process.execPath, [
+      ...process.execArgv,
+      serverScript,
+      ...(headless ? ['--headless'] : []),
+    ], {
+      stdio: ['ignore', 'pipe', 'ignore'],
       detached: true,
     });
     child.unref();
 
-    const pid = child.pid!;
     const timeout = setTimeout(() => {
       child.kill();
-      reject(new Error('Chromium launch timeout (15s)'));
+      reject(new Error('Browser server launch timeout (15s)'));
     }, 15000);
 
-    let stderrData = '';
-    child.stderr!.on('data', (chunk: Buffer) => {
-      stderrData += chunk.toString();
-      const match = stderrData.match(/ws:\/\/127\.0\.0\.1:(\d+)\//);
-      if (match) {
-        clearTimeout(timeout);
-        res({ port: parseInt(match[1]), pid });
+    let output = '';
+    child.stdout!.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+      // Look for JSON line with wsEndpoint
+      const lines = output.split('\n');
+      for (const line of lines) {
+        try {
+          const data = JSON.parse(line.trim());
+          if (data.wsEndpoint) {
+            clearTimeout(timeout);
+            res({ wsEndpoint: data.wsEndpoint, pid: data.pid });
+            return;
+          }
+        } catch {}
       }
     });
 
@@ -93,8 +98,8 @@ function spawnChromium(headless: boolean, userDataDir: string): Promise<{ port: 
 
     child.on('exit', (code) => {
       clearTimeout(timeout);
-      if (!stderrData.includes('DevTools listening')) {
-        reject(new Error(`Chromium exited with code ${code}. stderr: ${stderrData}`));
+      if (!output.includes('wsEndpoint')) {
+        reject(new Error(`Browser server exited with code ${code}`));
       }
     });
   });
@@ -135,35 +140,27 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
     return launchNewSession({ headless, viewport, video, videoDir });
   }
 
-  // Try connecting to resolved session
-  if (await isPortAlive(session.port)) {
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${session.port}`);
-    const contexts = browser.contexts();
+  // Try connecting to resolved session via WebSocket
+  if (session.wsEndpoint && await isWsAlive(session.wsEndpoint)) {
+    const browser = await chromium.connect(session.wsEndpoint);
 
-    if (contexts.length > 0) {
-      const existingCtx = contexts[0];
-      if (video) {
-        // Create new context with video, inherit storageState
-        const state = await existingCtx.storageState().catch(() => undefined);
-        const ctx = await browser.newContext({
-          viewport,
-          recordVideo: { dir: videoDir, size: viewport },
-          ...(state ? { storageState: state } : {}),
-        });
-        const page = await ctx.newPage();
-        return { browser, context: ctx, page, session };
-      }
-      const pages = existingCtx.pages();
-      const page = pages.length > 0 ? pages[0] : await existingCtx.newPage();
-      return { browser, context: existingCtx, page, session };
-    }
+    // Load storageState from local state if available
+    const stateFile = join(LOCAL_STATE_DIR, 'state.json');
+    const storageState = existsSync(stateFile) ? stateFile : undefined;
 
-    // No context — create one
     const ctx = await browser.newContext({
       viewport,
+      acceptDownloads: true,
+      ...(storageState ? { storageState } : {}),
       ...(video ? { recordVideo: { dir: videoDir, size: viewport } } : {}),
     });
     const page = await ctx.newPage();
+
+    // Restore last URL if available
+    if (session.lastUrl && session.lastUrl !== 'about:blank') {
+      await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    }
+
     return { browser, context: ctx, page, session };
   }
 
@@ -180,34 +177,20 @@ async function launchNewSession(opts: {
   name?: string;
 }): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo }> {
   const sessionName = opts.resumeName || opts.name || `s-${generateSessionId()}`;
-  const userDataDir = sessionUserDataDir(sessionName);
 
-  const { port, pid } = await spawnChromium(opts.headless, userDataDir);
-  const session = createSession(sessionName, port, pid, opts.video ? sessionName : null);
+  const { wsEndpoint, pid } = await launchBrowserServer(opts.headless);
 
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const contexts = browser.contexts();
+  // Extract port from ws://localhost:PORT/...
+  const portMatch = wsEndpoint.match(/:(\d+)\//);
+  const port = portMatch ? parseInt(portMatch[1]) : 0;
 
-  if (contexts.length > 0) {
-    const ctx = contexts[0];
-    if (opts.video) {
-      const state = await ctx.storageState().catch(() => undefined);
-      const newCtx = await browser.newContext({
-        viewport: opts.viewport,
-        recordVideo: { dir: opts.videoDir, size: opts.viewport },
-        ...(state ? { storageState: state } : {}),
-      });
-      const page = await newCtx.newPage();
-      return { browser, context: newCtx, page, session };
-    }
-    const pages = ctx.pages();
-    const page = pages.length > 0 ? pages[0] : await ctx.newPage();
-    await page.setViewportSize(opts.viewport);
-    return { browser, context: ctx, page, session };
-  }
+  const session = createSession(sessionName, port, pid, wsEndpoint, opts.video ? sessionName : null);
+
+  const browser = await chromium.connect(wsEndpoint);
 
   const ctx = await browser.newContext({
     viewport: opts.viewport,
+    acceptDownloads: true,
     ...(opts.video ? { recordVideo: { dir: opts.videoDir, size: opts.viewport } } : {}),
   });
   const page = await ctx.newPage();
@@ -348,8 +331,16 @@ export async function run(
       session,
     });
 
+    // Save current URL + storageState for next connection
+    try {
+      const currentUrl = page.url();
+      if (currentUrl && currentUrl !== 'about:blank') {
+        updateSession(session.name, { lastUrl: currentUrl });
+      }
+      await context.storageState({ path: join(LOCAL_STATE_DIR, 'state.json') }).catch(() => {});
+    } catch {}
+
     output(result);
-    // CDP disconnect — browser process stays alive
     process.exit(0);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);

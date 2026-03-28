@@ -3,13 +3,12 @@ import { chromium } from 'playwright';
 import {
   createSession,
   getSession,
+  updateSession,
   deleteSession,
   listSessions,
   isProcessAlive,
   isSessionAlive,
   resolveSession,
-  sessionUserDataDir,
-  globalSessionDir,
   generateSessionId,
   bindSession,
   unbindSession,
@@ -19,7 +18,7 @@ import {
 } from './session.js';
 import { autoRenameVideo } from './video-utils.js';
 import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { spawn } from 'child_process';
 
 // --- Helpers ---
@@ -34,47 +33,39 @@ function hasFlag(args: string[], name: string): boolean {
   return args.includes(`--${name}`);
 }
 
-async function isPortAlive(port: number): Promise<boolean> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
+async function launchBrowserServer(headless: boolean): Promise<{ wsEndpoint: string; pid: number; port: number }> {
+  const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
-function spawnChromium(headless: boolean, userDataDir: string): Promise<{ port: number; pid: number }> {
-  const browserPath = chromium.executablePath();
-  if (!existsSync(userDataDir)) mkdirSync(userDataDir, { recursive: true });
-
-  const args = [
-    '--remote-debugging-port=0',
-    `--user-data-dir=${userDataDir}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    ...(headless ? ['--headless=new'] : []),
-  ];
-
-  return new Promise<{ port: number; pid: number }>((res, reject) => {
-    const child = spawn(browserPath, args, {
-      stdio: ['ignore', 'ignore', 'pipe'],
+  return new Promise<{ wsEndpoint: string; pid: number; port: number }>((res, reject) => {
+    const child = spawn(process.execPath, [
+      ...process.execArgv,
+      serverScript,
+      ...(headless ? ['--headless'] : []),
+    ], {
+      stdio: ['ignore', 'pipe', 'ignore'],
       detached: true,
     });
     child.unref();
 
-    const pid = child.pid!;
     const timeout = setTimeout(() => {
       child.kill();
-      reject(new Error('Chromium launch timeout (15s)'));
+      reject(new Error('Browser server launch timeout (15s)'));
     }, 15000);
 
-    let stderrData = '';
-    child.stderr!.on('data', (chunk: Buffer) => {
-      stderrData += chunk.toString();
-      const match = stderrData.match(/ws:\/\/127\.0\.0\.1:(\d+)\//);
-      if (match) {
-        clearTimeout(timeout);
-        res({ port: parseInt(match[1]), pid });
+    let output = '';
+    child.stdout!.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+      const lines = output.split('\n');
+      for (const line of lines) {
+        try {
+          const data = JSON.parse(line.trim());
+          if (data.wsEndpoint) {
+            clearTimeout(timeout);
+            const portMatch = data.wsEndpoint.match(/:(\d+)\//);
+            res({ wsEndpoint: data.wsEndpoint, pid: data.pid, port: portMatch ? parseInt(portMatch[1]) : 0 });
+            return;
+          }
+        } catch {}
       }
     });
 
@@ -85,8 +76,8 @@ function spawnChromium(headless: boolean, userDataDir: string): Promise<{ port: 
 
     child.on('exit', (code) => {
       clearTimeout(timeout);
-      if (!stderrData.includes('DevTools listening')) {
-        reject(new Error(`Chromium exited with code ${code}. stderr: ${stderrData}`));
+      if (!output.includes('wsEndpoint')) {
+        reject(new Error(`Browser server exited with code ${code}`));
       }
     });
   });
@@ -114,43 +105,37 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   }
 
   try {
-    const userDataDir = sessionUserDataDir(sessionName);
-    const { port, pid } = await spawnChromium(!headed, userDataDir);
-    const session = createSession(sessionName, port, pid, videoName || (videoEnabled ? sessionName : null));
+    const { wsEndpoint, pid, port } = await launchBrowserServer(!headed);
+    const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null));
 
     // Auto-bind to current project
     bindSession(sessionName);
 
     // Navigate to URL if provided
     if (url) {
-      const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-      const contexts = browser.contexts();
-      let page;
+      const browser = await chromium.connect(wsEndpoint);
 
-      if (videoEnabled) {
-        const videoDir = join(localStateDir(), 'videos');
-        if (!existsSync(videoDir)) mkdirSync(videoDir, { recursive: true });
-        const state = contexts.length > 0 ? await contexts[0].storageState().catch(() => undefined) : undefined;
-        const ctx = await browser.newContext({
-          recordVideo: { dir: videoDir, size: { width: 1920, height: 1080 } },
-          ...(state ? { storageState: state } : {}),
-        });
-        page = await ctx.newPage();
-      } else if (contexts.length > 0) {
-        const pages = contexts[0].pages();
-        page = pages.length > 0 ? pages[0] : await contexts[0].newPage();
-      } else {
-        const ctx = await browser.newContext();
-        page = await ctx.newPage();
-      }
+      const videoDir = join(localStateDir(), 'videos');
+      if (videoEnabled && !existsSync(videoDir)) mkdirSync(videoDir, { recursive: true });
+
+      const ctx = await browser.newContext({
+        ...(videoEnabled ? { recordVideo: { dir: videoDir, size: { width: 1920, height: 1080 } } } : {}),
+      });
+      const page = await ctx.newPage();
 
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       const title = await page.title();
 
+      // Save lastUrl + storageState for reconnection
+      updateSession(sessionName, { lastUrl: url });
+      const stateDir = localStateDir();
+      if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
+      await ctx.storageState({ path: join(stateDir, 'state.json') }).catch(() => {});
+
       return {
         success: true,
         data: {
-          session,
+          session: { ...session, lastUrl: url },
           url,
           title,
           resumed: !!resume,
