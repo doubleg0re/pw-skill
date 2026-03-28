@@ -96,7 +96,8 @@ interface Step {
   as?: string;
   do?: Step[];
   // loop
-  count?: number;
+  count?: number; // backward compat — prefer condition
+  condition?: ConditionNode;
   // try/catch/finally
   catch?: Step[];
   finally?: Step[];
@@ -499,16 +500,28 @@ export async function runSteps(
         continue;
       }
 
-      // --- loop ---
+      // --- loop (condition-based, replaces count) ---
       if (step.action === 'loop') {
-        const count = step.count ?? 1;
         const body = step.items || step.do || [];
-        results.push({ step: stepIndex, action: 'loop', success: true, data: { count } });
+        const loopCondition = step.condition;
+        // Backward compat: count → condition { ref: "$index", lt: count }
+        const condNode: ConditionNode | null = loopCondition
+          ? (loopCondition as ConditionNode)
+          : (step.count !== undefined ? { ref: '$index', lt: step.count } : null);
+
+        const maxIterations = MAX_JUMPS * 10; // safety cap
+        let iteration = 0;
+
+        results.push({ step: stepIndex, action: 'loop', success: true, data: { conditionBased: !!loopCondition } });
 
         let loopGoto = false;
-        for (let j = 0; j < count; j++) {
-          vars.set('$index', j);
-          const sub = await runSteps(page, body, vars, results, defs, (stepIndex * 1000) + (j * 100));
+        vars.set('$index', 0);
+
+        while (iteration < maxIterations) {
+          // Evaluate condition before each iteration
+          if (condNode && !evaluateCondition(condNode, vars)) break;
+
+          const sub = await runSteps(page, body, vars, results, defs, (stepIndex * 1000) + (iteration * 100));
           if (!sub.success) return sub;
           if (sub.goto) {
             if (labelMap.has(sub.goto)) {
@@ -519,6 +532,9 @@ export async function runSteps(
             }
             return sub;
           }
+
+          iteration++;
+          vars.set('$index', iteration);
         }
         if (loopGoto) continue;
         i++;
@@ -615,8 +631,8 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
 
     // loop
     if (action === 'loop') {
-      if (step.count === undefined || typeof step.count !== 'number') {
-        errors.push(`${loc}: loop requires numeric "count"`);
+      if (step.count === undefined && !step.condition) {
+        errors.push(`${loc}: loop requires "condition" or "count"`);
       }
       if (!step.items && !step.do) errors.push(`${loc}: loop requires "items"`);
     }

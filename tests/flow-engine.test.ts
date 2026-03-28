@@ -227,7 +227,7 @@ describe('Flow Engine — each', () => {
 });
 
 describe('Flow Engine — loop', () => {
-  it('repeats N times', async () => {
+  it('repeats N times (count backward compat)', async () => {
     const vars = new VarStore();
     const results: any[] = [];
 
@@ -237,10 +237,32 @@ describe('Flow Engine — loop', () => {
       ],
     }], vars, results, emptyDefs());
 
-    expect(results[0].data).toEqual({ count: 3 });
-    expect(results[1].data).toBe('i=0');
-    expect(results[2].data).toBe('i=1');
-    expect(results[3].data).toBe('i=2');
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs).toHaveLength(3);
+    expect(logs[0].data).toBe('i=0');
+    expect(logs[1].data).toBe('i=1');
+    expect(logs[2].data).toBe('i=2');
+  });
+
+  it('condition-based loop', async () => {
+    const vars = new VarStore();
+    vars.set('found', false);
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [{
+      action: 'loop',
+      condition: { and: [{ ref: '$index', lt: 5 }, { ref: 'found', neq: true }] },
+      items: [
+        { action: 'log', text: 'iter={{$index}}' },
+        // Simulate finding at iteration 2
+        { action: 'condition', ref: '$index', eq: 2,
+          then: [{ action: 'log', text: 'found it' }] },
+      ],
+    } as any], vars, results, emptyDefs());
+
+    const logs = results.filter(r => r.action === 'log');
+    // Should run 5 times since we never set found=true in this test
+    expect(logs.filter(l => typeof l.data === 'string' && l.data.startsWith('iter=')).length).toBe(5);
   });
 });
 
@@ -540,9 +562,9 @@ describe('validateSteps', () => {
     expect(errors[0]).toContain('requires "ref"');
   });
 
-  it('detects loop without count', () => {
-    const errors = validateSteps([{ action: 'loop', do: [] }]);
-    expect(errors[0]).toContain('requires numeric "count"');
+  it('detects loop without condition or count', () => {
+    const errors = validateSteps([{ action: 'loop', items: [] } as any]);
+    expect(errors[0]).toContain('requires "condition"');
   });
 
   it('detects try without items', () => {
