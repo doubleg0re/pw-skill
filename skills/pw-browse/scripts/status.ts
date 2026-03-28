@@ -45,7 +45,14 @@ async function main() {
       }
       
       const sessionData = JSON.parse(readFileSync(sessionJsonFile, 'utf-8'));
-      const port = sessionData.port;
+      let port = sessionData.port;
+      
+      // If cdpEndpoint exists, try to extract port from it for better accuracy on Windows
+      if (sessionData.cdpEndpoint) {
+        const match = sessionData.cdpEndpoint.match(/:(\d+)\//);
+        if (match) port = parseInt(match[1]);
+      }
+
       const info = await isPortAlive(port);
       if (!info) {
         console.log(JSON.stringify({ success: true, data: { status: 'dead', port, session: sessionName } }));

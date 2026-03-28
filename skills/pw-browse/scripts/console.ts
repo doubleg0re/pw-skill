@@ -17,22 +17,43 @@ function truncate(text: string, limit: number): string {
 const INJECT_SCRIPT = `
 if (!window.__PW_CONSOLE_PATCHED) {
   window.__PW_CONSOLE_PATCHED = true;
-  window.__PW_LOGS = window.__PW_LOGS || [];
+  
+  // Recovery from sessionStorage (persistent across navigations within same tab)
+  try {
+    const saved = sessionStorage.getItem('__PW_LOGS_BACKUP');
+    window.__PW_LOGS = saved ? JSON.parse(saved) : [];
+    sessionStorage.removeItem('__PW_LOGS_BACKUP');
+  } catch {
+    window.__PW_LOGS = [];
+  }
+
   const orig = {};
   ['log', 'warn', 'error', 'info', 'debug'].forEach(type => {
     orig[type] = console[type].bind(console);
     console[type] = (...args) => {
-      window.__PW_LOGS.push({
-        type,
-        text: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
-        ts: Date.now()
-      });
+      let text = '';
+      try {
+        text = args.map(a => {
+          if (typeof a === 'object' && a !== null) {
+            try { return JSON.stringify(a); } catch { return String(a); }
+          }
+          return String(a);
+        }).join(' ');
+      } catch { text = '[Unserializable log]'; }
+      
+      window.__PW_LOGS.push({ type, text, ts: Date.now() });
       orig[type](...args);
     };
   });
+
+  window.addEventListener('beforeunload', () => {
+    try { sessionStorage.setItem('__PW_LOGS_BACKUP', JSON.stringify(window.__PW_LOGS.slice(-1000))); } catch {}
+  });
+
   window.addEventListener('error', (e) => {
     window.__PW_LOGS.push({ type: 'error', text: e.message, ts: Date.now() });
   });
+
   window.addEventListener('unhandledrejection', (e) => {
     window.__PW_LOGS.push({ type: 'error', text: 'Unhandled: ' + String(e.reason), ts: Date.now() });
   });

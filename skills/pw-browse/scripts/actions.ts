@@ -2,72 +2,95 @@
 import type { Page } from 'playwright';
 import { screenshotPath } from './common.js';
 
-export async function actionNavigate(page: Page, a: string[]): Promise<{ result?: any }> {
-  await page.goto(a[0], { waitUntil: 'domcontentloaded', timeout: 30000 });
-  return { result: { url: a[0], title: await page.title() } };
+/** Flexible argument type for actions */
+export type ActionArgs = string[] | Record<string, any>;
+
+/** Helper to get argument by name or index */
+function getArg(a: ActionArgs, name: string, index: number): any {
+  if (Array.isArray(a)) return a[index];
+  return a[name] ?? a[index]; // fallback to index if name not found
 }
 
-export async function actionClick(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (/^\d+,\d+$/.test(a[0])) {
-    const [x, y] = a[0].split(',').map(Number);
+export async function actionNavigate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const url = getArg(a, 'url', 0);
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  return { result: { url, title: await page.title() } };
+}
+
+export async function actionClick(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  if (/^\d+,\d+$/.test(selector)) {
+    const [x, y] = selector.split(',').map(Number);
     await page.mouse.click(x, y);
-  } else if (a[0].startsWith('#') || a[0].startsWith('.') || a[0].startsWith('[')) {
-    await page.locator(a[0]).first().click();
+  } else if (selector.startsWith('#') || selector.startsWith('.') || selector.startsWith('[')) {
+    await page.locator(selector).first().click();
   } else {
-    await page.getByText(a[0], { exact: false }).first().click();
+    await page.getByText(selector, { exact: false }).first().click();
   }
   return {};
 }
 
-export async function actionDblclick(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (/^\d+,\d+$/.test(a[0])) {
-    const [x, y] = a[0].split(',').map(Number);
+export async function actionDblclick(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  if (/^\d+,\d+$/.test(selector)) {
+    const [x, y] = selector.split(',').map(Number);
     await page.mouse.dblclick(x, y);
   } else {
-    await page.locator(a[0]).first().dblclick();
+    await page.locator(selector).first().dblclick();
   }
   return {};
 }
 
-export async function actionDrag(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (/^\d+,\d+$/.test(a[0]) && /^\d+,\d+$/.test(a[1])) {
-    const [sx, sy] = a[0].split(',').map(Number);
-    const [tx, ty] = a[1].split(',').map(Number);
+export async function actionDrag(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const source = getArg(a, 'source', 0);
+  const target = getArg(a, 'target', 1);
+
+  if (/^\d+,\d+$/.test(source) && /^\d+,\d+$/.test(target)) {
+    const [sx, sy] = source.split(',').map(Number);
+    const [tx, ty] = target.split(',').map(Number);
     await page.mouse.move(sx, sy);
     await page.mouse.down();
     await page.mouse.move(tx, ty, { steps: 10 });
     await page.mouse.up();
   } else {
-    await page.locator(a[0]).first().dragTo(page.locator(a[1]).first());
+    await page.locator(source).first().dragTo(page.locator(target).first());
   }
   return {};
 }
 
-export async function actionFill(page: Page, a: string[]): Promise<{ result?: any }> {
-  await page.locator(a[0]).first().click();
-  await page.locator(a[0]).first().fill(a[1]);
+export async function actionFill(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  const value = getArg(a, 'value', 1);
+  await page.locator(selector).first().click();
+  await page.locator(selector).first().fill(String(value));
   return {};
 }
 
-export async function actionType(page: Page, a: string[]): Promise<{ result?: any }> {
-  await page.keyboard.type(a[0], { delay: a[1] ? parseInt(a[1]) : 0 });
+export async function actionType(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const text = getArg(a, 'text', 0);
+  const delay = Number(getArg(a, 'delay', 1) || 0);
+  await page.keyboard.type(String(text), { delay });
   return {};
 }
 
-export async function actionWait(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(a[0])) {
-    const [h, m, s] = a[0].split(':').map(Number);
+export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const target = getArg(a, 'target', 0);
+  const attr = getArg(a, 'attr', 1);
+  const value = getArg(a, 'value', 2);
+
+  if (typeof target === 'number' || /^\d+$/.test(target)) {
+    await new Promise(resolve => setTimeout(resolve, Number(target)));
+  } else if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(target)) {
+    const [h, m, s] = target.split(':').map(Number);
     const now = new Date();
-    const target = new Date(now);
-    target.setHours(h, m, s || 0, 0);
-    if (target <= now) target.setDate(target.getDate() + 1);
-    const ms = target.getTime() - now.getTime();
+    const targetTime = new Date(now);
+    targetTime.setHours(h, m, s || 0, 0);
+    if (targetTime <= now) targetTime.setDate(targetTime.getDate() + 1);
+    const ms = targetTime.getTime() - now.getTime();
     await new Promise(resolve => setTimeout(resolve, ms));
-  } else if (a[0].startsWith('http') || a[0].startsWith('/')) {
-    await page.waitForURL(a[0].includes('*') ? a[0] : `**${a[0]}*`, { timeout: 30000 });
-  } else if (/^\d+$/.test(a[0])) {
-    await new Promise(resolve => setTimeout(resolve, parseInt(a[0])));
-  } else if (a[1] && a[2]) {
+  } else if (target.startsWith('http') || target.startsWith('/')) {
+    await page.waitForURL(target.includes('*') ? target : `**${target}*`, { timeout: 30000 });
+  } else if (attr && value !== undefined) {
     await page.waitForFunction(
       ({ sel, attr, value }) => {
         const el = document.querySelector(sel);
@@ -75,77 +98,92 @@ export async function actionWait(page: Page, a: string[]): Promise<{ result?: an
         const actual = attr === 'textContent' ? el.textContent?.trim()
           : attr === 'innerText' ? (el as HTMLElement).innerText?.trim()
           : (el as HTMLElement).getAttribute(attr);
-        return actual === value;
+        return actual === String(value);
       },
-      { sel: a[0], attr: a[1], value: a[2] },
+      { sel: target, attr, value },
       { timeout: 30000 },
     );
   } else {
-    await page.locator(a[0]).first().waitFor({ state: 'visible', timeout: 30000 });
+    await page.locator(target).first().waitFor({ state: 'visible', timeout: 30000 });
   }
   return {};
 }
 
-export async function actionHover(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (/^\d+,\d+$/.test(a[0])) {
-    const [x, y] = a[0].split(',').map(Number);
+export async function actionHover(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  if (/^\d+,\d+$/.test(selector)) {
+    const [x, y] = selector.split(',').map(Number);
     await page.mouse.move(x, y);
   } else {
-    await page.locator(a[0]).first().hover();
+    await page.locator(selector).first().hover();
   }
   return {};
 }
 
-export async function actionScroll(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (a[0] === 'down') await page.evaluate((px) => window.scrollBy(0, px || window.innerHeight), a[1] ? parseInt(a[1]) : undefined);
-  else if (a[0] === 'up') await page.evaluate((px) => window.scrollBy(0, -(px || window.innerHeight)), a[1] ? parseInt(a[1]) : undefined);
-  else if (a[0] === 'top') await page.evaluate(() => window.scrollTo(0, 0));
-  else if (a[0] === 'bottom') await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  else await page.locator(a[0]).first().scrollIntoViewIfNeeded();
+export async function actionScroll(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const direction = getArg(a, 'direction', 0);
+  const amount = getArg(a, 'amount', 1);
+
+  if (direction === 'down') await page.evaluate((px) => window.scrollBy(0, px || window.innerHeight), amount ? Number(amount) : undefined);
+  else if (direction === 'up') await page.evaluate((px) => window.scrollBy(0, -(px || window.innerHeight)), amount ? Number(amount) : undefined);
+  else if (direction === 'top') await page.evaluate(() => window.scrollTo(0, 0));
+  else if (direction === 'bottom') await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  else await page.locator(direction).first().scrollIntoViewIfNeeded();
   await page.waitForTimeout(300);
   return {};
 }
 
-export async function actionSelect(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (a[2] === 'label') await page.locator(a[0]).first().selectOption({ label: a[1] });
-  else if (a[2] === 'index') await page.locator(a[0]).first().selectOption({ index: parseInt(a[1]) });
-  else await page.locator(a[0]).first().selectOption({ value: a[1] });
+export async function actionSelect(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  const value = getArg(a, 'value', 1);
+  const mode = getArg(a, 'mode', 2);
+
+  if (mode === 'label') await page.locator(selector).first().selectOption({ label: String(value) });
+  else if (mode === 'index') await page.locator(selector).first().selectOption({ index: Number(value) });
+  else await page.locator(selector).first().selectOption({ value: String(value) });
   return {};
 }
 
-export async function actionUpload(page: Page, a: string[]): Promise<{ result?: any }> {
-  await page.locator(a[0]).first().setInputFiles(a.slice(1));
+export async function actionUpload(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  const files = Array.isArray(a) ? a.slice(1) : (Array.isArray(a.files) ? a.files : [a.files]);
+  await page.locator(selector).first().setInputFiles(files);
   return {};
 }
 
-export async function actionAttr(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (a[2]) {
-    await page.locator(a[0]).first().evaluate((el, { name, value }) => {
+export async function actionAttr(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  const name = getArg(a, 'name', 1);
+  const value = getArg(a, 'value', 2);
+
+  if (value !== undefined) {
+    await page.locator(selector).first().evaluate((el, { name, value }) => {
       if (name === 'textContent') el.textContent = value;
       else if (name === 'value') (el as HTMLInputElement).value = value;
       else el.setAttribute(name, value);
-    }, { name: a[1], value: a[2] });
+    }, { name, value: String(value) });
     return {};
   }
-  const val = await page.locator(a[0]).first().evaluate((el, name) => {
+  const val = await page.locator(selector).first().evaluate((el, name) => {
     if (name === 'textContent') return el.textContent?.trim();
     if (name === 'value') return (el as HTMLInputElement).value;
     return el.getAttribute(name);
-  }, a[1]);
+  }, name);
   return { result: val };
 }
 
-export async function actionSubmit(page: Page, a: string[]): Promise<{ result?: any }> {
-  if (a[0]) await page.locator(a[0]).first().evaluate((form: HTMLFormElement) => form.submit());
+export async function actionSubmit(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  if (selector) await page.locator(selector).first().evaluate((form: HTMLFormElement) => form.submit());
   else await page.keyboard.press('Enter');
   await page.waitForTimeout(1000);
   return {};
 }
 
-export async function actionFetch(page: Page, a: string[]): Promise<{ result?: any }> {
-  const method = (a[0] || 'GET').toUpperCase();
-  const rawUrl = a[1];
-  const fetchBody = a[2];
+export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const method = String(getArg(a, 'method', 0) || 'GET').toUpperCase();
+  const rawUrl = getArg(a, 'url', 1);
+  const fetchBody = getArg(a, 'body', 2);
 
   // Resolve relative URLs against the current page origin
   const fetchUrl = rawUrl.startsWith('http')
@@ -159,7 +197,7 @@ export async function actionFetch(page: Page, a: string[]): Promise<{ result?: a
   const fetchResult = await page.evaluate(
     async ({ method, url, body }) => {
       const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
-      if (body && method !== 'GET') opts.body = body;
+      if (body && method !== 'GET') opts.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
       const res = await fetch(url, opts);
       const contentType = res.headers.get('content-type') || '';
       let data: any;
@@ -175,16 +213,15 @@ export async function actionFetch(page: Page, a: string[]): Promise<{ result?: a
   return { result: fetchResult };
 }
 
-export async function actionScreenshot(page: Page, a: string[]): Promise<{ result?: any }> {
-  const last = a[a.length - 1];
-  const hasName = a.length >= 2 && last && last !== 'full' && !/^\d+,\d+,\d+,\d+$/.test(last) && !last.startsWith('#') && !last.startsWith('.') && !last.startsWith('[');
-  const name = hasName ? last : undefined;
-  const target = hasName ? a[0] : a[0];
+export async function actionScreenshot(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const name = getArg(a, 'name', 1) || getArg(a, 'filename', 1);
+  const target = getArg(a, 'selector', 0) || getArg(a, 'target', 0);
   const path = screenshotPath(name);
+
   if (target === 'full') {
     await page.screenshot({ path, fullPage: true });
-  } else if (target && /^\d+,\d+,\d+,\d+$/.test(target)) {
-    const [x, y, width, height] = target.split(',').map(Number);
+  } else if (target && String(target).match(/^\d+,\d+,\d+,\d+$/)) {
+    const [x, y, width, height] = String(target).split(',').map(Number);
     await page.screenshot({ path, clip: { x, y, width, height } });
   } else if (target) {
     await page.locator(target).first().screenshot({ path });
@@ -194,13 +231,14 @@ export async function actionScreenshot(page: Page, a: string[]): Promise<{ resul
   return { result: { screenshot: path } };
 }
 
-export async function actionEvaluate(page: Page, a: string[]): Promise<{ result?: any }> {
-  const evalResult = await page.evaluate(a[0]);
+export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const expression = getArg(a, 'expression', 0) || getArg(a, 'js', 0);
+  const evalResult = await page.evaluate(expression);
   return { result: evalResult };
 }
 
 /** Map of action names to their implementations */
-export const ACTION_MAP: Record<string, (page: Page, a: string[]) => Promise<{ result?: any }>> = {
+export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{ result?: any }>> = {
   navigate: actionNavigate,
   click: actionClick,
   dblclick: actionDblclick,

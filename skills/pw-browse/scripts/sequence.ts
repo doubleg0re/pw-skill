@@ -125,17 +125,12 @@ export async function executeAction(
   vars: VarStore,
 ): Promise<{ result?: any }> {
   const a = vars.interpolateArgs(rawArgs);
-  const fn = ACTION_MAP[action];
+  const fn = ACTION_MAP[action] as (page: Page, a: any) => Promise<{ result?: any }>;
   if (!fn) throw new Error(`Unknown action: ${action}`);
 
-  // ACTION_MAP functions expect an array of strings in most cases, 
-  // but some might support object args in the future. 
-  // For now, convert object args to the specific order defined in the action map if needed,
-  // or pass as is if the action supports it.
-  // Most actions in actions.ts expect (page, args: string[])
-  
-  const argsArray = Array.isArray(a) ? a : Object.values(a).map(String);
-  return fn(page, argsArray);
+  // Now 'a' can be either string[] or Record<string, any>
+  // Both are accepted by the refactored actions in actions.ts
+  return fn(page, a);
 }
 
 // --- Flow engine ---
