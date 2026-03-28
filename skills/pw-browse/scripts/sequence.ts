@@ -226,6 +226,101 @@ export async function runSteps(
         continue;
       }
 
+      // --- try / catch / finally ---
+      if (step.action === 'try') {
+        const tryBody = step.do || [];
+        const finallyBody = step.finally || [];
+        let trySub = await runSteps(page, tryBody, vars, results, defs, stepIndex * 1000);
+
+        if (!trySub.success) {
+          // Classify error
+          const lastError = results[results.length - 1]?.error || '';
+          let errorType = 'error';
+          if (/challenge/i.test(lastError)) errorType = 'challenge';
+          else if (/not found|no element|locator/i.test(lastError)) errorType = 'notfound';
+          else if (/timeout/i.test(lastError)) errorType = 'timeout';
+
+          vars.set('$error', lastError);
+          vars.set('$errorType', errorType);
+
+          // Find matching catch handler
+          let catchBody: Step[] | undefined;
+
+          // 1. Try catch:<type> (e.g., catch:timeout)
+          const typedCatchKey = `catch:${errorType}`;
+          if ((step as any)[typedCatchKey]) {
+            catchBody = (step as any)[typedCatchKey];
+          }
+
+          // 2. Try named condition defs as catch:<defName>
+          if (!catchBody) {
+            for (const key of Object.keys(step)) {
+              if (key.startsWith('catch:') && key !== typedCatchKey) {
+                const condName = key.slice(6);
+                const condDef = defs.get(condName);
+                if (condDef?.kind === 'condition' && evaluateCondition(condDef.condition, vars)) {
+                  catchBody = (step as any)[key];
+                  errorType = condName;
+                  break;
+                }
+              }
+            }
+          }
+
+          // 3. Generic catch
+          if (!catchBody && step.catch) {
+            catchBody = step.catch;
+          }
+
+          results.push({ step: stepIndex, action: 'try', success: true, data: { caught: !!catchBody, errorType } });
+
+          if (catchBody) {
+            const catchSub = await runSteps(page, catchBody, vars, results, defs, stepIndex * 2000);
+            if (catchSub.goto) {
+              // Run finally before goto
+              if (finallyBody.length > 0) {
+                await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+              }
+              if (labelMap.has(catchSub.goto)) {
+                if (++jumpCount > MAX_JUMPS) return { success: false, failedAt: stepIndex };
+                i = labelMap.get(catchSub.goto)!;
+                continue;
+              }
+              return catchSub;
+            }
+          } else {
+            // No catch matched — run finally then fail
+            if (finallyBody.length > 0) {
+              await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+            }
+            return { success: false, failedAt: stepIndex };
+          }
+        } else {
+          results.push({ step: stepIndex, action: 'try', success: true, data: { caught: false } });
+
+          // Handle goto from try body
+          if (trySub.goto) {
+            if (finallyBody.length > 0) {
+              await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+            }
+            if (labelMap.has(trySub.goto)) {
+              if (++jumpCount > MAX_JUMPS) return { success: false, failedAt: stepIndex };
+              i = labelMap.get(trySub.goto)!;
+              continue;
+            }
+            return trySub;
+          }
+        }
+
+        // Always run finally
+        if (finallyBody.length > 0) {
+          await runSteps(page, finallyBody, vars, results, defs, stepIndex * 3000);
+        }
+
+        i++;
+        continue;
+      }
+
       // --- def (function or condition definition) ---
       if (step.action === 'def') {
         if (step.conditions) {

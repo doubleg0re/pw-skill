@@ -610,3 +610,114 @@ describe('Flow Engine — def with conditions', () => {
     expect(vars.get('check')).toBe(false);
   });
 });
+
+// --- Task 4: try / catch / finally ---
+
+describe('Flow Engine — try/catch/finally', () => {
+  it('catch runs on error', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const page = mockPage({
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('Element not found')) })) })),
+    });
+
+    await runSteps(page, [{
+      action: 'try',
+      do: [{ action: 'click', args: ['#missing'] }],
+      catch: [{ action: 'log', text: 'caught: {{$error}}' }],
+    }], vars, results, emptyDefs());
+
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs).toHaveLength(1);
+    expect(logs[0].data).toContain('Element not found');
+  });
+
+  it('finally always runs on success', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [{
+      action: 'try',
+      do: [{ action: 'log', text: 'ok' }],
+      finally: [{ action: 'log', text: 'cleanup' }],
+    }], vars, results, emptyDefs());
+
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs).toHaveLength(2);
+    expect(logs[0].data).toBe('ok');
+    expect(logs[1].data).toBe('cleanup');
+  });
+
+  it('finally always runs on error', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const page = mockPage({
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('fail')) })) })),
+    });
+
+    await runSteps(page, [{
+      action: 'try',
+      do: [{ action: 'click', args: ['#x'] }],
+      catch: [{ action: 'log', text: 'caught' }],
+      finally: [{ action: 'log', text: 'cleanup' }],
+    }], vars, results, emptyDefs());
+
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs.map(l => l.data)).toContain('caught');
+    expect(logs.map(l => l.data)).toContain('cleanup');
+  });
+
+  it('typed catch:notfound matches', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const page = mockPage({
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('Element not found')) })) })),
+    });
+
+    await runSteps(page, [{
+      action: 'try',
+      do: [{ action: 'click', args: ['#x'] }],
+      'catch:notfound': [{ action: 'log', text: 'not found handler' }],
+      catch: [{ action: 'log', text: 'generic' }],
+    } as any], vars, results, emptyDefs());
+
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toBe('not found handler');
+  });
+
+  it('sets $error and $errorType variables', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const page = mockPage({
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('Timeout 30000ms exceeded')) })) })),
+    });
+
+    await runSteps(page, [{
+      action: 'try',
+      do: [{ action: 'click', args: ['#x'] }],
+      catch: [{ action: 'log', text: '{{$errorType}}' }],
+    }], vars, results, emptyDefs());
+
+    expect(vars.get('$errorType')).toBe('timeout');
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toBe('timeout');
+  });
+
+  it('no catch = fail after finally', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const page = mockPage({
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('boom')) })) })),
+    });
+
+    const outcome = await runSteps(page, [{
+      action: 'try',
+      do: [{ action: 'click', args: ['#x'] }],
+      finally: [{ action: 'log', text: 'cleanup' }],
+    }], vars, results, emptyDefs());
+
+    expect(outcome.success).toBe(false);
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toBe('cleanup');
+  });
+});
