@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { VarStore, runSteps, evaluateCondition } from '../skills/pw-browse/scripts/sequence.js';
+import { VarStore, runSteps, evaluateCondition, validateSteps } from '../skills/pw-browse/scripts/sequence.js';
 
 // Mock page object — only need methods that flow control actions use
 function mockPage(overrides: Record<string, any> = {}): any {
@@ -496,5 +496,76 @@ describe('Flow Engine — composite condition steps', () => {
 
     expect(results[0].data.matched).toBe(true);
     expect(results[1].data).toBe('found');
+  });
+});
+
+// --- Task 2: validateSteps ---
+
+describe('validateSteps', () => {
+  it('passes valid steps', () => {
+    expect(validateSteps([
+      { action: 'navigate', args: ['http://localhost'] },
+      { action: 'click', args: ['#btn'] },
+      { label: 'end' },
+    ])).toEqual([]);
+  });
+
+  it('detects unknown action', () => {
+    const errors = validateSteps([{ action: 'banana' }]);
+    expect(errors[0]).toContain('unknown action');
+  });
+
+  it('detects condition mixing ref with and/or', () => {
+    const errors = validateSteps([{ action: 'condition', ref: 'x', and: [{ ref: 'y', eq: 1 }] } as any]);
+    expect(errors[0]).toContain('cannot mix');
+  });
+
+  it('detects condition with both and + or', () => {
+    const errors = validateSteps([{ action: 'condition', and: [], or: [] } as any]);
+    expect(errors[0]).toContain('both "and" and "or"');
+  });
+
+  it('detects def without name', () => {
+    const errors = validateSteps([{ action: 'def', do: [] }]);
+    expect(errors[0]).toContain('requires "name"');
+  });
+
+  it('detects call without name', () => {
+    const errors = validateSteps([{ action: 'call' }]);
+    expect(errors[0]).toContain('requires "name"');
+  });
+
+  it('detects each without ref', () => {
+    const errors = validateSteps([{ action: 'each', do: [] }]);
+    expect(errors[0]).toContain('requires "ref"');
+  });
+
+  it('detects loop without count', () => {
+    const errors = validateSteps([{ action: 'loop', do: [] }]);
+    expect(errors[0]).toContain('requires numeric "count"');
+  });
+
+  it('detects try without do', () => {
+    const errors = validateSteps([{ action: 'try' }]);
+    expect(errors[0]).toContain('requires "do"');
+  });
+
+  it('detects goto without label', () => {
+    const errors = validateSteps([{ action: 'goto' }]);
+    expect(errors[0]).toContain('requires "label"');
+  });
+
+  it('validates nested steps', () => {
+    const errors = validateSteps([{
+      action: 'condition', ref: 'x', eq: 1,
+      then: [{ action: 'banana' }],
+    }]);
+    expect(errors[0]).toContain('unknown action');
+    expect(errors[0]).toContain('then');
+  });
+
+  it('step with no action or label is an error', () => {
+    const errors = validateSteps([{} as any]);
+    expect(errors[0]).toContain('no action or label');
   });
 });

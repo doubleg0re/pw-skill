@@ -95,6 +95,14 @@ interface Step {
   do?: Step[];
   // loop
   count?: number;
+  // try/catch/finally
+  catch?: Step[];
+  finally?: Step[];
+  [key: `catch:${string}`]: Step[] | undefined;
+  // def conditions
+  conditions?: ConditionNode;
+  // wait user-action
+  prompt?: string;
 }
 
 const MAX_JUMPS = 100;
@@ -428,6 +436,102 @@ export async function runSteps(
   return { success: true };
 }
 
+// --- Syntax validator ---
+
+const KNOWN_ACTIONS = new Set([
+  'navigate', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
+  'scroll', 'select', 'upload', 'attr', 'submit', 'fetch', 'screenshot',
+  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try',
+]);
+
+export function validateSteps(steps: Step[], prefix: string = ''): string[] {
+  const errors: string[] = [];
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const loc = `${prefix}Step ${i}`;
+
+    // Label-only step
+    if (!step.action && step.label) continue;
+    if (!step.action && !step.label) {
+      errors.push(`${loc}: step has no action or label`);
+      continue;
+    }
+
+    const action = step.action!;
+
+    // Unknown action
+    if (!KNOWN_ACTIONS.has(action)) {
+      errors.push(`${loc}: unknown action "${action}"`);
+    }
+
+    // condition
+    if (action === 'condition') {
+      const hasLeaf = 'ref' in step;
+      const hasComposite = 'and' in step || 'or' in step;
+      if (hasLeaf && hasComposite) {
+        errors.push(`${loc}: condition cannot mix "ref" with "and"/"or"`);
+      }
+      if ('and' in step && 'or' in step) {
+        errors.push(`${loc}: condition cannot have both "and" and "or" at same level`);
+      }
+      if (hasLeaf && !step.ref) {
+        errors.push(`${loc}: condition leaf requires "ref"`);
+      }
+    }
+
+    // def
+    if (action === 'def') {
+      if (!step.name) errors.push(`${loc}: def requires "name"`);
+      if (step.do && step.conditions) {
+        errors.push(`${loc}: def cannot have both "do" and "conditions"`);
+      }
+    }
+
+    // call
+    if (action === 'call') {
+      if (!step.name) errors.push(`${loc}: call requires "name"`);
+    }
+
+    // each
+    if (action === 'each') {
+      if (!step.ref) errors.push(`${loc}: each requires "ref"`);
+      if (!step.do) errors.push(`${loc}: each requires "do"`);
+    }
+
+    // loop
+    if (action === 'loop') {
+      if (step.count === undefined || typeof step.count !== 'number') {
+        errors.push(`${loc}: loop requires numeric "count"`);
+      }
+      if (!step.do) errors.push(`${loc}: loop requires "do"`);
+    }
+
+    // try
+    if (action === 'try') {
+      if (!step.do || !Array.isArray(step.do)) {
+        errors.push(`${loc}: try requires "do" array`);
+      }
+      if (step.finally && !Array.isArray(step.finally)) {
+        errors.push(`${loc}: try "finally" must be an array`);
+      }
+    }
+
+    // goto
+    if (action === 'goto') {
+      if (!step.label) errors.push(`${loc}: goto requires "label"`);
+    }
+
+    // Recurse into nested steps
+    if (step.do) errors.push(...validateSteps(step.do, `${loc}.do → `));
+    if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `));
+    if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `));
+    if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `));
+  }
+
+  return errors;
+}
+
 // --- Entry point ---
 
 run(async ({ page, args: cliArgs }) => {
@@ -446,6 +550,12 @@ run(async ({ page, args: cliArgs }) => {
   }
 
   if (!Array.isArray(steps)) return { success: false, error: 'JSON must be an array of steps.' };
+
+  // Validate syntax before execution
+  const validationErrors = validateSteps(steps);
+  if (validationErrors.length > 0) {
+    return { success: false, error: 'Validation failed', data: { errors: validationErrors } };
+  }
 
   const vars = new VarStore();
   const results: StepResult[] = [];
