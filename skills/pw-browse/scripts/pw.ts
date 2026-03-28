@@ -64,7 +64,7 @@ Session management:
 
 Diagnostics:
   analyze                                   Diagnose sessions, bindings, artifacts
-  clean <dead|stale|orphans|broken|all>     Safe cleanup of dead/stale resources
+  clean <dead|stale|orphans|all>             Safe cleanup (broken pkgs → pw rary kick)
 
 Package management (Larry's toybox):
   rary get <repo|path>                      Fetch a toy into the toybox
@@ -128,17 +128,16 @@ if (command === 'analyze') {
 // --- clean ---
 if (command === 'clean') {
   const target = restArgs.filter(a => !a.startsWith('--'))[0];
-  const { cleanDead, cleanStale, cleanOrphans, cleanBroken, cleanAll } = await import('./clean.js');
+  const { cleanDead, cleanStale, cleanOrphans, cleanAll } = await import('./clean.js');
 
   let result;
   switch (target) {
     case 'dead':     result = { cleaned: { dead: cleanDead() } }; break;
     case 'stale':    result = { cleaned: { stale: cleanStale() } }; break;
     case 'orphans':  result = { cleaned: { orphaned: cleanOrphans() } }; break;
-    case 'broken':   result = { cleaned: { broken: cleanBroken() } }; break;
     case 'all':      result = cleanAll(); break;
     default:
-      console.log(JSON.stringify({ success: false, error: 'Usage: pw clean <dead|stale|orphans|broken|all>' }));
+      console.log(JSON.stringify({ success: false, error: 'Usage: pw clean <dead|stale|orphans|all>. For broken packages, use `pw rary need-repair` + `pw rary kick`.' }));
       process.exit(1);
   }
 

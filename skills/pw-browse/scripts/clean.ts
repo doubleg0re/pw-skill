@@ -7,17 +7,14 @@ import {
   unbindSession,
   localStateDir,
 } from './session.js';
-import { checkRepair, removePackage } from './rary.js';
-import { existsSync, rmSync, writeFileSync } from 'fs';
-import { join } from 'path';
-import { analyze, type AnalyzeResult } from './analyze.js';
+import { existsSync, rmSync } from 'fs';
+import { analyze } from './analyze.js';
 
 export interface CleanResult {
   cleaned: {
     dead: string[];
     stale: string[];
     orphaned: string[];
-    broken: string[];
   };
 }
 
@@ -61,26 +58,12 @@ export function cleanOrphans(cwd?: string): string[] {
   return cleaned;
 }
 
-export function cleanBroken(): string[] {
-  const cleaned: string[] = [];
-  const issues = checkRepair();
-
-  // Group by package — only remove if package has issues
-  const brokenPackages = new Set(issues.map(i => i.package));
-  for (const pkg of brokenPackages) {
-    removePackage(pkg);
-    cleaned.push(pkg);
-  }
-  return cleaned;
-}
-
 export function cleanAll(cwd?: string): CleanResult {
   return {
     cleaned: {
       dead: cleanDead(),
       stale: cleanStale(cwd),
       orphaned: cleanOrphans(cwd),
-      broken: cleanBroken(),
     },
   };
 }
