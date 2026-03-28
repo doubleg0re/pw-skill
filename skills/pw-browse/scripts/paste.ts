@@ -65,16 +65,24 @@ run(async ({ page, args }) => {
   }
 
   // --- Text paste ---
+  let clipboardOk: boolean | null = null;
   if (text) {
-    // Set clipboard text, then trigger Ctrl+V
-    await page.evaluate(async (t) => {
-      try { await navigator.clipboard.writeText(t); } catch {}
-    }, text).catch(() => {});
+    clipboardOk = await page.evaluate(async (t) => {
+      try { await navigator.clipboard.writeText(t); return true; } catch { return false; }
+    }, text).catch(() => false);
   }
 
   // Ctrl+V
   const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
   await page.keyboard.press(`${modifier}+v`);
 
-  return { success: true, data: { type: 'text', text: text || '(clipboard)', selector: selector || null } };
+  return {
+    success: true,
+    data: {
+      type: 'text',
+      text: text || '(clipboard)',
+      selector: selector || null,
+      clipboard: clipboardOk === null ? 'existing' : (clipboardOk ? 'ok' : 'failed (browser permission denied)'),
+    },
+  };
 });
