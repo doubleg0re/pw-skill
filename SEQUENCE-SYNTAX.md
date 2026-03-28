@@ -29,19 +29,24 @@ Common fields:
 - `out`
 - `label`
 - `name`
+- `type`
 - `params`
+- `items`
 - `ref`
 - `text`
-- `type`
-- `items`
 - `then`
 - `else`
 - `catch`
 - `catch:<name>`
 - `finally`
 - `condition`
+- `target`
+- `trigger`
+- `timeout`
 - `actions`
 - `prompt`
+- `focus`
+- `idle`
 
 ## Variables
 
@@ -63,6 +68,10 @@ Common fields:
 - `{{$key}}`
 - `{{$error}}`
 - `{{$errorType}}`
+- `{{$ret}}`
+- `{{$err}}`
+- `{{$code}}`
+- `{{$elem}}`
 
 ## Basic Actions
 
@@ -71,10 +80,34 @@ Common fields:
 { "action": "click", "args": ["Sign in"] }
 { "action": "fill", "args": ["#email", "{{email}}"] }
 { "action": "wait", "args": ["1000"] }
-{ "action": "wait", "args": ["user-action"], "prompt": "Solve the challenge, then click Continue" }
+{ "action": "wait", "target": "user-action", "prompt": "Solve the challenge, then click Continue" }
 { "action": "log", "text": "done" }
 { "action": "goto", "label": "start" }
 ```
+
+## set
+
+Copy values into user-defined variables.
+
+```json
+{
+  "action": "set",
+  "items": {
+    "savedElem": { "ref": "$elem" },
+    "savedRet": { "ref": "$ret" },
+    "duplicatedVal": { "ref": "previousVal" },
+    "retryCount": { "value": 3 },
+    "payload": { "value": { "ok": true, "items": [1, 2, 3] } }
+  }
+}
+```
+
+Rules:
+
+- each entry value must contain exactly one of:
+  - `ref`
+  - `value`
+- destination variable names must not start with `$`
 
 ## Label / Goto
 
@@ -88,7 +121,7 @@ Common fields:
 
 ## shell
 
-Execute a local command. Requires `--allow-shell` flag. With `--request-permission`, prompts the user for approval before each execution (requires `--headed`).
+Execute a local command. Requires `--allow-shell`. With `--request-permission`, prompts the user for approval before each execution (requires `--headed`).
 
 ```bash
 pw sequence flow.json --allow-shell
@@ -111,14 +144,46 @@ Object args format:
 { "action": "shell", "args": { "command": ["npm", "run", "build"], "timeout": 60000 } }
 ```
 
-## wait user-action
+## wait
+
+### Time wait
+
+```json
+{ "action": "wait", "args": ["1000"] }
+```
+
+### Observation wait
+
+```json
+{
+  "action": "wait",
+  "target": "dom:#login .email[value]",
+  "trigger": {
+    "ref": "$changed",
+    "eq": true
+  },
+  "timeout": 10000,
+  "out": "emailWatch"
+}
+```
+
+Supported target forms:
+
+- `dom:<selector>`
+- `dom:<selector>[field]`
+- `url:<pattern>`
+- `challenge`
+
+Trigger uses the same condition grammar as `condition`.
+
+### user-action
 
 Pause execution and show an overlay with action buttons. The clicked button value is stored in `out`.
 
 ```json
 {
   "action": "wait",
-  "args": ["user-action"],
+  "target": "user-action",
   "prompt": "Choose an action",
   "actions": ["approve", "skip", "cancel"],
   "out": "choice"
@@ -127,6 +192,18 @@ Pause execution and show an overlay with action buttons. The clicked button valu
 
 - `actions`: Array of button labels (default: `["continue"]` when omitted)
 - `out`: Stores the clicked button value
+- `focus`: Optional selector to focus before waiting
+- `idle`: Optional idle milliseconds before showing actions
+
+### user-alert
+
+```json
+{
+  "action": "wait",
+  "target": "user-alert",
+  "prompt": "Please submit the form manually."
+}
+```
 
 ## def / call
 
@@ -146,8 +223,6 @@ Pause execution and show an overlay with action buttons. The clicked button valu
 }
 ```
 
-`type` defaults to `"func"` when omitted.
-
 ### Block call
 
 ```json
@@ -165,14 +240,16 @@ Pause execution and show an overlay with action buttons. The clicked button valu
   "action": "def",
   "name": "authFail",
   "type": "condition",
-  "items": [
-    { "ref": "$url", "contains": "/login" },
-    { "ref": "$title", "contains": "Sign in" }
-  ]
+  "items": {
+    "or": [
+      { "ref": "$url", "contains": "/login" },
+      { "ref": "$title", "contains": "Sign in" }
+    ]
+  }
 }
 ```
 
-When `type` is `"condition"`, `items` is an array of `ConditionNode`. Multiple items are combined with `or`.
+When `type` is `"condition"`, `items` must be a single `ConditionNode`.
 
 ## condition
 
@@ -289,32 +366,21 @@ Leaf form:
 
 ## loop
 
-### Condition-based (preferred)
-
 ```json
 {
   "action": "loop",
-  "condition": { "ref": "$index", "lt": 5 },
+  "condition": {
+    "and": [
+      { "ref": "$index", "lt": 10 },
+      { "ref": "found", "neq": true }
+    ]
+  },
   "items": [
-    { "action": "click", "args": [".next"] },
-    { "action": "log", "text": "index={{$index}}" }
+    { "action": "find", "args": ["#success-banner"], "out": "found" },
+    { "action": "wait", "args": ["1000"] }
   ]
 }
 ```
-
-### Count-based (backward compat)
-
-```json
-{
-  "action": "loop",
-  "count": 3,
-  "items": [
-    { "action": "click", "args": [".next"] }
-  ]
-}
-```
-
-`count` is converted internally to `condition: { ref: "$index", lt: count }`.
 
 ## try / catch / finally
 
@@ -328,7 +394,7 @@ Leaf form:
     { "action": "log", "text": "fallback error: {{$error}}" }
   ],
   "catch:challenge": [
-    { "action": "wait", "args": ["user-action"], "prompt": "Solve the challenge, then click Continue" }
+    { "action": "wait", "target": "user-action", "prompt": "Solve the challenge, then click Continue" }
   ],
   "catch:notfound": [
     { "action": "log", "text": "element not found" }
@@ -346,7 +412,7 @@ Rules:
 
 - `items` is required
 - `catch` is fallback
-- `catch:<name>` is typed handler (matches error type or named condition def)
+- `catch:<name>` is typed handler
 - `finally` always runs
 - Error info: `{{$error}}` (message), `{{$errorType}}` (classified type)
 
@@ -443,16 +509,15 @@ Invalid:
 {
   "action": "def",
   "name": "x",
-  "type": "func",
   "items": []
 }
 ```
 
-with `type` being anything other than `"func"` or `"condition"`:
-
 Reason:
 
+- `def` requires `type`
 - `def` type must be `"func"` or `"condition"`
+- `def` requires `items`
 
 ### `try`
 
@@ -497,7 +562,7 @@ Invalid:
 
 Reason:
 
-- `loop` requires `condition` or `count`
+- `loop` requires `condition`
 - `loop` requires `items`
 
 ### `shell`
@@ -521,7 +586,7 @@ Invalid:
 ```json
 {
   "action": "wait",
-  "args": ["user-action"],
+  "target": "user-action",
   "actions": []
 }
 ```
@@ -529,6 +594,38 @@ Invalid:
 Reason:
 
 - `wait` "actions" must be a non-empty string array
+
+### `set`
+
+Invalid:
+
+```json
+{
+  "action": "set",
+  "items": {
+    "$bad": { "ref": "$ret" }
+  }
+}
+```
+
+Reason:
+
+- `set` destination names cannot start with `$`
+
+Invalid:
+
+```json
+{
+  "action": "set",
+  "items": {
+    "x": { "ref": "a", "value": 1 }
+  }
+}
+```
+
+Reason:
+
+- `set` item must contain exactly one of `ref` or `value`
 
 ### `out`
 
@@ -544,7 +641,7 @@ Invalid:
 
 Reason:
 
-- `out` cannot start with `$` (reserved for built-in variables like `$index`, `$error`)
+- `out` cannot start with `$` (reserved for built-in variables)
 
 ## Recommended Generation Style
 
@@ -555,8 +652,8 @@ Reason:
 - use `catch:<name>` only when the named condition exists
 - use `catch` as fallback
 - use `finally` for cleanup
-- use `items` for all block bodies (not `do`)
-- use `condition` for loop control (not `count`)
+- use `items` for all block bodies
+- use `condition` for loop control
 
 ## Example
 
@@ -566,10 +663,12 @@ Reason:
     "action": "def",
     "name": "authFail",
     "type": "condition",
-    "items": [
-      { "ref": "$url", "contains": "/login" },
-      { "ref": "$title", "contains": "Sign in" }
-    ]
+    "items": {
+      "or": [
+        { "ref": "$url", "contains": "/login" },
+        { "ref": "$title", "contains": "Sign in" }
+      ]
+    }
   },
   { "label": "start" },
   {
@@ -579,7 +678,7 @@ Reason:
       { "action": "click", "args": ["Open dashboard"] }
     ],
     "catch:challenge": [
-      { "action": "wait", "args": ["user-action"], "prompt": "Solve the challenge, then click Continue" },
+      { "action": "wait", "target": "user-action", "prompt": "Solve the challenge, then click Continue" },
       { "action": "goto", "label": "start" }
     ],
     "catch:authFail": [
