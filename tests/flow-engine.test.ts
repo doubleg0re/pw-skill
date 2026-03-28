@@ -172,7 +172,7 @@ describe('Flow Engine — each', () => {
     const results: any[] = [];
 
     await runSteps(mockPage(), [{
-      action: 'each', ref: 'items', as: 'item', do: [
+      action: 'each', ref: 'items', as: 'item', items: [
         { action: 'log', text: '{{$index}}:{{item.name}}' },
       ],
     }], vars, results, emptyDefs());
@@ -190,7 +190,7 @@ describe('Flow Engine — each', () => {
     const results: any[] = [];
 
     await runSteps(mockPage(), [{
-      action: 'each', ref: 'obj', as: '{k,v}', do: [
+      action: 'each', ref: 'obj', as: '{k,v}', items: [
         { action: 'log', text: '{{k}}={{v}}' },
       ],
     }], vars, results, emptyDefs());
@@ -206,7 +206,7 @@ describe('Flow Engine — each', () => {
     const results: any[] = [];
 
     await runSteps(mockPage(), [{
-      action: 'each', ref: 'arr', as: 'item', do: [
+      action: 'each', ref: 'arr', as: 'item', items: [
         { action: 'log', ref: '$key' },
       ],
     }], vars, results, emptyDefs());
@@ -219,7 +219,7 @@ describe('Flow Engine — each', () => {
     const results: any[] = [];
 
     const outcome = await runSteps(mockPage(), [{
-      action: 'each', ref: 'missing', as: 'item', do: [],
+      action: 'each', ref: 'missing', as: 'item', items: [],
     }], vars, results, emptyDefs());
 
     expect(outcome.success).toBe(false);
@@ -232,7 +232,7 @@ describe('Flow Engine — loop', () => {
     const results: any[] = [];
 
     await runSteps(mockPage(), [{
-      action: 'loop', count: 3, do: [
+      action: 'loop', count: 3, items: [
         { action: 'log', text: 'i={{$index}}' },
       ],
     }], vars, results, emptyDefs());
@@ -310,7 +310,7 @@ describe('Flow Engine — def/call', () => {
 
     await runSteps(mockPage(), [
       {
-        action: 'def', name: 'greet', params: ['name'], do: [
+        action: 'def', name: 'greet', params: ['name'], items: [
           { action: 'log', text: 'Hello {{name}}' },
         ],
       },
@@ -330,7 +330,7 @@ describe('Flow Engine — def/call', () => {
 
     await runSteps(mockPage(), [
       {
-        action: 'def', name: 'add', params: ['a', 'b'], do: [
+        action: 'def', name: 'add', params: ['a', 'b'], items: [
           { action: 'log', text: '{{a}}+{{b}}' },
         ],
       },
@@ -385,7 +385,7 @@ describe('Flow Engine — combined', () => {
     const results: any[] = [];
 
     await runSteps(mockPage(), [{
-      action: 'each', ref: 'users', as: 'u', do: [
+      action: 'each', ref: 'users', as: 'u', items: [
         {
           action: 'condition', ref: 'u.role', eq: 'admin',
           then: [{ action: 'log', text: 'Admin: {{u.name}}' }],
@@ -407,12 +407,12 @@ describe('Flow Engine — combined', () => {
 
     await runSteps(mockPage(), [
       {
-        action: 'def', name: 'greet', params: ['who'], do: [
+        action: 'def', name: 'greet', params: ['who'], items: [
           { action: 'log', text: 'Hi {{who}}' },
         ],
       },
       {
-        action: 'each', ref: 'people', as: 'person', do: [
+        action: 'each', ref: 'people', as: 'person', items: [
           { action: 'call', name: 'greet', args: ['{{person.name}}'] },
         ],
       },
@@ -548,7 +548,7 @@ describe('validateSteps', () => {
   });
 
   it('detects def without name', () => {
-    const errors = validateSteps([{ action: 'def', do: [] }]);
+    const errors = validateSteps([{ action: 'def', items: [] }]);
     expect(errors[0]).toContain('requires "name"');
   });
 
@@ -558,7 +558,7 @@ describe('validateSteps', () => {
   });
 
   it('detects each without ref', () => {
-    const errors = validateSteps([{ action: 'each', do: [] }]);
+    const errors = validateSteps([{ action: 'each', items: [] }]);
     expect(errors[0]).toContain('requires "ref"');
   });
 
@@ -611,7 +611,7 @@ describe('Flow Engine — def with type + items', () => {
       } as any,
       {
         action: 'try',
-        do: [{ action: 'click', args: ['#x'] }],
+        items: [{ action: 'click', args: ['#x'] }],
         'catch:isLogin': [{ action: 'log', text: 'redirected to login' }],
         catch: [{ action: 'log', text: 'generic' }],
       } as any,
@@ -665,7 +665,7 @@ describe('Flow Engine — try/catch/finally', () => {
 
     await runSteps(page, [{
       action: 'try',
-      do: [{ action: 'click', args: ['#missing'] }],
+      items: [{ action: 'click', args: ['#missing'] }],
       catch: [{ action: 'log', text: 'caught: {{$error}}' }],
     }], vars, results, emptyDefs());
 
@@ -680,7 +680,7 @@ describe('Flow Engine — try/catch/finally', () => {
 
     await runSteps(mockPage(), [{
       action: 'try',
-      do: [{ action: 'log', text: 'ok' }],
+      items: [{ action: 'log', text: 'ok' }],
       finally: [{ action: 'log', text: 'cleanup' }],
     }], vars, results, emptyDefs());
 
@@ -699,7 +699,7 @@ describe('Flow Engine — try/catch/finally', () => {
 
     await runSteps(page, [{
       action: 'try',
-      do: [{ action: 'click', args: ['#x'] }],
+      items: [{ action: 'click', args: ['#x'] }],
       catch: [{ action: 'log', text: 'caught' }],
       finally: [{ action: 'log', text: 'cleanup' }],
     }], vars, results, emptyDefs());
@@ -718,7 +718,7 @@ describe('Flow Engine — try/catch/finally', () => {
 
     await runSteps(page, [{
       action: 'try',
-      do: [{ action: 'click', args: ['#x'] }],
+      items: [{ action: 'click', args: ['#x'] }],
       'catch:notfound': [{ action: 'log', text: 'not found handler' }],
       catch: [{ action: 'log', text: 'generic' }],
     } as any], vars, results, emptyDefs());
@@ -736,7 +736,7 @@ describe('Flow Engine — try/catch/finally', () => {
 
     await runSteps(page, [{
       action: 'try',
-      do: [{ action: 'click', args: ['#x'] }],
+      items: [{ action: 'click', args: ['#x'] }],
       catch: [{ action: 'log', text: '{{$errorType}}' }],
     }], vars, results, emptyDefs());
 
@@ -754,12 +754,24 @@ describe('Flow Engine — try/catch/finally', () => {
 
     const outcome = await runSteps(page, [{
       action: 'try',
-      do: [{ action: 'click', args: ['#x'] }],
+      items: [{ action: 'click', args: ['#x'] }],
       finally: [{ action: 'log', text: 'cleanup' }],
     }], vars, results, emptyDefs());
 
     expect(outcome.success).toBe(false);
     const logs = results.filter(r => r.action === 'log');
     expect(logs[0].data).toBe('cleanup');
+  });
+});
+
+describe('validateSteps — out with $ prefix', () => {
+  it('rejects out starting with $', () => {
+    const errors = validateSteps([{ action: 'fetch', args: ['GET', '/api'], out: '$result' }]);
+    expect(errors[0]).toContain('cannot start with "$"');
+  });
+
+  it('accepts normal out name', () => {
+    const errors = validateSteps([{ action: 'fetch', args: ['GET', '/api'], out: 'result' }]);
+    expect(errors.filter(e => e.includes('out'))).toHaveLength(0);
   });
 });

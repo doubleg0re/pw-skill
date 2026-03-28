@@ -94,7 +94,6 @@ interface Step {
   else?: Step[];
   // each
   as?: string;
-  do?: Step[];
   // loop
   count?: number; // backward compat — prefer condition
   condition?: ConditionNode;
@@ -229,7 +228,7 @@ export async function runSteps(
 
       // --- try / catch / finally ---
       if (step.action === 'try') {
-        const tryBody = step.items || step.do || [];
+        const tryBody = step.items || [];
         const finallyBody = step.finally || [];
         let trySub = await runSteps(page, tryBody, vars, results, defs, stepIndex * 1000);
 
@@ -332,7 +331,7 @@ export async function runSteps(
           defs.set(step.name!, { kind: 'condition', condition });
         } else {
           // func: items is Step[]
-          defs.set(step.name!, { kind: 'block', params: step.params || [], body: (step.items || step.items || step.do || []) as Step[] });
+          defs.set(step.name!, { kind: 'block', params: step.params || [], body: (step.items || step.items || []) as Step[] });
         }
         results.push({ step: stepIndex, action: 'def', success: true, data: { name: step.name, type: defType } });
         i++;
@@ -457,7 +456,7 @@ export async function runSteps(
       // --- each ---
       if (step.action === 'each') {
         const target = vars.get(vars.interpolate(step.ref!));
-        const body = step.items || step.do || [];
+        const body = step.items || [];
 
         if (target == null) {
           results.push({ step: stepIndex, action: 'each', success: false, error: `ref "${step.ref}" is null/undefined` });
@@ -502,7 +501,7 @@ export async function runSteps(
 
       // --- loop (condition-based, replaces count) ---
       if (step.action === 'loop') {
-        const body = step.items || step.do || [];
+        const body = step.items || [];
         const loopCondition = step.condition;
         // Backward compat: count → condition { ref: "$index", lt: count }
         const condNode: ConditionNode | null = loopCondition
@@ -626,7 +625,7 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     // each
     if (action === 'each') {
       if (!step.ref) errors.push(`${loc}: each requires "ref"`);
-      if (!step.items && !step.do) errors.push(`${loc}: each requires "items"`);
+      if (!step.items) errors.push(`${loc}: each requires "items"`);
     }
 
     // loop
@@ -634,12 +633,12 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       if (step.count === undefined && !step.condition) {
         errors.push(`${loc}: loop requires "condition" or "count"`);
       }
-      if (!step.items && !step.do) errors.push(`${loc}: loop requires "items"`);
+      if (!step.items) errors.push(`${loc}: loop requires "items"`);
     }
 
     // try
     if (action === 'try') {
-      const tryBody = step.items || step.do;
+      const tryBody = step.items;
       if (!tryBody || !Array.isArray(tryBody)) {
         errors.push(`${loc}: try requires "items" array`);
       }
@@ -653,9 +652,13 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       if (!step.label) errors.push(`${loc}: goto requires "label"`);
     }
 
+    // out cannot use $ prefix (reserved for built-in variables)
+    if (step.out && step.out.startsWith('$')) {
+      errors.push(`${loc}: "out" cannot start with "$" (reserved for built-in variables like $index, $error)`);
+    }
+
     // Recurse into nested steps
     if (step.items) errors.push(...validateSteps(step.items as Step[], `${loc}.items → `));
-    else if (step.do) errors.push(...validateSteps(step.do, `${loc}.do → `));
     if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `));
     if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `));
     if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `));
