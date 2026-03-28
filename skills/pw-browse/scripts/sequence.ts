@@ -630,17 +630,28 @@ export async function runSteps(
       // args: pass as-is (array or object) to the executor
       const { result } = await executeAction(page, step.action!, step.args || [], vars);
 
+      // Set ephemeral registers
+      vars.set('$ret', result);
+      vars.set('$err', null);
+      vars.set('$code', null);
+
       if (step.out) {
         vars.set(step.out, result);
       }
 
       results.push({ step: stepIndex, action: step.action!, success: true, ...(result !== undefined ? { data: result } : {}) });
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      // Set ephemeral error registers
+      vars.set('$ret', null);
+      vars.set('$err', errorMsg);
+      vars.set('$code', null);
+
       results.push({
         step: stepIndex,
         action: step.action || 'unknown',
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMsg,
       });
       const path = screenshotPath(`sequence-error-${Date.now()}`);
       try { await page.screenshot({ path }); } catch {}
@@ -757,10 +768,17 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       if (!step.args) errors.push(`${loc}: shell requires "args"`);
     }
 
-    // wait: validate actions array
-    if (action === 'wait' && step.actions) {
-      if (!Array.isArray(step.actions) || step.actions.length === 0) {
-        errors.push(`${loc}: wait "actions" must be a non-empty string array`);
+    // wait
+    if (action === 'wait') {
+      if (step.actions) {
+        if (!Array.isArray(step.actions) || step.actions.length === 0) {
+          errors.push(`${loc}: wait "actions" must be a non-empty string array`);
+        }
+      }
+      // observation wait requires trigger
+      const tgt = step.args?.[0] || (step as any).target;
+      if (typeof tgt === 'string' && (tgt.startsWith('dom:') || tgt.startsWith('url:') || tgt === 'challenge')) {
+        // trigger recommended but not strictly required (could just wait for change)
       }
     }
 

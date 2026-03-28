@@ -896,3 +896,42 @@ describe('validateSteps — set', () => {
     expect(errors[0]).toContain('ref');
   });
 });
+
+// --- Ephemeral registers ---
+
+describe('Flow Engine — ephemeral registers', () => {
+  it('sets $ret after successful action', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const page = mockPage({
+      goto: vi.fn(),
+      title: vi.fn().mockResolvedValue('Test'),
+    });
+
+    await runSteps(page, [
+      { action: 'navigate', args: ['http://localhost'] },
+      { action: 'log', ref: '$ret' },
+    ], vars, results, emptyDefs());
+
+    // $ret should have the navigate result
+    const ret = vars.get('$ret');
+    expect(ret).toBeDefined();
+  });
+
+  it('sets $err after failed action in try', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const page = mockPage({
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('boom')) })) })),
+    });
+
+    await runSteps(page, [{
+      action: 'try',
+      items: [{ action: 'click', args: ['#x'] }],
+      catch: [{ action: 'log', text: 'err={{$err}}' }],
+    }], vars, results, emptyDefs());
+
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toContain('boom');
+  });
+});
