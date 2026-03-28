@@ -553,6 +553,26 @@ export async function runSteps(
           return { success: false, failedAt: stepIndex };
         }
 
+        // Request user permission before shell execution
+        if (options.requestPermission) {
+          const cmdPreview = Array.isArray(step.args) ? step.args.join(' ') : JSON.stringify(step.args);
+          try {
+            const { actionWait } = await import('./actions.js');
+            const waitResult = await actionWait(page, {
+              target: 'user-action',
+              prompt: `Shell command: ${cmdPreview}`,
+              actions: ['approve', 'cancel'],
+            });
+            if (waitResult.result?.action === 'cancel') {
+              results.push({ step: stepIndex, action: 'shell', success: false, error: 'User canceled shell execution' });
+              return { success: false, failedAt: stepIndex };
+            }
+          } catch {
+            results.push({ step: stepIndex, action: 'shell', success: false, error: 'Shell permission prompt failed (headless? use --headed with --request-permission)' });
+            return { success: false, failedAt: stepIndex };
+          }
+        }
+
         const shellArgs = Array.isArray(step.args) ? step.args.map(String) : [];
         const shellTimeout = (typeof step.args === 'object' && !Array.isArray(step.args)) ? Number(step.args?.timeout || 30000) : 30000;
 
