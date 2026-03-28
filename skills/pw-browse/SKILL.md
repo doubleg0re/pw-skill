@@ -172,7 +172,7 @@ npx tsx {script_path}/evaluate.ts <js-expression>
 
 ### sequence.ts — Flow engine with variables, conditions, loops, and functions
 ```bash
-npx tsx {script_path}/sequence.ts <json-string | json-file-path>
+npx tsx {script_path}/sequence.ts <json-string | json-file-path> [--allow-shell] [--request-permission]
 ```
 Runs an action sequence with full flow control. Stops on failure with an error screenshot.
 
@@ -221,6 +221,7 @@ Any step can store its result with `out`. Reference stored variables in args wit
 ]
 ```
 - Nested access: `{{user.data.items.0.name}}`
+- Special variables: `{{$index}}`, `{{$key}}`, `{{$error}}`, `{{$errorType}}`
 - All stored variables are included in the final `vars` output
 
 #### log — Debug and inspect variables
@@ -245,11 +246,22 @@ Operators: `eq`, `neq`, `gt`, `lt`, `contains`, `exists`
 - `exists: true` → ref is not null/undefined; `exists: false` → ref is null/undefined
 - Comparison values support interpolation: `"eq": "{{expectedValue}}"`
 
+Composite conditions with `and`/`or`:
+```json
+{"action": "condition", "and": [
+  {"ref": "$url", "contains": "/login"},
+  {"or": [
+    {"ref": "$title", "contains": "Sign in"},
+    {"ref": "$title", "contains": "Login"}
+  ]}
+], "then": [{"action": "log", "text": "auth page"}]}
+```
+
 #### each — Iterate arrays and objects
 ```json
 [
   {"action": "fetch", "args": ["GET", "/api/items"], "out": "res"},
-  {"action": "each", "ref": "res.data", "as": "item", "do": [
+  {"action": "each", "ref": "res.data", "as": "item", "items": [
     {"action": "fill", "args": ["#search", "{{item.name}}"]},
     {"action": "click", "args": ["#submit"]}
   ]}
@@ -258,19 +270,21 @@ Operators: `eq`, `neq`, `gt`, `lt`, `contains`, `exists`
 - **Array**: `"as": "item"` — each element is stored in `item`
 - **Object**: `"as": "{k,v}"` — destructure key/value into separate variables
   ```json
-  {"action": "each", "ref": "formData", "as": "{field,value}", "do": [
+  {"action": "each", "ref": "formData", "as": "{field,value}", "items": [
     {"action": "fill", "args": ["#{{field}}", "{{value}}"]}
   ]}
   ```
 - Built-in variables: `{{$index}}`, `{{$key}}` (null for arrays)
 
-#### loop — Repeat N times
+#### loop — Condition-based loop
 ```json
-{"action": "loop", "count": 5, "do": [
+{"action": "loop", "condition": {"ref": "$index", "lt": 5}, "items": [
   {"action": "scroll", "args": ["down"]},
   {"action": "wait", "args": ["500"]}
 ]}
 ```
+- `condition`: A condition node evaluated before each iteration
+- `count` is also supported (backward compat) — converted to `condition: {ref: "$index", lt: count}`
 - `{{$index}}`: Current iteration (0-based)
 
 #### label + goto — Jump and retry
@@ -290,26 +304,71 @@ Operators: `eq`, `neq`, `gt`, `lt`, `contains`, `exists`
 - `goto`: Jump to a label. Bubbles up from nested scopes (condition/each/loop)
 - Max 100 jumps to prevent infinite loops
 
-#### def + call — Reusable functions
+#### def + call — Reusable functions and conditions
 ```json
 [
-  {"action": "def", "name": "login", "params": ["email", "pw"], "do": [
+  {"action": "def", "name": "login", "type": "func", "params": ["email", "pw"], "items": [
     {"action": "fill", "args": ["#email", "{{email}}"]},
     {"action": "fill", "args": ["#password", "{{pw}}"]},
     {"action": "click", "args": ["#submit"]},
     {"action": "wait", "args": ["#dashboard"]}
   ]},
   {"action": "call", "name": "login", "args": ["admin@test.com", "secret"]},
-  {"action": "screenshot", "args": ["admin-dashboard"]},
   {"action": "call", "name": "login", "args": {"email": "user@test.com", "pw": "12345"}}
 ]
 ```
-- `def`: Register a named step block with optional `params`. Not executed on definition
-- `call`: Invoke by name
-  - **Array args**: Mapped to `params` in order
-  - **Object args**: Mapped by key name
+- `def`: Register a named block. `type`: `"func"` (default) or `"condition"`
+- `items`: Step array for func, ConditionNode array for condition
+- `call`: Invoke by name (array args mapped to `params` in order, object args by key)
 - Supports `out` to capture the last step's result
-- Definitions are shared globally — usable inside condition, each, loop, or other calls
+
+Condition definition (used in `catch:<name>`):
+```json
+{"action": "def", "name": "authFail", "type": "condition", "items": [
+  {"ref": "$url", "contains": "/login"},
+  {"ref": "$title", "contains": "Sign in"}
+]}
+```
+
+#### try / catch / finally — Error handling
+```json
+{
+  "action": "try",
+  "items": [
+    {"action": "click", "args": ["Sign in"]}
+  ],
+  "catch:challenge": [
+    {"action": "wait", "args": ["user-action"], "prompt": "Solve challenge"}
+  ],
+  "catch": [
+    {"action": "log", "text": "Error: {{$error}}"}
+  ],
+  "finally": [
+    {"action": "screenshot"}
+  ]
+}
+```
+- `items`: Required body
+- `catch:<name>`: Typed handler (matches error type or named condition def)
+- `catch`: Fallback handler
+- `finally`: Always runs
+- `{{$error}}`: Error message, `{{$errorType}}`: Classified type
+
+#### shell — Execute local commands
+```json
+{"action": "shell", "args": ["node", "scripts/seed.js"], "out": "result"}
+```
+- Requires `--allow-shell` flag
+- With `--request-permission`: Prompts user approval (requires `--headed`)
+- Result: `{exitCode, stdout, stderr}`
+- Object args: `{"command": ["npm", "run", "build"], "timeout": 60000}`
+
+#### wait user-action — Pause with action buttons
+```json
+{"action": "wait", "args": ["user-action"], "prompt": "Choose action", "actions": ["approve", "skip", "cancel"], "out": "choice"}
+```
+- `actions`: Button labels (default: `["continue"]`)
+- `out`: Stores the clicked button value
 
 ## Debugging Tools
 

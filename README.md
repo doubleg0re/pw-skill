@@ -207,6 +207,8 @@ Sequence is a full flow engine that runs JSON action lists with variables, branc
 ```bash
 pw sequence ./login-flow.json
 pw sequence '[{"action":"navigate","args":["http://localhost:3000"]}]'
+pw sequence flow.json --allow-shell
+pw sequence flow.json --allow-shell --request-permission --headed
 ```
 
 ### Variables
@@ -221,6 +223,8 @@ Store action results and interpolate them in later steps:
 ]
 ```
 
+Special variables: `{{$index}}`, `{{$key}}`, `{{$error}}`, `{{$errorType}}`
+
 ### Args Format
 
 Args accept both array and object format:
@@ -232,7 +236,7 @@ Args accept both array and object format:
 
 ### Condition
 
-Branch based on variable values. Supports `eq`, `neq`, `gt`, `lt`, `contains`, `exists`:
+Branch based on variable values. Supports `eq`, `neq`, `gt`, `lt`, `contains`, `exists`. Composite with `and`/`or`:
 
 ```json
 {
@@ -249,35 +253,22 @@ Branch based on variable values. Supports `eq`, `neq`, `gt`, `lt`, `contains`, `
 Iterate over arrays or objects. Supports `{k,v}` destructuring for objects:
 
 ```json
-{"action": "fetch", "args": ["GET", "/api/items"], "out": "items"},
-{
-  "action": "each",
-  "ref": "items",
-  "as": "item",
-  "do": [{"action": "log", "text": "{{item.name}}"}]
-}
-```
-
-Object iteration with destructure:
-
-```json
-{
-  "action": "each",
-  "ref": "config",
-  "as": "{k, v}",
-  "do": [{"action": "log", "text": "{{k}} = {{v}}"}]
-}
+{"action": "each", "ref": "items", "as": "item", "items": [
+  {"action": "log", "text": "{{item.name}}"}
+]}
 ```
 
 ### Loop
 
-Repeat N times. `{{$index}}` available in body:
+Condition-based loop. `{{$index}}` available (0-based):
 
 ```json
-{"action": "loop", "count": 3, "do": [
+{"action": "loop", "condition": {"ref": "$index", "lt": 5}, "items": [
   {"action": "click", "args": [".next-page"]}
 ]}
 ```
+
+`count` also supported (backward compat).
 
 ### Label / Goto
 
@@ -294,18 +285,56 @@ Jump to labeled steps (max 100 jumps to prevent infinite loops):
 
 ### Def / Call
 
-Define reusable functions with parameters:
+Define reusable functions (`type: "func"`, default) and conditions (`type: "condition"`):
 
 ```json
 [
-  {"action": "def", "name": "login", "params": ["email", "pass"], "do": [
+  {"action": "def", "name": "login", "type": "func", "params": ["email", "pass"], "items": [
     {"action": "fill", "args": ["#email", "{{email}}"]},
     {"action": "fill", "args": ["#password", "{{pass}}"]},
     {"action": "click", "args": ["Sign in"]}
   ]},
-  {"action": "call", "name": "login", "args": ["admin@test.com", "secret"]},
-  {"action": "call", "name": "login", "args": {"email": "user@test.com", "pass": "pw123"}}
+  {"action": "call", "name": "login", "args": ["admin@test.com", "secret"]}
 ]
+```
+
+Condition defs are used in `catch:<name>`:
+```json
+{"action": "def", "name": "authFail", "type": "condition", "items": [
+  {"ref": "$url", "contains": "/login"}
+]}
+```
+
+### Try / Catch / Finally
+
+```json
+{"action": "try", "items": [
+  {"action": "click", "args": ["Sign in"]}
+], "catch:challenge": [
+  {"action": "wait", "args": ["user-action"], "prompt": "Solve challenge"}
+], "catch": [
+  {"action": "log", "text": "Error: {{$error}}"}
+], "finally": [
+  {"action": "screenshot"}
+]}
+```
+
+### Shell
+
+Execute local commands (requires `--allow-shell`):
+
+```json
+{"action": "shell", "args": ["node", "scripts/seed.js"], "out": "result"}
+```
+
+Result: `{exitCode, stdout, stderr}`. Use `--request-permission` for user approval prompts.
+
+### Wait User-Action
+
+Pause with action buttons:
+
+```json
+{"action": "wait", "args": ["user-action"], "prompt": "Choose", "actions": ["approve", "skip"], "out": "choice"}
 ```
 
 ### Log
