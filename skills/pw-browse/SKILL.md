@@ -222,6 +222,7 @@ Any step can store its result with `out`. Reference stored variables in args wit
 ```
 - Nested access: `{{user.data.items.0.name}}`
 - Special variables: `{{$index}}`, `{{$key}}`, `{{$error}}`, `{{$errorType}}`
+- Ephemeral registers: `{{$ret}}` (last action result), `{{$err}}` (last error message), `{{$code}}` (last exit/status code), `{{$elem}}` (last matched element)
 - All stored variables are included in the final `vars` output
 
 #### log — Debug and inspect variables
@@ -363,12 +364,47 @@ Condition definition (used in `catch:<name>`):
 - Result: `{exitCode, stdout, stderr}`
 - Object args: `{"command": ["npm", "run", "build"], "timeout": 60000}`
 
+#### set — Copy values into variables
+```json
+{"action": "set", "items": {
+  "savedElem": {"ref": "$elem"},
+  "retryCount": {"value": 3},
+  "payload": {"value": {"ok": true}}
+}}
+```
+- Each entry must contain exactly one of `ref` (copy from variable) or `value` (literal)
+- Destination names cannot start with `$`
+
+#### wait — Observation targets
+In addition to time wait (`args: ["1000"]`) and selector wait, `wait` supports observation targets with `trigger`:
+
+```json
+{"action": "wait", "target": "dom:#status[textContent]", "trigger": {"ref": "$changed", "eq": true}, "timeout": 10000, "out": "watch"}
+```
+
+Supported targets:
+- `dom:<selector>` — wait for element to appear/change
+- `dom:<selector>[field]` — wait for specific field value change
+- `url:<pattern>` — wait for URL change
+- `challenge` — wait for challenge detection (e.g., Cloudflare)
+
+`trigger` uses the same condition grammar as `condition` (supports `and`/`or`/leaf operators).
+
 #### wait user-action — Pause with action buttons
 ```json
-{"action": "wait", "args": ["user-action"], "prompt": "Choose action", "actions": ["approve", "skip", "cancel"], "out": "choice"}
+{"action": "wait", "target": "user-action", "prompt": "Choose action", "actions": ["approve", "skip", "cancel"], "out": "choice"}
 ```
 - `actions`: Button labels (default: `["continue"]`)
 - `out`: Stores the clicked button value
+- `focus`: Optional selector to focus before waiting
+- `idle`: Optional idle milliseconds before showing actions (for semi-assisted input)
+
+#### wait user-alert — Informational overlay
+```json
+{"action": "wait", "target": "user-alert", "prompt": "Please submit the form manually."}
+```
+- Shows a message overlay and auto-dismisses (no action buttons)
+- `prompt` required
 
 ## Debugging Tools
 

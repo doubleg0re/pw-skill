@@ -225,6 +225,8 @@ Store action results and interpolate them in later steps:
 
 Special variables: `{{$index}}`, `{{$key}}`, `{{$error}}`, `{{$errorType}}`
 
+Ephemeral registers: `{{$ret}}` (last action result), `{{$err}}` (last error message), `{{$code}}` (last exit/status code), `{{$elem}}` (last matched element)
+
 ### Args Format
 
 Args accept both array and object format:
@@ -329,12 +331,38 @@ Execute local commands (requires `--allow-shell`):
 
 Result: `{exitCode, stdout, stderr}`. Use `--request-permission` for user approval prompts.
 
-### Wait User-Action
+### Set
 
-Pause with action buttons:
+Copy values into user-defined variables:
 
 ```json
-{"action": "wait", "args": ["user-action"], "prompt": "Choose", "actions": ["approve", "skip"], "out": "choice"}
+{"action": "set", "items": {"savedRet": {"ref": "$ret"}, "count": {"value": 3}}}
+```
+
+Each entry must contain exactly one of `ref` or `value`. Destination names cannot start with `$`.
+
+### Wait — Observation Targets
+
+Watch a target and complete when `trigger` matches. Supports `dom:<selector>`, `dom:<selector>[field]`, `url:<pattern>`, and `challenge`:
+
+```json
+{"action": "wait", "target": "dom:#status[textContent]", "trigger": {"ref": "$changed", "eq": true}, "timeout": 10000, "out": "watch"}
+```
+
+### Wait User-Action
+
+Pause with action buttons. Supports `focus` (selector to focus) and `idle` (ms before showing buttons) for semi-assisted input:
+
+```json
+{"action": "wait", "target": "user-action", "prompt": "Choose", "actions": ["approve", "skip"], "out": "choice"}
+```
+
+### Wait User-Alert
+
+Show an informational overlay (no action buttons, auto-dismiss):
+
+```json
+{"action": "wait", "target": "user-alert", "prompt": "Please submit the form manually."}
 ```
 
 ### Log
