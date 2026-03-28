@@ -33,7 +33,8 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   upload:      { script: 'upload.ts',      desc: 'Upload file' },
   download:    { script: 'download.ts',    desc: 'Download file' },
   submit:      { script: 'submit.ts',      desc: 'Submit form' },
-  copy:        { script: 'copy.ts',        desc: 'Copy text/HTML' },
+  copy:        { script: 'copy.ts',        desc: 'Copy text/HTML/image' },
+  paste:       { script: 'paste.ts',       desc: 'Paste text/image' },
   attr:        { script: 'attr.ts',        desc: 'Read/write DOM attribute' },
   find:        { script: 'find.ts',        desc: 'Query DOM elements' },
   wait:        { script: 'wait.ts',        desc: 'Wait for condition' },
@@ -76,7 +77,8 @@ Browser actions:
   download <target> [--async] [--dir=path]   Download file
   download [status|list]                     Check downloads
   submit [form-selector] [--wait=/url]       Submit form
-  copy <selector> [--format=text|html|outer] Copy text/HTML from element
+  copy <selector> [--format=text|html|outer|image] Copy text/HTML/image
+  paste [selector] [--text=T] [--image=path]   Paste text or image
   attr <selector> <name> [--set=value]       Read/write DOM attribute
   find <selector> [--detail=tag|class|full]  Query DOM elements
   wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
