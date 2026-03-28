@@ -19,6 +19,7 @@ import {
 } from './session.js';
 import { autoRenameVideo } from './video-utils.js';
 import { launchBrowserServer } from './common.js';
+import { runHooks } from './rary.js';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
@@ -63,6 +64,9 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
     // Auto-bind to current project
     bindSession(sessionName);
 
+    // Run extension launch hooks
+    const hookResult = await runHooks('launch', { session, wsEndpoint });
+
     // Navigate to URL if provided
     if (url) {
       const browser = await chromium.connect(wsEndpoint);
@@ -91,7 +95,9 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
           url,
           title,
           resumed: !!resume,
+          hooks: hookResult.ran.length > 0 ? hookResult : undefined,
         },
+        ...(hookResult.errors.length > 0 ? { warnings: hookResult.errors } : {}),
       };
     }
 
@@ -100,7 +106,9 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
       data: {
         session,
         resumed: !!resume,
+        hooks: hookResult.ran.length > 0 ? hookResult : undefined,
       },
+      ...(hookResult.errors.length > 0 ? { warnings: hookResult.errors } : {}),
     };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -227,6 +235,9 @@ export async function closeSession(args: string[]): Promise<{ success: boolean; 
 async function killSession(name: string): Promise<void> {
   const session = getSession(name);
   if (!session) return;
+
+  // Run extension close hooks before killing
+  await runHooks('close', { session }).catch(() => {});
 
   // Kill by PID
   if (isProcessAlive(session.pid)) {

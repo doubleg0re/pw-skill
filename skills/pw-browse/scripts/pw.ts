@@ -62,6 +62,16 @@ Session management:
   sessions                                  List all sessions
   close [--session=N] [--all]               Close session(s)
 
+Package management (Larry's toybox):
+  rary get <repo|path>                      Fetch a toy into the toybox
+  rary toybox                               List installed packages
+  rary peek <package>                       Inspect a package
+  rary put <package>                        Activate an extension
+  rary yoink <package>                      Deactivate an extension
+  rary rolling <package>                    Run first-time setup
+  rary destroy|kick <package>               Remove a package
+  rary need-repair                          Check for broken packages
+
 Browser actions:
   navigate <url> [--screenshot]              Go to URL
   screenshot [selector] [--full]             Capture page or element
@@ -101,6 +111,14 @@ Global flags:
   --video[=name] Enable video recording
 `.trim());
   process.exit(0);
+}
+
+// --- rary ---
+if (command === 'rary') {
+  const { raryRouter } = await import('./rary-commands.js');
+  const result = await raryRouter(restArgs);
+  console.log(JSON.stringify(result));
+  process.exit(result.success ? 0 : 1);
 }
 
 // --- launch ---
