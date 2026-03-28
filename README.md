@@ -157,7 +157,7 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | Command | Description |
 |---|---|
 | `pw launch [url] [--name=N] [--resume=N]` | Launch browser session |
-| `pw use <name>` | Bind session to project (errors if another is bound; `--force` kills the existing session and switches) |
+| `pw use <name>` | Bind session to project (freely switches, returns previous binding if any) |
 | `pw sessions` | List all sessions |
 | `pw close [--session=N] [--all]` | Close session(s) |
 | `pw tab new [url]` | Open new tab |
