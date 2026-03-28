@@ -52,7 +52,16 @@ run(async ({ page, args }) => {
       { base64, mimeType },
     );
 
-    return { success: true, data: { type: 'image', file: absPath, mimeType, selector: selector || null } };
+    return {
+      success: true,
+      data: {
+        type: 'image',
+        file: absPath,
+        mimeType,
+        selector: selector || null,
+        warning: 'Image paste uses synthetic ClipboardEvent — may not work with all apps (e.g., native file upload zones)',
+      },
+    };
   }
 
   // --- Text paste ---

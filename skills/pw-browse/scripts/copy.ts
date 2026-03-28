@@ -1,22 +1,24 @@
-// copy.ts — Copy element text/HTML/image
+// copy.ts — Copy element text/HTML/image to clipboard and/or file
 // Usage:
-//   pw copy "#article"                        # textContent → clipboard + stdout
-//   pw copy "#article" --format=text          # textContent (default)
-//   pw copy "#article" --format=html          # innerHTML
-//   pw copy "#article" --format=outer         # outerHTML
-//   pw copy "img.hero" --format=image         # Save image element to file
-//   pw copy "img.hero" --format=image --dir=./assets
-import { run, parseFlag, screenshotPath, ensureStateDir } from './common.js';
+//   pw copy "#article"                              # textContent → clipboard + stdout
+//   pw copy "#article" --format=text                # textContent (default)
+//   pw copy "#article" --format=html                # innerHTML
+//   pw copy "#article" --format=outer               # outerHTML
+//   pw copy "img.hero" --format=image               # Image → clipboard (as PNG blob)
+//   pw copy "img.hero" --format=image --save-only   # Image → file only, skip clipboard
+//   pw copy "img.hero" --format=image --dir=./assets --name=hero
+import { run, parseFlag, hasFlag } from './common.js';
 import { join, resolve } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
 
 run(async ({ page, args }) => {
   const selector = args[0];
-  if (!selector) return { success: false, error: 'Usage: copy.ts <selector> [--format=text|html|outer|image] [--dir=path]' };
+  if (!selector) return { success: false, error: 'Usage: copy.ts <selector> [--format=text|html|outer|image] [--save-only] [--dir=path] [--name=N]' };
 
   const format = parseFlag(process.argv.slice(2), 'format') || 'text';
+  const saveOnly = hasFlag(process.argv.slice(2), 'save-only');
 
-  // --- Image mode: save element as image file ---
+  // --- Image mode ---
   if (format === 'image') {
     const dir = parseFlag(process.argv.slice(2), 'dir')
       || join(resolve(process.cwd(), '.playwright-state'), 'screenshots');
@@ -26,25 +28,45 @@ run(async ({ page, args }) => {
     const filename = name ? (name.endsWith('.png') ? name : `${name}.png`) : `${Date.now()}.png`;
     const savePath = join(dir, filename);
 
-    // Try to get the image src and save it
-    const tagName = await page.locator(selector).first().evaluate(el => el.tagName.toLowerCase());
+    // Screenshot the element
+    await page.locator(selector).first().screenshot({ path: savePath });
 
-    if (tagName === 'img' || tagName === 'picture' || tagName === 'canvas') {
-      // For img: screenshot the element directly
-      await page.locator(selector).first().screenshot({ path: savePath });
-    } else {
-      // For other elements: screenshot the element
-      await page.locator(selector).first().screenshot({ path: savePath });
+    // Copy to clipboard as image blob (unless --save-only)
+    let clipboardOk = false;
+    if (!saveOnly) {
+      const imageBuffer = readFileSync(savePath);
+      const base64 = imageBuffer.toString('base64');
+      clipboardOk = await page.evaluate(async (b64) => {
+        try {
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'image/png' });
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          return true;
+        } catch {
+          return false;
+        }
+      }, base64).catch(() => false);
     }
 
-    // Also try to copy the image src URL
+    // Get image src if available
     const src = await page.locator(selector).first().evaluate(el => {
       if (el.tagName === 'IMG') return (el as HTMLImageElement).src;
       const img = el.querySelector('img');
       return img ? img.src : null;
     }).catch(() => null);
 
-    return { success: true, data: { selector, format: 'image', path: savePath, src } };
+    return {
+      success: true,
+      data: {
+        selector,
+        format: 'image',
+        path: savePath,
+        src,
+        clipboard: saveOnly ? 'skipped' : (clipboardOk ? 'ok' : 'failed (browser permission denied)'),
+      },
+    };
   }
 
   // --- Text/HTML mode ---
@@ -60,10 +82,23 @@ run(async ({ page, args }) => {
     format,
   );
 
-  // Copy to clipboard via browser API
-  await page.evaluate(async (text) => {
-    try { await navigator.clipboard.writeText(text); } catch {}
-  }, content).catch(() => {});
+  // Copy to clipboard
+  const clipboardOk = await page.evaluate(async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }, content).catch(() => false);
 
-  return { success: true, data: { selector, format, content, clipboard: true } };
+  return {
+    success: true,
+    data: {
+      selector,
+      format,
+      content,
+      clipboard: clipboardOk ? 'ok' : 'failed (browser permission denied)',
+    },
+  };
 });
