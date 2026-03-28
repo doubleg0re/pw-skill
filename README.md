@@ -474,21 +474,15 @@ npm run test:watch # watch mode
 
 ## Comparison
 
-| Feature | pw-skill | lackeyjb | willmarple |
+> Comparison as of March 2026. Features may have changed.
+
+| | pw-skill | lackeyjb | willmarple |
 |---|---|---|---|
-| Token efficiency | 4 skills, load on demand | 1 skill, always loaded (14KB) | 1 skill, always loaded (10KB) |
-| Browser persistence | CDP, named sessions with profiles | None, new browser each time | Playwright CLI sessions |
-| Session management | Named sessions, resume, multi-session | None | None |
-| Scripts | 27+ (browser, HTTP, debug, trace, video, flow) | 2 (run.js, helpers.js) | 11 bin scripts |
-| Flow engine | Variables, conditions, each, loop, def/call, goto | None | None |
-| Console capture | Inject + file log + filters + regex | None | Via playwright-cli |
-| Network capture | Inject + file log + masking + filters | None | Via playwright-cli |
-| Trace recording | start/stop/view/status | None | None |
-| Video recording | --video flag, auto-rename, list/rename/clear | None | None |
-| HTTP requests | `fetch` + `submit` with browser auth | None | None |
-| Tab management | Full (new/list/close/--tab=N) | None | None |
-| DOM query | `find` + `attr` + `copy` | None | Via snapshot |
-| CLI | `pw` command (27+ subcommands) | None | bin/ scripts |
+| Token loading | On-demand (4 modular skills) | Always loaded (single skill) | Always loaded (single skill) |
+| Browser session | Persistent via CDP, named sessions with isolated profiles | New browser per action | Playwright CLI sessions |
+| Flow engine | Full (variables, conditions, loops, functions, goto) | None | None |
+| Debug tooling | Console/network capture, trace recording, video | None | Playwright CLI passthrough |
+| Authenticated HTTP | `fetch`/`submit` reuse browser cookies | None | None |
 | Platform | Windows + Linux + macOS | Linux/macOS | Linux/macOS |
 
 ## License

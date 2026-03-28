@@ -75,7 +75,7 @@ run(async ({ page, args }) => {
   switch (command) {
     case 'inject': {
       await page.evaluate(INJECT_SCRIPT);
-      return { success: true, data: 'Console logging injected' };
+      return { success: true, data: { message: 'Console logging injected' } };
     }
 
     case 'dump': {
@@ -103,14 +103,14 @@ run(async ({ page, args }) => {
 
       return {
         success: true,
-        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warning: 'Raw mode: log entries written without truncation' } : {}) },
+        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warnings: ['Raw mode: log entries written without truncation'] } : {}) },
       };
     }
 
     case 'clear': {
       await page.evaluate('window.__PW_LOGS = []');
       if (existsSync(LOG_FILE)) writeFileSync(LOG_FILE, '');
-      return { success: true, data: 'Logs cleared' };
+      return { success: true, data: { message: 'Logs cleared' } };
     }
 
     case 'tail': {

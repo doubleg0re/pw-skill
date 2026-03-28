@@ -60,7 +60,7 @@ run(async ({ page, args }) => {
       if (existsSync(VIDEO_DIR)) {
         rmSync(VIDEO_DIR, { recursive: true, force: true });
       }
-      return { success: true, data: 'Videos cleared' };
+      return { success: true, data: { message: 'Videos cleared' } };
     }
 
     default:

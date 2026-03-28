@@ -18,9 +18,9 @@ import {
   localStateDir,
 } from './session.js';
 import { autoRenameVideo } from './video-utils.js';
+import { launchBrowserServer } from './common.js';
 import { existsSync, mkdirSync } from 'fs';
-import { join, resolve } from 'path';
-import { spawn } from 'child_process';
+import { join } from 'path';
 
 // --- Helpers ---
 
@@ -32,57 +32,6 @@ function parseFlag(args: string[], name: string): string | undefined {
 
 function hasFlag(args: string[], name: string): boolean {
   return args.includes(`--${name}`);
-}
-
-async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; pid: number; port: number }> {
-  const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
-
-  return new Promise<{ wsEndpoint: string; pid: number; port: number }>((res, reject) => {
-    const child = spawn(process.execPath, [
-      ...process.execArgv,
-      serverScript,
-      ...(headless ? ['--headless'] : []),
-      ...(userDataDir ? [`--user-data-dir=${userDataDir}`] : []),
-    ], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-      detached: true,
-    });
-    child.unref();
-
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error('Browser server launch timeout (15s)'));
-    }, 15000);
-
-    let output = '';
-    child.stdout!.on('data', (chunk: Buffer) => {
-      output += chunk.toString();
-      const lines = output.split('\n');
-      for (const line of lines) {
-        try {
-          const data = JSON.parse(line.trim());
-          if (data.wsEndpoint) {
-            clearTimeout(timeout);
-            const portMatch = data.wsEndpoint.match(/:(\d+)\//);
-            res({ wsEndpoint: data.wsEndpoint, pid: data.pid, port: portMatch ? parseInt(portMatch[1]) : 0 });
-            return;
-          }
-        } catch {}
-      }
-    });
-
-    child.on('error', (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-
-    child.on('exit', (code) => {
-      clearTimeout(timeout);
-      if (!output.includes('wsEndpoint')) {
-        reject(new Error(`Browser server exited with code ${code}`));
-      }
-    });
-  });
 }
 
 // --- Launch ---

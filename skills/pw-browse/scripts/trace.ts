@@ -65,7 +65,7 @@ run(async ({ page, context, args }) => {
         data: {
           status: 'saved',
           file: tracePath,
-          view: `npx playwright show-trace "${tracePath}"`,
+          hint: `npx playwright show-trace "${tracePath}"`,
         },
       };
     }
@@ -89,13 +89,15 @@ run(async ({ page, context, args }) => {
 
       // Return path + command — caller decides whether to open GUI
       const viewCommand = `npx playwright show-trace "${tracePath}"`;
+      let opened = false;
       try {
         execSync(viewCommand, { stdio: 'ignore', timeout: 5000 });
+        opened = true;
       } catch {
         // show-trace may not be available (headless/CI) or closed by user
       }
 
-      return { success: true, data: { file: tracePath, command: viewCommand } };
+      return { success: true, data: { file: tracePath, command: viewCommand, opened } };
     }
 
     case 'status': {

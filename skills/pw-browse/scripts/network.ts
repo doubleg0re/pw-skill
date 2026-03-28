@@ -104,7 +104,7 @@ run(async ({ page, args }) => {
   switch (command) {
     case 'inject': {
       await page.evaluate(INJECT_SCRIPT);
-      return { success: true, data: 'Network logging injected' };
+      return { success: true, data: { message: 'Network logging injected' } };
     }
 
     case 'dump': {
@@ -129,14 +129,14 @@ run(async ({ page, args }) => {
 
       return {
         success: true,
-        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warning: 'Raw mode: sensitive data may be written to disk unmasked' } : {}) },
+        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warnings: ['Raw mode: sensitive data may be written to disk unmasked'] } : {}) },
       };
     }
 
     case 'clear': {
       await page.evaluate('window.__PW_NETWORK = []');
       if (existsSync(LOG_FILE)) writeFileSync(LOG_FILE, '');
-      return { success: true, data: 'Network logs cleared' };
+      return { success: true, data: { message: 'Network logs cleared' } };
     }
 
     case 'tail': {

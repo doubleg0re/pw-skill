@@ -55,10 +55,10 @@ async function isWsAlive(wsEndpoint: string): Promise<boolean> {
 
 // --- Chromium CDP process management ---
 
-async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; pid: number }> {
+export async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; pid: number; port: number }> {
   const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
-  return new Promise<{ wsEndpoint: string; pid: number }>((res, reject) => {
+  return new Promise<{ wsEndpoint: string; pid: number; port: number }>((res, reject) => {
     const child = spawn(process.execPath, [
       ...process.execArgv,
       serverScript,
@@ -85,7 +85,8 @@ async function launchBrowserServer(headless: boolean, userDataDir?: string): Pro
           const data = JSON.parse(line.trim());
           if (data.wsEndpoint) {
             clearTimeout(timeout);
-            res({ wsEndpoint: data.wsEndpoint, pid: data.pid });
+            const portMatch = data.wsEndpoint.match(/:(\d+)\//);
+            res({ wsEndpoint: data.wsEndpoint, pid: data.pid, port: portMatch ? parseInt(portMatch[1]) : 0 });
             return;
           }
         } catch {}
@@ -182,19 +183,20 @@ async function launchNewSession(opts: {
   const sessionName = opts.resumeName || opts.name || `s-${generateSessionId()}`;
   const userDataDir = sessionUserDataDir(sessionName);
 
-  const { wsEndpoint, pid } = await launchBrowserServer(opts.headless, userDataDir);
-
-  // Extract port from ws://localhost:PORT/...
-  const portMatch = wsEndpoint.match(/:(\d+)\//);
-  const port = portMatch ? parseInt(portMatch[1]) : 0;
+  const { wsEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir);
 
   const session = createSession(sessionName, port, pid, wsEndpoint, opts.video ? sessionName : null);
 
   const browser = await chromium.connect(wsEndpoint);
 
+  // Load storageState if available (e.g., when resuming a session)
+  const stateFile = join(LOCAL_STATE_DIR, 'state.json');
+  const storageState = existsSync(stateFile) ? stateFile : undefined;
+
   const ctx = await browser.newContext({
     viewport: opts.viewport,
     acceptDownloads: true,
+    ...(storageState ? { storageState } : {}),
     ...(opts.video ? { recordVideo: { dir: opts.videoDir, size: opts.viewport } } : {}),
   });
   const page = await ctx.newPage();

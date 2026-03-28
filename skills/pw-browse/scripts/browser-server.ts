@@ -5,6 +5,13 @@
 // Args:
 //   --headless          Run headless
 //   --user-data-dir=DIR Session-specific profile directory
+//
+// NOTE: --user-data-dir is passed as a Chromium CLI arg. However, Playwright's
+// launchServer() manages its own browser profile internally, which may override
+// or ignore the --user-data-dir arg. As a result, user-data-dir alone is NOT a
+// reliable mechanism for persisting authentication or session data across restarts.
+// The storageState mechanism (saving/loading state.json via BrowserContext) is the
+// reliable way to persist cookies, localStorage, and auth across sessions.
 import { chromium } from 'playwright';
 
 const headless = process.argv.includes('--headless');

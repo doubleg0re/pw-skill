@@ -112,7 +112,7 @@ run(async ({ page, args }) => {
         filename: suggestedName,
         url: download.url(),
         path: savePath,
-        message: 'Download started. Check with `pw download status`.',
+        hint: 'Download started. Check with `pw download status`.',
       },
     };
   }

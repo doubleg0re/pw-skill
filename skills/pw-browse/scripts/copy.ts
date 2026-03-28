@@ -64,7 +64,8 @@ run(async ({ page, args }) => {
         format: 'image',
         path: savePath,
         src,
-        clipboard: saveOnly ? 'skipped' : (clipboardOk ? 'ok' : 'failed (browser permission denied)'),
+        clipboard: saveOnly ? 'skipped' : (clipboardOk ? 'ok' : 'failed'),
+        ...(!saveOnly && !clipboardOk ? { warnings: ['Clipboard write denied by browser'] } : {}),
       },
     };
   }
@@ -98,7 +99,8 @@ run(async ({ page, args }) => {
       selector,
       format,
       content,
-      clipboard: clipboardOk ? 'ok' : 'failed (browser permission denied)',
+      clipboard: clipboardOk ? 'ok' : 'failed',
+      ...(!clipboardOk ? { warnings: ['Clipboard write denied by browser'] } : {}),
     },
   };
 });

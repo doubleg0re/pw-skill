@@ -59,7 +59,7 @@ run(async ({ page, args }) => {
         file: absPath,
         mimeType,
         selector: selector || null,
-        warning: 'Image paste uses synthetic ClipboardEvent — may not work with all apps (e.g., native file upload zones)',
+        warnings: ['Image paste uses synthetic ClipboardEvent — may not work with all apps (e.g., native file upload zones)'],
       },
     };
   }
@@ -82,7 +82,8 @@ run(async ({ page, args }) => {
       type: 'text',
       text: text || '(clipboard)',
       selector: selector || null,
-      clipboard: clipboardOk === null ? 'existing' : (clipboardOk ? 'ok' : 'failed (browser permission denied)'),
+      clipboard: clipboardOk === null ? 'existing' : (clipboardOk ? 'ok' : 'failed'),
+      ...(clipboardOk === false ? { warnings: ['Clipboard write denied by browser'] } : {}),
     },
   };
 });
