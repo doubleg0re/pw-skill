@@ -547,6 +547,23 @@ export async function runSteps(
         continue;
       }
 
+      // --- set ---
+      if (step.action === 'set') {
+        const setItems = (step.items || {}) as Record<string, { ref?: string; value?: any }>;
+        const setData: Record<string, any> = {};
+        for (const [name, source] of Object.entries(setItems)) {
+          if ('ref' in source) {
+            setData[name] = vars.get(vars.interpolate(source.ref!));
+          } else if ('value' in source) {
+            setData[name] = source.value;
+          }
+          vars.set(name, setData[name]);
+        }
+        results.push({ step: stepIndex, action: 'set', success: true, data: setData });
+        i++;
+        continue;
+      }
+
       // --- shell ---
       if (step.action === 'shell') {
         if (!options.allowShell) {
@@ -639,7 +656,7 @@ export async function runSteps(
 const KNOWN_ACTIONS = new Set([
   'navigate', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'upload', 'attr', 'submit', 'fetch', 'screenshot',
-  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell',
+  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set',
 ]);
 
 export function validateSteps(steps: Step[], prefix: string = ''): string[] {
@@ -713,6 +730,25 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       }
       if (step.finally && !Array.isArray(step.finally)) {
         errors.push(`${loc}: try "finally" must be an array`);
+      }
+    }
+
+    // set
+    if (action === 'set') {
+      if (!step.items || typeof step.items !== 'object' || Array.isArray(step.items)) {
+        errors.push(`${loc}: set requires "items" as object`);
+      } else {
+        for (const [name, source] of Object.entries(step.items as Record<string, any>)) {
+          if (name.startsWith('$')) {
+            errors.push(`${loc}: set destination "${name}" cannot start with "$"`);
+          }
+          if (source && 'ref' in source && 'value' in source) {
+            errors.push(`${loc}: set item "${name}" must contain exactly one of "ref" or "value"`);
+          }
+          if (source && !('ref' in source) && !('value' in source)) {
+            errors.push(`${loc}: set item "${name}" must contain "ref" or "value"`);
+          }
+        }
       }
     }
 

@@ -836,3 +836,63 @@ describe('validateSteps — shell', () => {
     expect(errors[0]).toContain('requires "args"');
   });
 });
+
+// --- set action ---
+
+describe('Flow Engine — set', () => {
+  it('copies variable with ref', async () => {
+    const vars = new VarStore();
+    vars.set('original', 'hello');
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [
+      { action: 'set', items: { copy: { ref: 'original' } } } as any,
+    ], vars, results, emptyDefs());
+
+    expect(vars.get('copy')).toBe('hello');
+  });
+
+  it('assigns literal with value', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [
+      { action: 'set', items: { count: { value: 42 }, data: { value: { ok: true } } } } as any,
+    ], vars, results, emptyDefs());
+
+    expect(vars.get('count')).toBe(42);
+    expect(vars.get('data')).toEqual({ ok: true });
+  });
+
+  it('multiple set in one step', async () => {
+    const vars = new VarStore();
+    vars.set('a', 1);
+    vars.set('b', 2);
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [
+      { action: 'set', items: { x: { ref: 'a' }, y: { ref: 'b' }, z: { value: 'literal' } } } as any,
+    ], vars, results, emptyDefs());
+
+    expect(vars.get('x')).toBe(1);
+    expect(vars.get('y')).toBe(2);
+    expect(vars.get('z')).toBe('literal');
+  });
+});
+
+describe('validateSteps — set', () => {
+  it('rejects $ destination', () => {
+    const errors = validateSteps([{ action: 'set', items: { '$bad': { value: 1 } } } as any]);
+    expect(errors[0]).toContain('cannot start with "$"');
+  });
+
+  it('rejects both ref and value', () => {
+    const errors = validateSteps([{ action: 'set', items: { x: { ref: 'a', value: 1 } } } as any]);
+    expect(errors[0]).toContain('exactly one');
+  });
+
+  it('rejects neither ref nor value', () => {
+    const errors = validateSteps([{ action: 'set', items: { x: {} } } as any]);
+    expect(errors[0]).toContain('ref');
+  });
+});
