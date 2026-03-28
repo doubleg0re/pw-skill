@@ -43,11 +43,15 @@ export async function raryGet(args: string[]): Promise<Result> {
   // Local path
   if (existsSync(repo)) {
     const absPath = resolve(repo);
-    // Copy local directory
-    if (process.platform === 'win32') {
-      spawnSync('xcopy', [absPath, targetDir, '/E', '/I', '/Q'], { stdio: 'ignore' });
-    } else {
-      spawnSync('cp', ['-r', absPath, targetDir], { stdio: 'ignore' });
+    const copyResult = process.platform === 'win32'
+      ? spawnSync('xcopy', [absPath, targetDir, '/E', '/I', '/Q'], { stdio: 'ignore' })
+      : spawnSync('cp', ['-r', absPath, targetDir], { stdio: 'ignore' });
+
+    if (copyResult.status !== 0) {
+      return { success: false, error: `Failed to copy "${absPath}" to toybox (exit code ${copyResult.status})` };
+    }
+    if (!existsSync(targetDir)) {
+      return { success: false, error: `Copy appeared to succeed but target directory not found: ${targetDir}` };
     }
   } else {
     // Git clone

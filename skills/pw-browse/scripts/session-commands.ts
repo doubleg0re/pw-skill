@@ -189,12 +189,18 @@ export async function closeSession(args: string[]): Promise<{ success: boolean; 
   if (closeAll) {
     const sessions = listSessions();
     const closed: string[] = [];
+    const allHookErrors: string[] = [];
     for (const s of sessions) {
-      await killSession(s.name);
+      const { hookErrors } = await killSession(s.name);
       closed.push(s.name);
+      if (hookErrors) allHookErrors.push(...hookErrors);
     }
     unbindSession();
-    return { success: true, data: { closed } };
+    return {
+      success: true,
+      data: { closed },
+      ...(allHookErrors.length > 0 ? { warnings: allHookErrors } : {}),
+    };
   }
 
   // Resolve which session to close
@@ -221,23 +227,30 @@ export async function closeSession(args: string[]): Promise<{ success: boolean; 
   }
 
   try {
-    await killSession(name);
+    const { hookErrors } = await killSession(name);
     // Unbind if this was the bound session
     if (getBoundSession() === name) {
       unbindSession();
     }
-    return { success: true, data: { closed: name } };
+    return {
+      success: true,
+      data: { closed: name },
+      ...(hookErrors ? { warnings: hookErrors } : {}),
+    };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-async function killSession(name: string): Promise<void> {
+async function killSession(name: string): Promise<{ hookErrors?: string[] }> {
   const session = getSession(name);
-  if (!session) return;
+  if (!session) return {};
 
   // Run extension close hooks before killing
-  await runHooks('close', { session }).catch(() => {});
+  const hookResult = await runHooks('close', { session }).catch((err) => ({
+    ran: [] as string[],
+    errors: [`Close hooks failed: ${err instanceof Error ? err.message : String(err)}`],
+  }));
 
   // Kill by PID
   if (isProcessAlive(session.pid)) {
@@ -276,4 +289,6 @@ async function killSession(name: string): Promise<void> {
 
   // Remove session metadata but keep user-data for resume
   deleteSession(name, true);
+
+  return { hookErrors: hookResult.errors.length > 0 ? hookResult.errors : undefined };
 }

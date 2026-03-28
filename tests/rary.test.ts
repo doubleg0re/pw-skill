@@ -2,10 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import type { LarryManifest } from '../skills/pw-browse/scripts/rary.js';
 
-// Since rary.ts uses homedir() for paths, we test the core logic
-// by directly manipulating the file structure matching the same format.
-// For full integration, the DI pattern from session.ts could be applied later.
+// rary.ts uses homedir() internally, so full DI isn't available yet.
+// We test:
+// 1. larry.json schema compliance (type-level)
+// 2. File structure expectations (what rary.ts reads/writes)
+// 3. Import rary-commands.ts router for command coverage
+// TODO: refactor rary.ts with createRaryStore({ toyboxDir, extensionsFile }) for full API testing
 
 const TEST_DIR = join(tmpdir(), `pw-rary-test-${Date.now()}`);
 const TOYBOX_DIR = join(TEST_DIR, 'toybox');
@@ -19,21 +23,17 @@ function cleanup() {
   if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true, force: true });
 }
 
-// Helpers that mirror rary.ts logic for testing
-function createPackage(name: string, manifest: any) {
+function createPackage(name: string, manifest: LarryManifest, files?: Record<string, string>) {
   const dir = join(TOYBOX_DIR, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'larry.json'), JSON.stringify(manifest, null, 2));
-  return dir;
-}
-
-function createPackageWithFiles(name: string, manifest: any, files: Record<string, string>) {
-  const dir = createPackage(name, manifest);
-  for (const [path, content] of Object.entries(files)) {
-    const fullPath = join(dir, path);
-    const parentDir = fullPath.substring(0, fullPath.lastIndexOf('/') > 0 ? fullPath.lastIndexOf('/') : fullPath.lastIndexOf('\\'));
-    if (parentDir !== dir) mkdirSync(parentDir, { recursive: true });
-    writeFileSync(fullPath, content);
+  if (files) {
+    for (const [path, content] of Object.entries(files)) {
+      const fullPath = join(dir, path);
+      const parent = join(fullPath, '..');
+      if (!existsSync(parent)) mkdirSync(parent, { recursive: true });
+      writeFileSync(fullPath, content);
+    }
   }
   return dir;
 }
@@ -47,101 +47,116 @@ function saveExtensions(ext: Record<string, any>) {
   writeFileSync(EXTENSIONS_FILE, JSON.stringify(ext, null, 2));
 }
 
-describe('Rary — larry.json manifest', () => {
+// --- larry.json manifest ---
+
+describe('larry.json manifest schema', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('creates a valid package with manifest', () => {
-    const manifest = { name: 'test-pkg', version: '1.0.0', type: 'script', description: 'A test package' };
-    createPackage('test-pkg', manifest);
-    const file = join(TOYBOX_DIR, 'test-pkg', 'larry.json');
-    expect(existsSync(file)).toBe(true);
-    expect(JSON.parse(readFileSync(file, 'utf-8')).name).toBe('test-pkg');
+  it('minimal manifest: name + version', () => {
+    const manifest: LarryManifest = { name: 'test', version: '1.0.0' };
+    createPackage('test', manifest);
+    const read = JSON.parse(readFileSync(join(TOYBOX_DIR, 'test', 'larry.json'), 'utf-8'));
+    expect(read.name).toBe('test');
+    expect(read.version).toBe('1.0.0');
   });
 
-  it('supports extension type with hooks', () => {
-    const manifest = {
-      name: 'ext-pkg',
-      version: '1.0.0',
-      type: 'extension',
+  it('extension type with hooks', () => {
+    const manifest: LarryManifest = {
+      name: 'ext', version: '1.0.0', type: 'extension',
       hooks: {
         launch: { entry: 'hooks/launch.js' },
+        load: { entry: 'hooks/load.js', scope: 'session' },
         close: { entry: 'hooks/close.js' },
       },
     };
-    createPackage('ext-pkg', manifest);
-    const read = JSON.parse(readFileSync(join(TOYBOX_DIR, 'ext-pkg', 'larry.json'), 'utf-8'));
+    createPackage('ext', manifest);
+    const read: LarryManifest = JSON.parse(readFileSync(join(TOYBOX_DIR, 'ext', 'larry.json'), 'utf-8'));
     expect(read.type).toBe('extension');
-    expect(read.hooks.launch.entry).toBe('hooks/launch.js');
+    expect(read.hooks!.launch!.entry).toBe('hooks/launch.js');
+    expect(read.hooks!.load!.scope).toBe('session');
   });
 
-  it('supports commands array', () => {
-    const manifest = {
-      name: 'cmd-pkg',
-      version: '1.0.0',
-      type: 'script',
+  it('script type with commands', () => {
+    const manifest: LarryManifest = {
+      name: 'cmd', version: '1.0.0', type: 'script',
       commands: [
         { name: 'hello', entry: 'commands/hello.js' },
         { name: 'world', entry: 'commands/world.js' },
       ],
     };
-    createPackage('cmd-pkg', manifest);
-    const read = JSON.parse(readFileSync(join(TOYBOX_DIR, 'cmd-pkg', 'larry.json'), 'utf-8'));
+    createPackage('cmd', manifest);
+    const read: LarryManifest = JSON.parse(readFileSync(join(TOYBOX_DIR, 'cmd', 'larry.json'), 'utf-8'));
     expect(read.commands).toHaveLength(2);
-    expect(read.commands[0].name).toBe('hello');
+  });
+
+  it('manifest with rolling setup', () => {
+    const manifest: LarryManifest = {
+      name: 'setup-pkg', version: '1.0.0',
+      rolling: { entry: 'setup.js' },
+    };
+    createPackage('setup-pkg', manifest);
+    const read: LarryManifest = JSON.parse(readFileSync(join(TOYBOX_DIR, 'setup-pkg', 'larry.json'), 'utf-8'));
+    expect(read.rolling!.entry).toBe('setup.js');
   });
 });
 
-describe('Rary — toybox operations', () => {
+// --- Toybox operations ---
+
+describe('toybox file operations', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('lists packages in toybox', () => {
+  it('lists packages by directory', () => {
     createPackage('a', { name: 'a', version: '1.0.0' });
     createPackage('b', { name: 'b', version: '2.0.0' });
     const { readdirSync } = require('fs');
-    const packages = readdirSync(TOYBOX_DIR);
-    expect(packages).toHaveLength(2);
-    expect(packages.sort()).toEqual(['a', 'b']);
+    expect(readdirSync(TOYBOX_DIR).sort()).toEqual(['a', 'b']);
   });
 
-  it('returns empty for empty toybox', () => {
+  it('empty toybox', () => {
     const { readdirSync } = require('fs');
     expect(readdirSync(TOYBOX_DIR)).toHaveLength(0);
   });
 
-  it('destroys a package', () => {
+  it('destroy removes directory', () => {
     createPackage('doomed', { name: 'doomed', version: '1.0.0' });
-    expect(existsSync(join(TOYBOX_DIR, 'doomed'))).toBe(true);
     rmSync(join(TOYBOX_DIR, 'doomed'), { recursive: true, force: true });
     expect(existsSync(join(TOYBOX_DIR, 'doomed'))).toBe(false);
   });
 });
 
-describe('Rary — extension activation', () => {
+// --- Extension activation ---
+
+describe('extension activation lifecycle', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('activates an extension', () => {
-    createPackage('my-ext', { name: 'my-ext', version: '1.0.0', type: 'extension' });
-    saveExtensions({ 'my-ext': { package: 'my-ext', activatedAt: new Date().toISOString() } });
-    const ext = loadExtensions();
-    expect(ext['my-ext']).toBeDefined();
-    expect(ext['my-ext'].package).toBe('my-ext');
+  it('activate writes to extensions.json', () => {
+    saveExtensions({ 'my-ext': { package: 'my-ext', activatedAt: '2026-03-28T00:00:00Z' } });
+    expect(loadExtensions()['my-ext'].package).toBe('my-ext');
   });
 
-  it('deactivates an extension', () => {
-    saveExtensions({ 'my-ext': { package: 'my-ext', activatedAt: new Date().toISOString() } });
+  it('deactivate removes from extensions.json', () => {
+    saveExtensions({ 'my-ext': { package: 'my-ext', activatedAt: '2026-03-28T00:00:00Z' } });
     const ext = loadExtensions();
     delete ext['my-ext'];
     saveExtensions(ext);
     expect(loadExtensions()['my-ext']).toBeUndefined();
   });
 
+  it('multiple extensions can be active simultaneously', () => {
+    saveExtensions({
+      'ext-a': { package: 'ext-a', activatedAt: '2026-03-28T00:00:00Z' },
+      'ext-b': { package: 'ext-b', activatedAt: '2026-03-28T00:00:01Z' },
+    });
+    const ext = loadExtensions();
+    expect(Object.keys(ext)).toHaveLength(2);
+  });
+
   it('destroy also deactivates', () => {
     createPackage('active-ext', { name: 'active-ext', version: '1.0.0', type: 'extension' });
-    saveExtensions({ 'active-ext': { package: 'active-ext', activatedAt: new Date().toISOString() } });
-    // Destroy
+    saveExtensions({ 'active-ext': { package: 'active-ext', activatedAt: '2026-03-28T00:00:00Z' } });
     rmSync(join(TOYBOX_DIR, 'active-ext'), { recursive: true, force: true });
     const ext = loadExtensions();
     delete ext['active-ext'];
@@ -151,52 +166,82 @@ describe('Rary — extension activation', () => {
   });
 });
 
-describe('Rary — repair check', () => {
+// --- Repair detection ---
+
+describe('repair detection patterns', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('detects missing larry.json', () => {
+  it('missing larry.json is detectable', () => {
     mkdirSync(join(TOYBOX_DIR, 'broken'), { recursive: true });
-    // No larry.json → should be detected
     expect(existsSync(join(TOYBOX_DIR, 'broken', 'larry.json'))).toBe(false);
   });
 
-  it('detects missing entry file', () => {
-    const manifest = { name: 'missing-entry', version: '1.0.0', entry: 'index.js' };
-    createPackage('missing-entry', manifest);
-    // index.js doesn't exist
-    expect(existsSync(join(TOYBOX_DIR, 'missing-entry', 'index.js'))).toBe(false);
+  it('missing entry file is detectable', () => {
+    createPackage('bad', { name: 'bad', version: '1.0.0', entry: 'index.js' });
+    expect(existsSync(join(TOYBOX_DIR, 'bad', 'index.js'))).toBe(false);
   });
 
-  it('detects missing hook entry', () => {
-    const manifest = {
-      name: 'bad-hooks',
-      version: '1.0.0',
-      type: 'extension',
+  it('missing hook entry is detectable', () => {
+    createPackage('bad-hooks', {
+      name: 'bad-hooks', version: '1.0.0', type: 'extension',
       hooks: { launch: { entry: 'hooks/launch.js' } },
-    };
-    createPackage('bad-hooks', manifest);
+    });
     expect(existsSync(join(TOYBOX_DIR, 'bad-hooks', 'hooks', 'launch.js'))).toBe(false);
   });
 
-  it('passes when all files exist', () => {
-    const manifest = {
-      name: 'good-pkg',
-      version: '1.0.0',
-      entry: 'index.js',
+  it('all files present passes repair', () => {
+    createPackage('good', {
+      name: 'good', version: '1.0.0', entry: 'index.js',
       commands: [{ name: 'hello', entry: 'hello.js' }],
-    };
-    createPackageWithFiles('good-pkg', manifest, {
-      'index.js': 'module.exports = {}',
-      'hello.js': 'console.log("hello")',
+    }, {
+      'index.js': 'export default {}',
+      'hello.js': 'console.log("hi")',
     });
-    expect(existsSync(join(TOYBOX_DIR, 'good-pkg', 'index.js'))).toBe(true);
-    expect(existsSync(join(TOYBOX_DIR, 'good-pkg', 'hello.js'))).toBe(true);
+    expect(existsSync(join(TOYBOX_DIR, 'good', 'index.js'))).toBe(true);
+    expect(existsSync(join(TOYBOX_DIR, 'good', 'hello.js'))).toBe(true);
   });
 
-  it('detects active extension with missing package', () => {
-    saveExtensions({ ghost: { package: 'ghost', activatedAt: new Date().toISOString() } });
-    // Package "ghost" doesn't exist in toybox
+  it('ghost extension (active but package missing) is detectable', () => {
+    saveExtensions({ ghost: { package: 'ghost', activatedAt: '2026-03-28T00:00:00Z' } });
     expect(existsSync(join(TOYBOX_DIR, 'ghost'))).toBe(false);
+    expect(loadExtensions()['ghost']).toBeDefined();
+  });
+});
+
+// --- Command router (import test) ---
+
+describe('rary command router', () => {
+  it('imports and responds to help', async () => {
+    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
+    const result = await raryRouter(['help']);
+    expect(result.success).toBe(true);
+    expect(result.data.message).toContain('Larry the Cat');
+  });
+
+  it('returns error for unknown command', async () => {
+    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
+    const result = await raryRouter(['nonexistent']);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unknown rary command');
+  });
+
+  it('get requires an argument', async () => {
+    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
+    const result = await raryRouter(['get']);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Usage');
+  });
+
+  it('peek requires an argument', async () => {
+    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
+    const result = await raryRouter(['peek']);
+    expect(result.success).toBe(false);
+  });
+
+  it('destroy requires an argument', async () => {
+    const { raryRouter } = await import('../skills/pw-browse/scripts/rary-commands.js');
+    const result = await raryRouter(['destroy']);
+    expect(result.success).toBe(false);
   });
 });

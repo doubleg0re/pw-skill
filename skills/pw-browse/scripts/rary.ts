@@ -3,6 +3,7 @@
 // Extensions register in ~/.playwright-state/extensions.json
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
 import { homedir } from 'os';
 
 // --- Paths ---
@@ -206,7 +207,9 @@ export async function runHooks(hookName: 'launch' | 'load' | 'close', context?: 
     }
 
     try {
-      const hookModule = await import(hookPath);
+      // Use file:// URL for cross-platform ESM import compatibility (especially Windows)
+      const hookUrl = pathToFileURL(hookPath).href;
+      const hookModule = await import(hookUrl);
       if (typeof hookModule.default === 'function') {
         await hookModule.default(context);
       } else if (typeof hookModule[hookName] === 'function') {
