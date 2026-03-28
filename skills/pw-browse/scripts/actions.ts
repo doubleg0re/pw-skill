@@ -78,6 +78,34 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
   const attr = getArg(a, 'attr', 1);
   const value = getArg(a, 'value', 2);
 
+  // wait user-action: pause for human intervention (headed only)
+  if (target === 'user-action') {
+    const prompt = (Array.isArray(a) ? a[1] : a.prompt) || 'Complete the action, then click Continue';
+
+    // Inject overlay and wait for Continue click
+    await page.evaluate((promptMsg: string) => {
+      const overlay = document.createElement('div');
+      overlay.id = '__pw_user_action_overlay';
+      overlay.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999999;background:#1a1a2e;color:#fff;padding:16px 24px;border-radius:8px;font-family:system-ui;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:320px;';
+      overlay.innerHTML = `
+        <div style="font-weight:600;margin-bottom:8px;">Waiting for user action</div>
+        <div style="color:#ccc;margin-bottom:12px;">${promptMsg}</div>
+        <button id="__pw_continue_btn" style="background:#4f46e5;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;font-size:14px;">Continue</button>
+      `;
+      document.body.appendChild(overlay);
+    }, prompt);
+
+    // Wait for the Continue button click
+    await page.locator('#__pw_continue_btn').click({ timeout: 0 });
+
+    // Remove overlay
+    await page.evaluate(() => {
+      document.getElementById('__pw_user_action_overlay')?.remove();
+    });
+
+    return { result: { waited: 'user-action', prompt } };
+  }
+
   if (typeof target === 'number' || /^\d+$/.test(target)) {
     await new Promise(resolve => setTimeout(resolve, Number(target)));
   } else if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(target)) {
