@@ -125,7 +125,7 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
 
 // --- Use ---
 
-export async function useSession(name: string | undefined, force: boolean): Promise<{ success: boolean; data?: any; error?: string }> {
+export async function useSession(name?: string): Promise<{ success: boolean; data?: any; error?: string }> {
   if (!name) {
     // Show current binding
     const bound = getBoundSession();
@@ -144,21 +144,16 @@ export async function useSession(name: string | undefined, force: boolean): Prom
     return { success: false, error: `Session "${name}" is not running (pid ${session.pid} dead). Use \`pw launch --resume=${name}\` to restart.` };
   }
 
-  // Check existing binding
-  const bound = getBoundSession();
-  if (bound && bound !== name) {
-    if (!force) {
-      return {
-        success: false,
-        error: `Session "${bound}" is already bound. Use \`pw use ${name} --force\` to switch binding, or \`pw close\` to close the existing session first.`,
-      };
-    }
-    // --force: switch binding only, don't kill existing session
-    // The previous session keeps running — use `pw close --session=X` to stop it
-  }
-
+  const previous = getBoundSession();
   bindSession(name);
-  return { success: true, data: { session: name, bound: true } };
+  return {
+    success: true,
+    data: {
+      session: name,
+      bound: true,
+      ...(previous && previous !== name ? { previous } : {}),
+    },
+  };
 }
 
 // --- Sessions list ---
