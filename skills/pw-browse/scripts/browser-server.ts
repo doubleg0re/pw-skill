@@ -1,16 +1,16 @@
-// browser-server.ts — Standalone browser server process
-// Uses launchServer for stable process management + --remote-debugging-port for CDP.
-// CDP enables context/page persistence across reconnections.
+// browser-server.ts — Standalone browser server process (detached)
+// Uses launchPersistentContext for real Chrome profile persistence.
+// CDP port opened separately for context/page reconnection.
 //
 // Args:
-//   --headless          Run headless
-//   --user-data-dir=DIR Session-specific profile directory
+//   --headless            Run headless
+//   --user-data-dir=DIR   Session-specific Chrome profile directory
 import { chromium } from 'playwright';
 import { createServer } from 'net';
 
 const headless = process.argv.includes('--headless');
+const userDataDir = process.argv.find(a => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length) || '';
 
-// Find a free port for CDP
 async function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer();
@@ -25,7 +25,9 @@ async function findFreePort(): Promise<number> {
 (async () => {
   const cdpPort = await findFreePort();
 
-  const server = await chromium.launchServer({
+  // launchPersistentContext: userDataDir is the FIRST parameter (not a Chrome arg)
+  // This gives us a real persistent Chrome profile that survives restarts
+  const context = await chromium.launchPersistentContext(userDataDir, {
     headless,
     args: [
       '--no-first-run',
@@ -34,7 +36,6 @@ async function findFreePort(): Promise<number> {
     ],
   });
 
-  const wsEndpoint = server.wsEndpoint();
   const pid = process.pid;
 
   // Wait for CDP to be ready
@@ -51,14 +52,14 @@ async function findFreePort(): Promise<number> {
     await new Promise(r => setTimeout(r, 200));
   }
 
-  process.stdout.write(JSON.stringify({ wsEndpoint, cdpEndpoint, pid }) + '\n');
+  process.stdout.write(JSON.stringify({ cdpEndpoint, pid }) + '\n');
 
   process.on('SIGTERM', async () => {
-    await server.close();
+    await context.close();
     process.exit(0);
   });
   process.on('SIGINT', async () => {
-    await server.close();
+    await context.close();
     process.exit(0);
   });
 })();

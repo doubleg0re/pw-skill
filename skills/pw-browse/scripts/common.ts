@@ -63,6 +63,7 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
       ...process.execArgv,
       serverScript,
       ...(headless ? ['--headless'] : []),
+      ...(userDataDir ? [`--user-data-dir=${userDataDir}`] : []),
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -78,17 +79,17 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
     let output = '';
     child.stdout!.on('data', (chunk: Buffer) => {
       output += chunk.toString();
-      // Look for JSON line with wsEndpoint
+      // Look for JSON line with cdpEndpoint
       const lines = output.split('\n');
       for (const line of lines) {
         try {
           const data = JSON.parse(line.trim());
-          if (data.wsEndpoint) {
+          if (data.cdpEndpoint) {
             clearTimeout(timeout);
-            const portMatch = data.wsEndpoint.match(/:(\d+)\//);
+            const portMatch = data.cdpEndpoint.match(/:(\d+)\//);
             res({
-              wsEndpoint: data.wsEndpoint,
-              cdpEndpoint: data.cdpEndpoint || '',
+              wsEndpoint: '',
+              cdpEndpoint: data.cdpEndpoint,
               pid: data.pid,
               port: portMatch ? parseInt(portMatch[1]) : 0,
             });
