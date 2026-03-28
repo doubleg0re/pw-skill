@@ -107,6 +107,10 @@ interface Step {
 
 const MAX_JUMPS = 100;
 
+export type DefEntry =
+  | { kind: 'block'; params: string[]; body: Step[] }
+  | { kind: 'condition'; condition: ConditionNode };
+
 interface StepResult {
   step: number;
   action: string;
@@ -197,7 +201,7 @@ export async function runSteps(
   steps: Step[],
   vars: VarStore,
   results: StepResult[],
-  defs: Map<string, { params: string[]; body: Step[] }>,
+  defs: Map<string, DefEntry>,
   baseIndex: number = 0,
 ): Promise<{ success: boolean; failedAt?: number; goto?: string }> {
   // Build label → index map
@@ -222,22 +226,36 @@ export async function runSteps(
         continue;
       }
 
-      // --- def (function definition) ---
+      // --- def (function or condition definition) ---
       if (step.action === 'def') {
-        defs.set(step.name!, { params: step.params || [], body: step.do || [] });
-        results.push({ step: stepIndex, action: 'def', success: true, data: { name: step.name, params: step.params } });
+        if (step.conditions) {
+          defs.set(step.name!, { kind: 'condition', condition: step.conditions });
+        } else {
+          defs.set(step.name!, { kind: 'block', params: step.params || [], body: step.do || [] });
+        }
+        results.push({ step: stepIndex, action: 'def', success: true, data: { name: step.name, kind: step.conditions ? 'condition' : 'block' } });
         i++;
         continue;
       }
 
-      // --- call (function invocation) ---
+      // --- call (function invocation or condition check) ---
       if (step.action === 'call') {
         const def = defs.get(step.name!);
         if (!def) {
           results.push({ step: stepIndex, action: 'call', success: false, error: `"${step.name}" is not defined` });
           return { success: false, failedAt: stepIndex };
         }
-        // Inject args: arrays map by params order, objects map by key
+
+        // Condition def: evaluate and return boolean
+        if (def.kind === 'condition') {
+          const matched = evaluateCondition(def.condition, vars);
+          results.push({ step: stepIndex, action: 'call', success: true, data: { name: step.name, kind: 'condition', matched } });
+          if (step.out) vars.set(step.out, matched);
+          i++;
+          continue;
+        }
+
+        // Block def: inject args and run body
         if (step.args) {
           if (Array.isArray(step.args)) {
             def.params.forEach((p, idx) => {
@@ -559,7 +577,7 @@ run(async ({ page, args: cliArgs }) => {
 
   const vars = new VarStore();
   const results: StepResult[] = [];
-  const defs = new Map<string, { params: string[]; body: Step[] }>();
+  const defs = new Map<string, DefEntry>();
   const outcome = await runSteps(page, steps, vars, results, defs);
 
   const path = screenshotPath(outcome.success ? 'sequence-done' : `sequence-error-${Date.now()}`);

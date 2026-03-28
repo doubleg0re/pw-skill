@@ -37,7 +37,7 @@ function mockPage(overrides: Record<string, any> = {}): any {
 }
 
 function emptyDefs() {
-  return new Map<string, { params: string[]; body: any[] }>();
+  return new Map<string, any>();
 }
 
 describe('Flow Engine — log', () => {
@@ -567,5 +567,46 @@ describe('validateSteps', () => {
   it('step with no action or label is an error', () => {
     const errors = validateSteps([{} as any]);
     expect(errors[0]).toContain('no action or label');
+  });
+});
+
+// --- Task 3: def with conditions ---
+
+describe('Flow Engine — def with conditions', () => {
+  it('defines and evaluates a named condition', async () => {
+    const vars = new VarStore();
+    vars.set('url', 'http://localhost/login');
+    const results: any[] = [];
+    const defs = emptyDefs();
+
+    await runSteps(mockPage(), [
+      {
+        action: 'def', name: 'isLogin',
+        conditions: { or: [{ ref: 'url', contains: '/login' }, { ref: 'url', contains: '/signin' }] },
+      },
+      { action: 'call', name: 'isLogin', out: 'check' },
+      { action: 'log', ref: 'check' },
+    ], vars, results, defs);
+
+    expect(vars.get('check')).toBe(true);
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toBe(true);
+  });
+
+  it('named condition returns false when not matched', async () => {
+    const vars = new VarStore();
+    vars.set('url', 'http://localhost/dashboard');
+    const results: any[] = [];
+    const defs = emptyDefs();
+
+    await runSteps(mockPage(), [
+      {
+        action: 'def', name: 'isLogin',
+        conditions: { ref: 'url', contains: '/login' },
+      },
+      { action: 'call', name: 'isLogin', out: 'check' },
+    ], vars, results, defs);
+
+    expect(vars.get('check')).toBe(false);
   });
 });
