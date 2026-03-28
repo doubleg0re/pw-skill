@@ -796,7 +796,7 @@ describe('Flow Engine — shell', () => {
     const results: any[] = [];
 
     const outcome = await runSteps(mockPage(), [
-      { action: 'shell', args: ['echo', 'hello'], out: 'res' },
+      { action: 'shell', args: ['node', '-e', 'console.log("hello")'], out: 'res' },
     ], vars, results, emptyDefs(), 0, { allowShell: true });
 
     expect(outcome.success).toBe(true);
