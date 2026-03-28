@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { VarStore, runSteps } from '../skills/pw-browse/scripts/sequence.js';
+import { VarStore, runSteps, evaluateCondition } from '../skills/pw-browse/scripts/sequence.js';
 
 // Mock page object — only need methods that flow control actions use
 function mockPage(overrides: Record<string, any> = {}): any {
@@ -400,5 +400,101 @@ describe('Flow Engine — combined', () => {
     expect(logs).toHaveLength(2);
     expect(logs[0].data).toBe('Hi Alice');
     expect(logs[1].data).toBe('Hi Bob');
+  });
+});
+
+// --- Task 1: evaluateCondition ---
+
+describe('evaluateCondition', () => {
+  it('evaluates leaf eq', () => {
+    const vars = new VarStore();
+    vars.set('x', 10);
+    expect(evaluateCondition({ ref: 'x', eq: 10 }, vars)).toBe(true);
+    expect(evaluateCondition({ ref: 'x', eq: 99 }, vars)).toBe(false);
+  });
+
+  it('evaluates leaf contains', () => {
+    const vars = new VarStore();
+    vars.set('msg', 'hello world');
+    expect(evaluateCondition({ ref: 'msg', contains: 'world' }, vars)).toBe(true);
+    expect(evaluateCondition({ ref: 'msg', contains: 'xyz' }, vars)).toBe(false);
+  });
+
+  it('evaluates leaf exists', () => {
+    const vars = new VarStore();
+    vars.set('a', 'yes');
+    expect(evaluateCondition({ ref: 'a', exists: true }, vars)).toBe(true);
+    expect(evaluateCondition({ ref: 'missing', exists: true }, vars)).toBe(false);
+    expect(evaluateCondition({ ref: 'missing', exists: false }, vars)).toBe(true);
+  });
+
+  it('evaluates and', () => {
+    const vars = new VarStore();
+    vars.set('x', 10);
+    vars.set('y', 20);
+    expect(evaluateCondition({ and: [{ ref: 'x', eq: 10 }, { ref: 'y', eq: 20 }] }, vars)).toBe(true);
+    expect(evaluateCondition({ and: [{ ref: 'x', eq: 10 }, { ref: 'y', eq: 99 }] }, vars)).toBe(false);
+  });
+
+  it('evaluates or', () => {
+    const vars = new VarStore();
+    vars.set('x', 10);
+    expect(evaluateCondition({ or: [{ ref: 'x', eq: 99 }, { ref: 'x', eq: 10 }] }, vars)).toBe(true);
+    expect(evaluateCondition({ or: [{ ref: 'x', eq: 99 }, { ref: 'x', eq: 88 }] }, vars)).toBe(false);
+  });
+
+  it('evaluates nested and/or', () => {
+    const vars = new VarStore();
+    vars.set('role', 'admin');
+    vars.set('active', true);
+    // admin AND (active=true OR role=superadmin)
+    expect(evaluateCondition({
+      and: [
+        { ref: 'role', eq: 'admin' },
+        { or: [{ ref: 'active', eq: true }, { ref: 'role', eq: 'superadmin' }] },
+      ],
+    }, vars)).toBe(true);
+  });
+
+  it('evaluates all leaf operators', () => {
+    const vars = new VarStore();
+    vars.set('n', 5);
+    expect(evaluateCondition({ ref: 'n', gt: 3 }, vars)).toBe(true);
+    expect(evaluateCondition({ ref: 'n', lt: 10 }, vars)).toBe(true);
+    expect(evaluateCondition({ ref: 'n', neq: 99 }, vars)).toBe(true);
+  });
+});
+
+describe('Flow Engine — composite condition steps', () => {
+  it('and condition in step', async () => {
+    const vars = new VarStore();
+    vars.set('x', 1);
+    vars.set('y', 2);
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [{
+      action: 'condition',
+      and: [{ ref: 'x', eq: 1 }, { ref: 'y', eq: 2 }],
+      then: [{ action: 'log', text: 'both' }],
+    }], vars, results, emptyDefs());
+
+    expect(results[0].data.matched).toBe(true);
+    expect(results[1].data).toBe('both');
+  });
+
+  it('or condition in step', async () => {
+    const vars = new VarStore();
+    vars.set('x', 99);
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [{
+      action: 'condition',
+      or: [{ ref: 'x', eq: 1 }, { ref: 'x', eq: 99 }],
+      then: [{ action: 'log', text: 'found' }],
+      else: [{ action: 'log', text: 'nope' }],
+    }], vars, results, emptyDefs());
+
+    expect(results[0].data.matched).toBe(true);
+    expect(results[1].data).toBe('found');
   });
 });

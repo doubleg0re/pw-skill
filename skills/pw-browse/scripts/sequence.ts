@@ -20,6 +20,52 @@ import { ACTION_MAP } from './actions.js';
 
 // --- Types ---
 
+// --- Condition AST ---
+
+export interface LeafCondition {
+  ref: string;
+  eq?: any;
+  neq?: any;
+  gt?: number;
+  lt?: number;
+  contains?: string;
+  exists?: boolean;
+}
+
+export interface CompositeCondition {
+  and?: ConditionNode[];
+  or?: ConditionNode[];
+}
+
+export type ConditionNode = LeafCondition | CompositeCondition;
+
+export function evaluateCondition(node: ConditionNode, vars: VarStore): boolean {
+  // Composite: and/or
+  if ('and' in node && node.and) {
+    return node.and.every(child => evaluateCondition(child, vars));
+  }
+  if ('or' in node && node.or) {
+    return node.or.some(child => evaluateCondition(child, vars));
+  }
+
+  // Leaf
+  const leaf = node as LeafCondition;
+  if (!leaf.ref) return false;
+  const refValue = vars.get(vars.interpolate(leaf.ref));
+  const resolve = (v: any) => typeof v === 'string' ? vars.interpolate(v) : v;
+
+  if ('eq' in leaf) return refValue == resolve(leaf.eq);
+  if ('neq' in leaf) return refValue != resolve(leaf.neq);
+  if ('gt' in leaf) return Number(refValue) > Number(resolve(leaf.gt));
+  if ('lt' in leaf) return Number(refValue) < Number(resolve(leaf.lt));
+  if ('contains' in leaf) return String(refValue ?? '').includes(String(resolve(leaf.contains)));
+  if ('exists' in leaf) return leaf.exists ? refValue != null : refValue == null;
+
+  return false;
+}
+
+// --- Step ---
+
 interface Step {
   action?: string;
   args?: string[] | Record<string, any>;
@@ -31,7 +77,7 @@ interface Step {
   params?: string[];
   // log
   text?: string;
-  // condition
+  // condition (leaf — backward compat)
   ref?: string;
   eq?: any;
   neq?: any;
@@ -39,6 +85,9 @@ interface Step {
   lt?: number;
   contains?: string;
   exists?: boolean;
+  // condition (composite)
+  and?: ConditionNode[];
+  or?: ConditionNode[];
   then?: Step[];
   else?: Step[];
   // each
@@ -247,20 +296,23 @@ export async function runSteps(
 
       // --- condition ---
       if (step.action === 'condition') {
-        const refValue = vars.get(vars.interpolate(step.ref!));
-        let matched = false;
+        let matched: boolean;
+        let condData: any;
 
-        const resolve = (v: any) => typeof v === 'string' ? vars.interpolate(v) : v;
-
-        if ('eq' in step) matched = refValue == resolve(step.eq);
-        else if ('neq' in step) matched = refValue != resolve(step.neq);
-        else if ('gt' in step) matched = Number(refValue) > Number(resolve(step.gt));
-        else if ('lt' in step) matched = Number(refValue) < Number(resolve(step.lt));
-        else if ('contains' in step) matched = String(refValue ?? '').includes(String(resolve(step.contains)));
-        else if ('exists' in step) matched = step.exists ? refValue != null : refValue == null;
+        if (step.and || step.or) {
+          // Composite condition (and/or)
+          const node: ConditionNode = step.and ? { and: step.and } : { or: step.or! };
+          matched = evaluateCondition(node, vars);
+          condData = { composite: true, matched };
+        } else {
+          // Leaf condition (backward compat)
+          const leaf: LeafCondition = { ref: step.ref!, ...(('eq' in step) ? { eq: step.eq } : {}), ...(('neq' in step) ? { neq: step.neq } : {}), ...(('gt' in step) ? { gt: step.gt } : {}), ...(('lt' in step) ? { lt: step.lt } : {}), ...(('contains' in step) ? { contains: step.contains } : {}), ...(('exists' in step) ? { exists: step.exists } : {}) };
+          matched = evaluateCondition(leaf, vars);
+          condData = { ref: step.ref, value: vars.get(vars.interpolate(step.ref!)), matched };
+        }
 
         const branch = matched ? step.then : step.else;
-        results.push({ step: stepIndex, action: 'condition', success: true, data: { ref: step.ref, value: refValue, matched } });
+        results.push({ step: stepIndex, action: 'condition', success: true, data: condData });
 
         if (branch && branch.length > 0) {
           const sub = await runSteps(page, branch, vars, results, defs, stepIndex * 1000);
