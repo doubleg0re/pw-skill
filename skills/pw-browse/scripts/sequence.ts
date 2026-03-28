@@ -103,6 +103,7 @@ interface Step {
   [key: `catch:${string}`]: Step[] | undefined;
   // wait user-action
   prompt?: string;
+  actions?: string[];
 }
 
 const MAX_JUMPS = 100;
@@ -720,6 +721,13 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       if (!step.args) errors.push(`${loc}: shell requires "args"`);
     }
 
+    // wait: validate actions array
+    if (action === 'wait' && step.actions) {
+      if (!Array.isArray(step.actions) || step.actions.length === 0) {
+        errors.push(`${loc}: wait "actions" must be a non-empty string array`);
+      }
+    }
+
     // goto
     if (action === 'goto') {
       if (!step.label) errors.push(`${loc}: goto requires "label"`);
@@ -768,6 +776,16 @@ run(async ({ page, args: cliArgs }) => {
     return { success: false, error: 'Validation failed', data: { errors: validationErrors } };
   }
 
+  // Check for shell actions and build warnings
+  const warnings: string[] = [];
+  const hasShell = steps.some(s => s.action === 'shell');
+  if (hasShell && allowShell) {
+    warnings.push('Warning: shell action enabled. Only run trusted sequences.');
+  }
+  if (hasShell && requestPermission) {
+    warnings.push('Warning: shell actions require user approval.');
+  }
+
   const vars = new VarStore();
   const results: StepResult[] = [];
   const defs = new Map<string, DefEntry>();
@@ -786,5 +804,6 @@ run(async ({ page, args: cliArgs }) => {
       vars: vars.snapshot(),
     },
     ...(outcome.failedAt !== undefined ? { error: `Step ${outcome.failedAt} failed` } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 });

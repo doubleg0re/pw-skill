@@ -817,3 +817,22 @@ describe('Flow Engine — shell', () => {
     expect(vars.get('res').exitCode).toBe(42);
   });
 });
+
+describe('validateSteps — wait actions', () => {
+  it('rejects empty actions array', () => {
+    const errors = validateSteps([{ action: 'wait', args: ['user-action'], actions: [] } as any]);
+    expect(errors[0]).toContain('non-empty');
+  });
+
+  it('accepts valid actions', () => {
+    const errors = validateSteps([{ action: 'wait', args: ['user-action'], actions: ['approve', 'cancel'] } as any]);
+    expect(errors.filter(e => e.includes('actions'))).toHaveLength(0);
+  });
+});
+
+describe('validateSteps — shell', () => {
+  it('rejects shell without args', () => {
+    const errors = validateSteps([{ action: 'shell' }]);
+    expect(errors[0]).toContain('requires "args"');
+  });
+});
