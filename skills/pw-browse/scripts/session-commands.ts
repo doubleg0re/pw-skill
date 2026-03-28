@@ -14,6 +14,7 @@ import {
   unbindSession,
   getBoundSession,
   cleanupDeadSessions,
+  sessionUserDataDir,
   localStateDir,
 } from './session.js';
 import { autoRenameVideo } from './video-utils.js';
@@ -33,7 +34,7 @@ function hasFlag(args: string[], name: string): boolean {
   return args.includes(`--${name}`);
 }
 
-async function launchBrowserServer(headless: boolean): Promise<{ wsEndpoint: string; pid: number; port: number }> {
+async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; pid: number; port: number }> {
   const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
   return new Promise<{ wsEndpoint: string; pid: number; port: number }>((res, reject) => {
@@ -41,6 +42,7 @@ async function launchBrowserServer(headless: boolean): Promise<{ wsEndpoint: str
       ...process.execArgv,
       serverScript,
       ...(headless ? ['--headless'] : []),
+      ...(userDataDir ? [`--user-data-dir=${userDataDir}`] : []),
     ], {
       stdio: ['ignore', 'pipe', 'ignore'],
       detached: true,
@@ -105,7 +107,8 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   }
 
   try {
-    const { wsEndpoint, pid, port } = await launchBrowserServer(!headed);
+    const userDataDir = sessionUserDataDir(sessionName);
+    const { wsEndpoint, pid, port } = await launchBrowserServer(!headed, userDataDir);
     const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null));
 
     // Auto-bind to current project

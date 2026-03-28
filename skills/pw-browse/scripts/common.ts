@@ -55,7 +55,7 @@ async function isWsAlive(wsEndpoint: string): Promise<boolean> {
 
 // --- Chromium CDP process management ---
 
-async function launchBrowserServer(headless: boolean): Promise<{ wsEndpoint: string; pid: number }> {
+async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; pid: number }> {
   const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
   return new Promise<{ wsEndpoint: string; pid: number }>((res, reject) => {
@@ -63,6 +63,7 @@ async function launchBrowserServer(headless: boolean): Promise<{ wsEndpoint: str
       ...process.execArgv,
       serverScript,
       ...(headless ? ['--headless'] : []),
+      ...(userDataDir ? [`--user-data-dir=${userDataDir}`] : []),
     ], {
       stdio: ['ignore', 'pipe', 'ignore'],
       detached: true,
@@ -111,7 +112,8 @@ interface ConnectOptions {
   headless?: boolean;
   viewport?: { width: number; height: number };
   video?: boolean;
-  sessionName?: string; // explicit session to connect to
+  sessionName?: string;
+  restoreUrl?: boolean; // restore lastUrl on reconnect (default: true)
 }
 
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
@@ -156,8 +158,9 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
     });
     const page = await ctx.newPage();
 
-    // Restore last URL if available
-    if (session.lastUrl && session.lastUrl !== 'about:blank') {
+    // Restore last URL if available and not disabled
+    const shouldRestore = options.restoreUrl !== false;
+    if (shouldRestore && session.lastUrl && session.lastUrl !== 'about:blank') {
       await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     }
 
@@ -177,8 +180,9 @@ async function launchNewSession(opts: {
   name?: string;
 }): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo }> {
   const sessionName = opts.resumeName || opts.name || `s-${generateSessionId()}`;
+  const userDataDir = sessionUserDataDir(sessionName);
 
-  const { wsEndpoint, pid } = await launchBrowserServer(opts.headless);
+  const { wsEndpoint, pid } = await launchBrowserServer(opts.headless, userDataDir);
 
   // Extract port from ws://localhost:PORT/...
   const portMatch = wsEndpoint.match(/:(\d+)\//);
@@ -297,12 +301,14 @@ export async function run(
     const videoName = parseFlag(cliArgs, 'video');
     const videoEnabled = videoName !== undefined || hasFlag(cliArgs, 'video');
     const sessionName = parseFlag(cliArgs, 'session');
+    const noRestore = hasFlag(cliArgs, 'no-restore');
 
     const { browser, context, page: defaultPage, session } = await connectBrowser({
       headless: !headed,
       viewport,
       video: videoEnabled,
       sessionName,
+      restoreUrl: !noRestore,
     });
 
     // Save video metadata for rename on close
