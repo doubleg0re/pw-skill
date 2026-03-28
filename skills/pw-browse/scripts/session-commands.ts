@@ -150,14 +150,11 @@ export async function useSession(name: string | undefined, force: boolean): Prom
     if (!force) {
       return {
         success: false,
-        error: `Session "${bound}" is already bound. Close it first (\`pw close\`) or use \`pw use ${name} --force\` to switch.`,
+        error: `Session "${bound}" is already bound. Use \`pw use ${name} --force\` to switch binding, or \`pw close\` to close the existing session first.`,
       };
     }
-    // --force: kill existing session, then bind new one
-    await killSession(bound);
-    if (getBoundSession() === bound) {
-      unbindSession();
-    }
+    // --force: switch binding only, don't kill existing session
+    // The previous session keeps running — use `pw close --session=X` to stop it
   }
 
   bindSession(name);
