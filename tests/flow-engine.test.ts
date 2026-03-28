@@ -545,9 +545,9 @@ describe('validateSteps', () => {
     expect(errors[0]).toContain('requires numeric "count"');
   });
 
-  it('detects try without do', () => {
+  it('detects try without items', () => {
     const errors = validateSteps([{ action: 'try' }]);
-    expect(errors[0]).toContain('requires "do"');
+    expect(errors[0]).toContain('requires "items"');
   });
 
   it('detects goto without label', () => {

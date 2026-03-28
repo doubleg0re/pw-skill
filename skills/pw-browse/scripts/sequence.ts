@@ -228,7 +228,7 @@ export async function runSteps(
 
       // --- try / catch / finally ---
       if (step.action === 'try') {
-        const tryBody = step.do || [];
+        const tryBody = step.items || step.do || [];
         const finallyBody = step.finally || [];
         let trySub = await runSteps(page, tryBody, vars, results, defs, stepIndex * 1000);
 
@@ -331,7 +331,7 @@ export async function runSteps(
           defs.set(step.name!, { kind: 'condition', condition });
         } else {
           // func: items is Step[]
-          defs.set(step.name!, { kind: 'block', params: step.params || [], body: (step.items || step.do || []) as Step[] });
+          defs.set(step.name!, { kind: 'block', params: step.params || [], body: (step.items || step.items || step.do || []) as Step[] });
         }
         results.push({ step: stepIndex, action: 'def', success: true, data: { name: step.name, type: defType } });
         i++;
@@ -456,7 +456,7 @@ export async function runSteps(
       // --- each ---
       if (step.action === 'each') {
         const target = vars.get(vars.interpolate(step.ref!));
-        const body = step.do || [];
+        const body = step.items || step.do || [];
 
         if (target == null) {
           results.push({ step: stepIndex, action: 'each', success: false, error: `ref "${step.ref}" is null/undefined` });
@@ -502,7 +502,7 @@ export async function runSteps(
       // --- loop ---
       if (step.action === 'loop') {
         const count = step.count ?? 1;
-        const body = step.do || [];
+        const body = step.items || step.do || [];
         results.push({ step: stepIndex, action: 'loop', success: true, data: { count } });
 
         let loopGoto = false;
@@ -610,7 +610,7 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     // each
     if (action === 'each') {
       if (!step.ref) errors.push(`${loc}: each requires "ref"`);
-      if (!step.do) errors.push(`${loc}: each requires "do"`);
+      if (!step.items && !step.do) errors.push(`${loc}: each requires "items"`);
     }
 
     // loop
@@ -618,13 +618,14 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       if (step.count === undefined || typeof step.count !== 'number') {
         errors.push(`${loc}: loop requires numeric "count"`);
       }
-      if (!step.do) errors.push(`${loc}: loop requires "do"`);
+      if (!step.items && !step.do) errors.push(`${loc}: loop requires "items"`);
     }
 
     // try
     if (action === 'try') {
-      if (!step.do || !Array.isArray(step.do)) {
-        errors.push(`${loc}: try requires "do" array`);
+      const tryBody = step.items || step.do;
+      if (!tryBody || !Array.isArray(tryBody)) {
+        errors.push(`${loc}: try requires "items" array`);
       }
       if (step.finally && !Array.isArray(step.finally)) {
         errors.push(`${loc}: try "finally" must be an array`);
@@ -637,7 +638,8 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     }
 
     // Recurse into nested steps
-    if (step.do) errors.push(...validateSteps(step.do, `${loc}.do → `));
+    if (step.items) errors.push(...validateSteps(step.items as Step[], `${loc}.items → `));
+    else if (step.do) errors.push(...validateSteps(step.do, `${loc}.do → `));
     if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `));
     if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `));
     if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `));
