@@ -811,6 +811,13 @@ run(async ({ page, args: cliArgs }) => {
   const allowShell = process.argv.includes('--allow-shell');
   const requestPermission = process.argv.includes('--request-permission');
 
+  // Heartbeat lock for long-running sequences
+  const { acquireLock, releaseLock, refreshLock } = await import('./lock.js');
+  const { join } = await import('path');
+  const lockPath = join(process.cwd(), '.playwright-state', '.sequence.lock');
+  acquireLock(lockPath, 'sequence');
+  const heartbeat = setInterval(() => refreshLock(lockPath), 30000);
+
   let steps: Step[];
   try {
     if (existsSync(input)) {
@@ -844,6 +851,10 @@ run(async ({ page, args: cliArgs }) => {
   const results: StepResult[] = [];
   const defs = new Map<string, DefEntry>();
   const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission });
+
+  // Clean up heartbeat and lock
+  clearInterval(heartbeat);
+  releaseLock(lockPath);
 
   const path = screenshotPath(outcome.success ? 'sequence-done' : `sequence-error-${Date.now()}`);
   await page.screenshot({ path });
