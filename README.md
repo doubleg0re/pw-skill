@@ -60,6 +60,72 @@ pw console dump
 pw close --session=dev
 ```
 
+## One-shot Mode (`pwi`)
+
+`pwi` launches a temporary browser, executes the action(s), and exits. No sessions, no CDP server, no hooks, no extensions. Just Playwright directly.
+
+```bash
+# One-shot: launches browser → executes → closes
+pwi navigate https://example.com --screenshot
+pwi dump --selector="h1" --text
+pwi navigate url :: click "#login" :: screenshot
+
+# Options
+pwi navigate url --headed          # show browser window
+pwi navigate url --viewport=800x600
+```
+
+No `pw launch` needed. For session-based persistent work, use `pw` instead.
+
+| Command | Browser | Session | Hooks/Extensions |
+|---------|---------|---------|------------------|
+| `pwi action` | temporary, auto-closes | none | none |
+| `pw action` | persistent via CDP | required | loaded |
+| `pw a :: b` | persistent via CDP | required | loaded |
+
+Chaining is restricted to browser actions only. Session, admin, and package commands (`launch`, `close`, `rary`, etc.) are not chainable.
+
+## Extensions
+
+pw-skill uses a lightweight extension system called `rary`. Extensions can add event handlers, hooks, and custom sequence actions.
+
+```bash
+# Install and activate an extension
+pw rary get <repo-or-path>
+pw rary put <package-name>
+
+# List installed extensions
+pw rary toybox
+
+# Deactivate
+pw rary yoink <package-name>
+```
+
+### Built-in Extensions
+
+| Extension | Description |
+|---|---|
+| `pw-monitor` | Per-command tab sync — detects tab changes via CDP, emits `tab:created`/`closed`/`navigated` events |
+| `pw-persist-user-action` | Persists user-action overlay state across navigation — re-injects overlay on tab change |
+
+### Extension Dependencies in Flows
+
+Flows can declare required extensions via `info.requiresRary`:
+
+```json
+{
+  "info": {
+    "name": "login-flow",
+    "requiresRary": ["pw-monitor"]
+  },
+  "flow": [
+    { "action": "navigate", "args": ["https://example.com/login"] }
+  ]
+}
+```
+
+Missing extensions fail fast with a clear error. CLI override: `pw sequence flow.json --rary=pw-monitor`.
+
 ## Session Management
 
 Sessions are the core of pw-skill. Each session is a named, persistent Chromium process with its own user-data directory stored globally at `~/.playwright-state/sessions/`.
@@ -165,6 +231,8 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | `pw tab close <index>` | Close tab |
 | `pw status` | Session status (pages, URL, title) |
 
+> **Caution for AI agents:** Unless the user explicitly asks to close every session, avoid using `--all`. Other agents or background tasks may have active sessions you do not know about. Prefer plain `pw close` to safely terminate the current bound session.
+
 ### Debugging
 
 | Command | Description |
@@ -210,7 +278,9 @@ Sequence is a full flow engine that runs JSON action lists with variables, branc
 pw sequence ./login-flow.json
 pw sequence '[{"action":"navigate","args":["http://localhost:3000"]}]'
 pw sequence flow.json --allow-shell
-pw sequence flow.json --allow-shell --request-permission --headed
+pw sequence flow.json --params '{"url":"https://example.com","user":"admin"}'
+pw sequence flow.json --params ./params/prod.json
+pw sequence flow.json --rary=pw-monitor
 ```
 
 ### Variables
@@ -536,8 +606,11 @@ pw-skill/
         common.ts                 # Shared: connect, run wrapper, flags, screenshotPath
         session.ts                # Global session store (DI-based)
         session-commands.ts       # launch/use/sessions/close implementations
+        pwi.ts                    # Inline action shorthand (pwi / pw --inline)
         actions.ts                # Shared action module (CLI + sequence)
-        sequence.ts               # Flow engine
+        sequence.ts               # Flow engine + requiresRary
+        runtime.ts                # Extension Runtime SDK
+        tab-registry.ts           # Stable tab identity + TAB_EVENTS contract
         trace.ts                  # Trace recording
         video.ts                  # Video management
         video-utils.ts            # Video rename helpers
@@ -548,7 +621,10 @@ pw-skill/
         tab.ts, status.ts
     pw-test/SKILL.md
     pw-close/SKILL.md
-  tests/                          # 124 tests (vitest)
+  extensions/
+    pw-monitor/                   # Per-command tab sync extension
+    pw-persist-user-action/       # Overlay persistence across navigation
+  tests/                          # 325 tests (vitest)
   package.json
 ```
 
@@ -568,6 +644,9 @@ pw-skill/
 - **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
 - **Extension Runtime SDK**: `ExtensionRuntimeContext` gives extensions session info, `cdpEndpoint`, `emitEvent()`, lazy browser/page access, and `registerCleanup()`. Extensions can register custom sequence actions, event handlers, and build persistent monitors — all without making core heavy.
 - **Extension sequence actions**: Active rary extensions can register custom actions in `larry.json` that become first-class sequence DSL actions. Per-run merged map, built-in collision rejection.
+- **One-shot mode (`pwi`)**: Launches a temporary browser, executes action(s), and exits. No sessions, no CDP server, no hooks. For quick tasks without `pw launch`.
+- **Stable tab events**: `TAB_EVENTS` constants with canonical `TabEventPayload`. Core and extensions follow the same contract. Cross-contract tests enforce consistency.
+- **requiresRary**: Flows declare extension dependencies via `info.requiresRary`. Missing extensions fail fast. CLI `--rary=name` also supported.
 - **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.
 - **Standardized result schema**: All environment-dependent operations report `warnings: string[]` array and consistent status fields.
 
@@ -586,7 +665,7 @@ See [Core and Extension Runtime Guide](docs/CORE-AND-EXTENSION-RUNTIME-GUIDE.md)
 
 ## Tests
 
-265 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, connect edge cases, runtime SDK, and settings.
+325 tests using vitest, covering session management, sequence flow engine (incl. requiresRary), variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, connect edge cases, runtime SDK, event contract validation, tab sync (pw-monitor), pending action state (pw-persist-user-action), and settings.
 
 ```bash
 npm test           # run all tests

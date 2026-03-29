@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { VarStore, runSteps, evaluateCondition, validateSteps } from '../skills/pw-browse/scripts/sequence.js';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresRary, loadParams, normalizeStep } from '../skills/pw-browse/scripts/sequence.js';
 
 // Mock page object — only need methods that flow control actions use
 function mockPage(overrides: Record<string, any> = {}): any {
@@ -968,6 +968,184 @@ describe('validateSteps — wrapper', () => {
   it('empty step is invalid', () => {
     const errors = validateSteps([{} as any]);
     expect(errors[0]).toContain('no action');
+  });
+});
+
+// --- requiresRary ---
+
+describe('validateRequiresRary', () => {
+  it('returns null when no requirements', () => {
+    expect(validateRequiresRary({}, [], new Set())).toBeNull();
+    expect(validateRequiresRary(undefined, [], new Set())).toBeNull();
+  });
+
+  it('returns null when all requirements met', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const active = new Set(['pw-monitor', 'pw-other']);
+    expect(validateRequiresRary(info, [], active)).toBeNull();
+  });
+
+  it('returns error when extension not installed', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const active = new Set(['pw-other']);
+    const err = validateRequiresRary(info, [], active);
+    expect(err).toContain('"pw-monitor"');
+    expect(err).toContain('not installed');
+  });
+
+  it('distinguishes installed-but-inactive from not-installed', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const active = new Set<string>();
+    const installed = new Set(['pw-monitor']);
+    const err = validateRequiresRary(info, [], active, installed);
+    expect(err).toContain('"pw-monitor"');
+    expect(err).toContain('installed but not active');
+    expect(err).toContain('pw rary put');
+  });
+
+  it('combines info and cli requirements', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const cliRary = ['pw-persist-user-action'];
+    const active = new Set(['pw-monitor']); // missing pw-persist-user-action
+    const err = validateRequiresRary(info, cliRary, active);
+    expect(err).toContain('"pw-persist-user-action"');
+  });
+
+  it('passes when cli requirement is active', () => {
+    const active = new Set(['pw-monitor']);
+    expect(validateRequiresRary({}, ['pw-monitor'], active)).toBeNull();
+  });
+
+  it('rejects invalid requiresRary format: not array', () => {
+    const err = validateRequiresRary({ requiresRary: 'pw-monitor' }, [], new Set());
+    expect(err).toContain('must be an array');
+  });
+
+  it('rejects invalid requiresRary format: empty string', () => {
+    const err = validateRequiresRary({ requiresRary: [''] }, [], new Set());
+    expect(err).toContain('must be an array of non-empty strings');
+  });
+
+  it('rejects invalid requiresRary format: non-string', () => {
+    const err = validateRequiresRary({ requiresRary: [123] }, [], new Set());
+    expect(err).toContain('must be an array');
+  });
+
+  it('reports all missing extensions', () => {
+    const info = { requiresRary: ['a', 'b', 'c'] };
+    const active = new Set(['b']);
+    const err = validateRequiresRary(info, [], active);
+    expect(err).toContain('"a"');
+    expect(err).toContain('"c"');
+    expect(err).not.toContain('"b"');
+  });
+});
+
+// --- loadParams ---
+
+describe('loadParams', () => {
+  it('loads params from JSON string', () => {
+    const vars = new VarStore();
+    const err = loadParams(vars, '{"url":"https://example.com","name":"test"}');
+    expect(err).toBeNull();
+    expect(vars.get('url')).toBe('https://example.com');
+    expect(vars.get('name')).toBe('test');
+  });
+
+  it('rejects invalid JSON', () => {
+    const vars = new VarStore();
+    expect(loadParams(vars, 'NOT JSON')).toContain('not valid JSON');
+  });
+
+  it('rejects arrays', () => {
+    const vars = new VarStore();
+    expect(loadParams(vars, '[1,2,3]')).toContain('must be a JSON object');
+  });
+
+  it('rejects forbidden keys', () => {
+    const vars = new VarStore();
+    const err = loadParams(vars, '{"action":"navigate","url":"test"}');
+    expect(err).toContain('forbidden keys');
+    expect(err).toContain('action');
+  });
+
+  it('skips $id and load metadata keys', () => {
+    const vars = new VarStore();
+    const err = loadParams(vars, '{"$id":"test","url":"https://example.com"}');
+    expect(err).toBeNull();
+    expect(vars.get('$id')).toBeUndefined();
+    expect(vars.get('url')).toBe('https://example.com');
+  });
+
+  it('loads nested objects as values', () => {
+    const vars = new VarStore();
+    loadParams(vars, '{"credentials":{"email":"a@b.com","pass":"secret"}}');
+    expect(vars.get('credentials')).toEqual({ email: 'a@b.com', pass: 'secret' });
+  });
+
+  it('loads from file path', () => {
+    const { writeFileSync, mkdtempSync, rmSync } = require('fs');
+    const { join } = require('path');
+    const tmpDir = mkdtempSync(join(require('os').tmpdir(), 'params-test-'));
+    const filePath = join(tmpDir, 'params.json');
+    writeFileSync(filePath, '{"site":"https://example.com"}');
+
+    const vars = new VarStore();
+    const err = loadParams(vars, filePath);
+    expect(err).toBeNull();
+    expect(vars.get('site')).toBe('https://example.com');
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+// --- normalizeStep (shorthand) ---
+
+describe('normalizeStep', () => {
+  it('converts shorthand with array args', () => {
+    const result = normalizeStep({ navigate: ['https://example.com'] });
+    expect(result).toEqual({ action: 'navigate', args: ['https://example.com'] });
+  });
+
+  it('wraps non-array value as single-element array', () => {
+    const result = normalizeStep({ navigate: 'https://example.com' });
+    expect(result).toEqual({ action: 'navigate', args: ['https://example.com'] });
+  });
+
+  it('passes through explicit action step', () => {
+    const step = { action: 'navigate', args: ['https://example.com'] };
+    expect(normalizeStep(step)).toBe(step);
+  });
+
+  it('passes through comment-only step', () => {
+    const step = { comment: 'a note' };
+    expect(normalizeStep(step)).toBe(step);
+  });
+
+  it('passes through condition step', () => {
+    const step = { condition: { ref: '$x', eq: 1 }, then: [] };
+    expect(normalizeStep(step)).toBe(step);
+  });
+
+  it('passes object args as-is (named args, not wrapped)', () => {
+    const result = normalizeStep({ dump: { selector: '#app', text: true } });
+    expect(result).toEqual({ action: 'dump', args: { selector: '#app', text: true } });
+  });
+
+  it('handles extension action shorthand', () => {
+    const result = normalizeStep({ 'persist-user-action': ['Please log in', ['done', 'cancel']] });
+    expect(result).toEqual({ action: 'persist-user-action', args: ['Please log in', ['done', 'cancel']] });
+  });
+
+  it('passes through multi-key non-explicit object (ambiguous)', () => {
+    const step = { navigate: ['https://example.com'], out: 'x' };
+    // Not shorthand (multi-key), not explicit (no "action") — passes through for later validation to catch
+    const result = normalizeStep(step);
+    expect(result).toBe(step);
+  });
+
+  it('handles null/undefined gracefully', () => {
+    expect(normalizeStep(null)).toBeNull();
+    expect(normalizeStep(undefined)).toBeUndefined();
   });
 });
 

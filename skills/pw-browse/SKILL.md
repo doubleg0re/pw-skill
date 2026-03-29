@@ -173,8 +173,15 @@ npx tsx {script_path}/evaluate.ts <js-expression>
 ### sequence.ts — Flow engine with variables, conditions, loops, and functions
 ```bash
 npx tsx {script_path}/sequence.ts <json-string | json-file-path> [--allow-shell] [--request-permission]
+npx tsx {script_path}/sequence.ts flow.json --params '{"url":"https://example.com"}'
+npx tsx {script_path}/sequence.ts flow.json --params ./params/prod.json
+npx tsx {script_path}/sequence.ts flow.json --rary=pw-monitor
 ```
 Runs an action sequence with full flow control. Stops on failure with an error screenshot.
+
+- `--params`: Inject external parameters into flow variables (JSON string or file path)
+- `--rary=name1,name2`: Require specific rary extensions for this run
+- Flows can also declare `info.requiresRary` in wrapper format
 
 #### Args format
 All actions accept `args` as either an **array** or an **object**:
@@ -531,6 +538,50 @@ run(async ({ page }) => {
 
 Write temporary scripts in the project's `scripts/playwright/` directory.
 Clean up unnecessary temporary scripts when running `pw-close`.
+
+## One-shot Mode (pwi)
+
+`pwi` launches a temporary browser, executes the action(s), and exits. No `pw launch` needed. No sessions, no hooks, no extensions.
+
+```bash
+# One-shot: launches browser → executes → closes
+npx tsx {script_path}/pwi.ts navigate https://example.com --screenshot
+npx tsx {script_path}/pwi.ts dump --selector="h1" --text
+npx tsx {script_path}/pwi.ts navigate url :: click "#login" :: screenshot --headed
+```
+
+For session-based persistent work, use `pw` commands instead:
+
+```bash
+npx tsx {script_path}/pw.ts navigate https://example.com :: click "#login" :: wait 1000
+```
+
+Chaining is restricted to browser actions only. Session, admin, and package commands are not chainable.
+
+## Extensions
+
+pw-skill uses the `rary` extension system. Extensions can add event handlers, hooks, and custom sequence actions.
+
+### Available extensions
+
+| Extension | Description |
+|---|---|
+| `pw-monitor` | Per-command tab sync — detects tab changes, emits `tab:created`/`closed`/`navigated` |
+| `pw-persist-user-action` | Persists user-action overlay across navigation |
+
+### Extension dependency in flows
+
+```json
+{
+  "info": {
+    "name": "login-flow",
+    "requiresRary": ["pw-monitor"]
+  },
+  "flow": [...]
+}
+```
+
+Missing extensions fail fast. CLI: `--rary=pw-monitor`.
 
 ## Chaining
 

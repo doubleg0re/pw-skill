@@ -811,7 +811,7 @@ export async function runSteps(
       // Emit core tab events after relevant actions
       if (options.runtime?.emitEvent) {
         if (step.action === 'navigate') {
-          const { findTabByPageIndex, findTabByUrl, updateTab, assignTabId, buildTabEvent } = await import('./tab-registry.js');
+          const { findTabByPageIndex, findTabByUrl, updateTab, assignTabId, buildTabEvent, TAB_EVENTS } = await import('./tab-registry.js');
           // Find existing tab: prefer pageIndex (accurate), fall back to URL
           const pageIndex = page.context().pages().indexOf(page);
           let navTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(result?.url);
@@ -820,7 +820,7 @@ export async function runSteps(
           } else {
             navTab = assignTabId(result?.url, result?.title, pageIndex >= 0 ? pageIndex : undefined);
           }
-          options.runtime.emitEvent('tab:navigated', buildTabEvent('tab:navigated', options.runtime.session.name, navTab));
+          options.runtime.emitEvent(TAB_EVENTS.NAVIGATED, buildTabEvent(TAB_EVENTS.NAVIGATED, options.runtime.session.name, navTab));
         }
       }
     } catch (err) {
@@ -1009,6 +1009,148 @@ export function validateSteps(steps: Step[], prefix: string = '', extraKnownActi
   return errors;
 }
 
+// --- Step shorthand normalization (exported for testing) ---
+
+// Keys that indicate an explicit step (not shorthand)
+const EXPLICIT_STEP_KEYS = new Set([
+  'action', 'comment', 'condition', 'each', 'loop', 'try', 'def', 'call',
+  'shell', 'return', 'set', 'log',
+]);
+
+/**
+ * Normalize a shorthand step into explicit form.
+ *
+ * Shorthand: { "navigate": "https://example.com" }
+ *        or: { "fill": ["#email", "test@test.com"] }
+ * Explicit:  { "action": "navigate", "args": ["https://example.com"] }
+ *
+ * Rules:
+ * - Must be a single-key object (excluding "comment")
+ * - Key must not be an explicit step key
+ * - Value becomes args (wrapped in array if not already)
+ * - Multi-key objects with shorthand + metadata are rejected
+ */
+export function normalizeStep(step: any): any {
+  if (!step || typeof step !== 'object' || Array.isArray(step)) return step;
+
+  // Already explicit form
+  const keys = Object.keys(step);
+  if (keys.some(k => EXPLICIT_STEP_KEYS.has(k))) return step;
+
+  // Comment-only step
+  if (keys.length === 1 && keys[0] === 'comment') return step;
+
+  // Filter out comment key for shorthand detection
+  const nonCommentKeys = keys.filter(k => k !== 'comment');
+
+  if (nonCommentKeys.length === 0) return step;
+
+  if (nonCommentKeys.length === 1) {
+    const actionName = nonCommentKeys[0];
+    const value = step[actionName];
+    // Array → use as positional args
+    // Plain object → use as named args (ActionArgs Record style)
+    // Primitive → wrap as single-element array
+    let args: any;
+    if (Array.isArray(value)) {
+      args = value;
+    } else if (value !== null && typeof value === 'object') {
+      args = value; // named object args — pass through as-is
+    } else {
+      args = [value]; // string, number, etc → positional
+    }
+    return { action: actionName, args };
+  }
+
+  // Multiple non-comment, non-explicit keys → ambiguous, reject
+  // (could be shorthand + metadata, which is not allowed)
+  return step;
+}
+
+// --- Params loading (exported for testing) ---
+
+const FORBIDDEN_PARAM_KEYS = new Set([
+  'action', 'def', 'call', 'condition', 'each', 'loop', 'try', 'catch',
+  'finally', 'shell', 'return', 'flow', 'items', 'comment',
+]);
+
+/** Load params from JSON string or file path into VarStore. Returns error string or null. */
+export function loadParams(vars: VarStore, paramsArg: string): string | null {
+  let data: Record<string, any>;
+  try {
+    if (existsSync(paramsArg)) {
+      data = JSON.parse(readFileSync(paramsArg, 'utf-8'));
+    } else {
+      data = JSON.parse(paramsArg);
+    }
+  } catch {
+    return `Invalid --params: not valid JSON or file not found.`;
+  }
+
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return `--params must be a JSON object, not ${Array.isArray(data) ? 'array' : typeof data}.`;
+  }
+
+  // Check forbidden keys
+  const forbidden = Object.keys(data).filter(k => FORBIDDEN_PARAM_KEYS.has(k));
+  if (forbidden.length > 0) {
+    return `--params contains forbidden keys: ${forbidden.join(', ')}. Params are data-only.`;
+  }
+
+  // Load referenced param files ($id and load are metadata, skip them)
+  for (const [key, value] of Object.entries(data)) {
+    if (key === '$id' || key === 'load') continue;
+    vars.set(key, value);
+  }
+
+  // Handle "load" — merge additional param files
+  if (Array.isArray(data.load)) {
+    for (const loadPath of data.load) {
+      if (typeof loadPath !== 'string') continue;
+      const subError = loadParams(vars, loadPath);
+      if (subError) return subError;
+    }
+  }
+
+  return null;
+}
+
+// --- requiresRary validation (exported for testing) ---
+
+export function validateRequiresRary(
+  info: any,
+  cliRary: string[],
+  activeExtensions: Set<string>,
+  installedExtensions?: Set<string>,
+): string | null {
+  // Format validation
+  if (info?.requiresRary !== undefined) {
+    if (!Array.isArray(info.requiresRary) || !info.requiresRary.every((r: any) => typeof r === 'string' && r.length > 0)) {
+      return 'info.requiresRary must be an array of non-empty strings.';
+    }
+  }
+
+  const required: string[] = [
+    ...(Array.isArray(info?.requiresRary) ? info.requiresRary : []),
+    ...cliRary,
+  ];
+
+  if (required.length === 0) return null;
+
+  const missing = required.filter(name => !activeExtensions.has(name));
+  if (missing.length === 0) return null;
+
+  // Distinguish installed-but-inactive from not-installed
+  const details = missing.map(name => {
+    if (installedExtensions?.has(name)) {
+      return `"${name}" (installed but not active — run \`pw rary put ${name}\`)`;
+    }
+    return `"${name}" (not installed — run \`pw rary get <repo> && pw rary put ${name}\`)`;
+  });
+
+  return `Flow requires rary extension(s): ${details.join(', ')}`;
+}
+
 // --- Entry point (only when run directly, not when imported) ---
 
 const isDirectRun = process.argv[1]?.replace(/\\/g, '/').endsWith('/sequence.ts')
@@ -1041,11 +1183,28 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
     } else if (raw && typeof raw === 'object' && Array.isArray(raw.flow)) {
       steps = raw.flow;
       info = raw.info || undefined;
+    } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      // Single-step root object → wrap as [step]
+      steps = [raw];
     } else {
-      return { success: false, error: 'JSON must be an array of steps or an object with { info?, flow: [...] }.' };
+      return { success: false, error: 'JSON must be an array of steps, an object with { info?, flow: [...] }, or a single step object.' };
     }
+
+    // Normalize shorthand steps: { "actionName": args } → { action, args }
+    steps = steps.map(normalizeStep);
   } catch {
     return { success: false, error: 'Invalid JSON. Provide a JSON array or a path to a JSON file.' };
+  }
+
+  // Validate and check requiresRary
+  const raryFlag = process.argv.find(a => a.startsWith('--rary='));
+  const cliRary = raryFlag ? raryFlag.slice('--rary='.length).split(',').map(s => s.trim()).filter(Boolean) : [];
+  const { getActiveExtensions, listPackages } = await import('./rary.js');
+  const activeNames = new Set(getActiveExtensions().map((e: any) => e.name));
+  const installedNames = new Set(listPackages().map((p: any) => p.name));
+  const raryError = validateRequiresRary(info, cliRary, activeNames, installedNames);
+  if (raryError) {
+    return { success: false, error: raryError };
   }
 
   // Build merged action map (built-in + rary extensions)
@@ -1082,15 +1241,47 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   }
 
   const vars = new VarStore();
+
+  // --- --params: inject external parameters into VarStore ---
+  const paramsArg = cliArgs.find((a: string) => a.startsWith('--params='))?.slice('--params='.length)
+    || (cliArgs.indexOf('--params') >= 0 ? cliArgs[cliArgs.indexOf('--params') + 1] : undefined);
+
+  if (paramsArg) {
+    const paramsError = loadParams(vars, paramsArg);
+    if (paramsError) return { success: false, error: paramsError };
+  }
+
   const results: StepResult[] = [];
   const defs = new Map<string, DefEntry>();
   // Determine base directory for subflow path resolution
   const { dirname } = await import('path');
   const baseDir = existsSync(input) ? dirname(input.startsWith('/') || input.includes(':') ? input : (await import('path')).resolve(input)) : process.cwd();
 
-  // Build runtime context for extension actions
-  const { buildRuntime } = await import('./runtime.js');
-  const seqRuntime = buildRuntime({ session, page });
+  // Build runtime context with event handlers for extension actions
+  const { buildRuntime, loadEventHandlers } = await import('./runtime.js');
+  const { getActiveExtensions: getActiveExts, packageDir } = await import('./rary.js');
+  const { findTabByPageIndex, findTabByUrl } = await import('./tab-registry.js');
+
+  let eventHandlers: any[] = [];
+  try {
+    const loaded = await loadEventHandlers(
+      () => getActiveExts().map((e: any) => ({ name: e.name, manifest: e.manifest })),
+      packageDir,
+    );
+    eventHandlers = loaded.handlers;
+  } catch {}
+
+  // Resolve stable tabId for current page
+  const pageIndex = page.context().pages().indexOf(page);
+  const currentTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(page.url());
+  const tabId = currentTab?.tabId;
+
+  const seqRuntime = buildRuntime({
+    session,
+    page,
+    eventHandlers,
+    tab: tabId != null ? { id: tabId, url: page.url() } : undefined,
+  });
 
   const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap, runtime: seqRuntime });
 

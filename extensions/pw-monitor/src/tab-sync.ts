@@ -2,13 +2,26 @@
 import type { TabStore, TabEntry } from './tab-store.js';
 import type { PageTarget } from './cdp-targets.js';
 
+// Mirror of core TAB_EVENTS from tab-registry.ts — must stay in sync.
+// pw-monitor cannot import core directly (toybox copy), so we duplicate
+// the contract here. Payload validation tests enforce consistency.
+export const TAB_EVENTS = {
+  CREATED: 'tab:created',
+  CLOSED: 'tab:closed',
+  NAVIGATED: 'tab:navigated',
+  ACTIVATED: 'tab:activated',
+  DEACTIVATED: 'tab:deactivated',
+} as const;
+
+export type TabEventName = (typeof TAB_EVENTS)[keyof typeof TAB_EVENTS];
+
 export interface TabEvent {
-  event: string;
+  event: TabEventName;
   payload: TabEventPayload;
 }
 
 export interface TabEventPayload {
-  event: string;
+  event: TabEventName;
   session: string;
   tabId: number;
   url: string;
@@ -43,7 +56,7 @@ export function syncTabs(store: TabStore, liveTargets: PageTarget[], sessionName
 
       // Detect navigation
       if (entry.url !== target.url) {
-        events.push(buildEvent('tab:navigated', sessionName, entry.tabId, target.url, target.title, now));
+        events.push(buildEvent(TAB_EVENTS.NAVIGATED, sessionName, entry.tabId, target.url, target.title, now));
       }
 
       // Update entry with latest state
@@ -59,7 +72,7 @@ export function syncTabs(store: TabStore, liveTargets: PageTarget[], sessionName
   // Pass 2: Remove zombies (persisted but not matched)
   for (const entry of store.all()) {
     if (!matched.has(entry.tabId)) {
-      events.push(buildEvent('tab:closed', sessionName, entry.tabId, entry.url, entry.title, now));
+      events.push(buildEvent(TAB_EVENTS.CLOSED, sessionName, entry.tabId, entry.url, entry.title, now));
       store.remove(entry.tabId);
     }
   }
@@ -72,7 +85,30 @@ export function syncTabs(store: TabStore, liveTargets: PageTarget[], sessionName
         url: target.url,
         title: target.title,
       });
-      events.push(buildEvent('tab:created', sessionName, newEntry.tabId, target.url, target.title, now));
+      events.push(buildEvent(TAB_EVENTS.CREATED, sessionName, newEntry.tabId, target.url, target.title, now));
+    }
+  }
+
+  // Pass 4: Detect active tab change (best-effort — CDP /json first target = active)
+  if (liveTargets.length > 0) {
+    const topTarget = liveTargets[0];
+    const topEntry = store.findByCdpId(topTarget.cdpTargetId);
+    const newActiveId = topEntry?.tabId ?? null;
+    const prevActiveId = store.getActiveTabId();
+
+    if (newActiveId !== prevActiveId) {
+      // Deactivate previous
+      if (prevActiveId != null) {
+        const prevEntry = store.get(prevActiveId);
+        if (prevEntry) {
+          events.push(buildEvent(TAB_EVENTS.DEACTIVATED, sessionName, prevActiveId, prevEntry.url, prevEntry.title, now));
+        }
+      }
+      // Activate new
+      if (newActiveId != null && topEntry) {
+        events.push(buildEvent(TAB_EVENTS.ACTIVATED, sessionName, newActiveId, topEntry.url, topEntry.title, now));
+      }
+      store.setActiveTabId(newActiveId);
     }
   }
 
@@ -90,7 +126,7 @@ function findMatch(entry: TabEntry, targets: PageTarget[], claimed: Set<string>)
   return byUrl;
 }
 
-function buildEvent(event: string, session: string, tabId: number, url: string, title: string | undefined, timestamp: string): TabEvent {
+function buildEvent(event: TabEventName, session: string, tabId: number, url: string, title: string | undefined, timestamp: string): TabEvent {
   return {
     event,
     payload: { event, session, tabId, url, title, timestamp },

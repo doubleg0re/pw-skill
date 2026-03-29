@@ -4,6 +4,7 @@ import { pathToFileURL } from 'url';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { SessionInfo } from './session.js';
+import { TAB_EVENTS, removeTab } from './tab-registry.js';
 
 // --- Runtime Context ---
 
@@ -52,6 +53,7 @@ export interface BuildRuntimeOptions {
   context?: any;
   page?: any;
   eventHandlers?: EventHandler[];
+  tab?: { id?: number; url?: string; title?: string };
 }
 
 export interface LogEntry {
@@ -111,20 +113,45 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
   const handlers = opts.eventHandlers || [];
   const logger = defaultLogger;
 
-  const emitEvent = (event: string, payload: any): void => {
+  // Build runtime object first so emitEvent can pass it to handlers
+  const runtime: ExtensionRuntimeContext & { _cleanups: (() => Promise<void> | void)[] } = {
+    session: {
+      id: opts.session.id,
+      name: opts.session.name,
+      pid: opts.session.pid,
+      cdpEndpoint: opts.session.cdpEndpoint,
+      wsEndpoint: opts.session.wsEndpoint,
+    },
+    browser: opts.browser,
+    context: opts.context,
+    page: opts.page,
+    getBrowser: async () => opts.browser,
+    getContext: async () => opts.context,
+    getPage: async () => opts.page,
+    tab: opts.tab ?? (opts.page ? {
+      url: typeof opts.page.url === 'function' ? opts.page.url() : undefined,
+      title: undefined,
+    } : undefined),
+    emitEvent: null as any, // set below
+    registerCleanup: (fn) => { cleanups.push(fn); },
+    logger,
+    _cleanups: cleanups,
+  };
+
+  runtime.emitEvent = (event: string, payload: any): void => {
     // Core tab registry GC: auto-remove tab on tab:closed
-    if (event === 'tab:closed' && payload?.tabId != null) {
-      import('./tab-registry.js').then(({ removeTab }) => removeTab(payload.tabId)).catch(() => {});
+    if (event === TAB_EVENTS.CLOSED && payload?.tabId != null) {
+      try { removeTab(payload.tabId); } catch {}
     }
 
-    // Fire-and-forget: dispatch to matching handlers via Promise.allSettled
+    // Fire-and-forget: dispatch to matching handlers with runtime context
     const matching = handlers.filter(h => h.event === event);
     if (matching.length === 0) return;
 
     Promise.allSettled(
       matching.map(h => {
         try {
-          return Promise.resolve(h.fn(payload));
+          return Promise.resolve(h.fn(payload, runtime));
         } catch (err) {
           return Promise.reject(err);
         }
@@ -139,29 +166,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
     });
   };
 
-  return {
-    session: {
-      id: opts.session.id,
-      name: opts.session.name,
-      pid: opts.session.pid,
-      cdpEndpoint: opts.session.cdpEndpoint,
-      wsEndpoint: opts.session.wsEndpoint,
-    },
-    browser: opts.browser,
-    context: opts.context,
-    page: opts.page,
-    getBrowser: async () => opts.browser,
-    getContext: async () => opts.context,
-    getPage: async () => opts.page,
-    tab: opts.page ? {
-      url: typeof opts.page.url === 'function' ? opts.page.url() : undefined,
-      title: undefined, // lazy — call getPage().title() if needed
-    } : undefined,
-    emitEvent,
-    registerCleanup: (fn) => { cleanups.push(fn); },
-    logger,
-    _cleanups: cleanups,
-  };
+  return runtime;
 }
 
 /**
