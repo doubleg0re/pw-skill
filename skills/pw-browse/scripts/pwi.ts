@@ -1,10 +1,14 @@
 #!/usr/bin/env npx tsx
-// pwi — Inline action shorthand for pw-skill
+// pwi — Lightweight inline action runner for pw-skill
+// Connects to browser directly without loading hooks, event handlers,
+// or runtime extensions. For full runtime, use pw :: chaining or pw sequence.
+//
 // Usage:
 //   pwi navigate https://example.com
-//   pwi click "#login" :: fill "#email" "admin@test.com" :: click "#submit"
-//   pwi dump --selector="#app" --text --session=dev
-import { run } from './common.js';
+//   pwi click "#login"
+//   pwi dump --selector="#app" --text
+//   pwi navigate url :: click "#btn"       (multi-step → full runtime fallback)
+//   pwi navigate url --full                (force full runtime)
 import { ACTION_MAP } from './actions.js';
 
 // --- Inline arg parser ---
@@ -14,8 +18,7 @@ interface InlineStep {
   args: string[];
 }
 
-// Global flags consumed by run() via process.argv — not forwarded to actions
-const GLOBAL_FLAGS = new Set(['session', 'headed', 'viewport', 'video', 'tab', 'no-restore', 'screenshot']);
+const GLOBAL_FLAGS = new Set(['session', 'headed', 'viewport', 'video', 'tab', 'no-restore', 'screenshot', 'full']);
 
 function isGlobalFlag(arg: string): boolean {
   if (!arg.startsWith('--')) return false;
@@ -23,9 +26,7 @@ function isGlobalFlag(arg: string): boolean {
   return GLOBAL_FLAGS.has(name);
 }
 
-/** Split raw argv into steps separated by "::" — per-step flags stay with their step */
 function parseInlineSteps(argv: string[]): { steps: InlineStep[] } {
-  // All tokens except "::" — global flags are left in process.argv for run()
   const segments: string[][] = [];
   let current: string[] = [];
 
@@ -34,40 +35,26 @@ function parseInlineSteps(argv: string[]): { steps: InlineStep[] } {
       if (current.length > 0) segments.push(current);
       current = [];
     } else if (isGlobalFlag(arg)) {
-      // skip — run() reads these from process.argv directly
+      // skip — handled separately
     } else {
       current.push(arg);
     }
   }
   if (current.length > 0) segments.push(current);
 
-  const steps: InlineStep[] = segments.map(seg => ({
-    action: seg[0],
-    args: seg.slice(1), // includes per-step flags like --selector, --text
-  }));
-
-  return { steps };
+  return {
+    steps: segments.map(seg => ({ action: seg[0], args: seg.slice(1) })),
+  };
 }
 
-/**
- * Convert step args (mix of positional and --flag tokens) into a Record
- * that ActionArgs consumers can read by name or index.
- *
- * Examples:
- *   ["#app", "--text"]           → { 0: "#app", selector: "#app", text: true }
- *   ["--selector=h1", "--text"]  → { selector: "h1", text: true }
- *   ["https://example.com"]      → { 0: "https://example.com", url: "https://example.com" }
- */
 function buildActionArgs(args: string[]): Record<string, any> {
   const result: Record<string, any> = {};
   let positionalIndex = 0;
-
   for (const arg of args) {
     if (arg.startsWith('--')) {
       const eqIndex = arg.indexOf('=');
       if (eqIndex > 0) {
-        const key = arg.slice(2, eqIndex);
-        result[key] = arg.slice(eqIndex + 1);
+        result[arg.slice(2, eqIndex)] = arg.slice(eqIndex + 1);
       } else {
         result[arg.slice(2)] = true;
       }
@@ -76,125 +63,106 @@ function buildActionArgs(args: string[]): Record<string, any> {
       positionalIndex++;
     }
   }
-
-  // Map common positional aliases for actions that use getArg(a, name, index)
-  if (result[0] !== undefined && !result.url && !result.selector) {
-    // First positional is typically url or selector depending on action
-    // Leave index-based — getArg will find it by index
-  }
-
   return result;
 }
 
-/** Convert InlineStep[] to sequence engine Step[] format */
-function toSequenceSteps(steps: InlineStep[]): any[] {
-  return steps.map(s => ({
-    action: s.action,
-    args: buildActionArgs(s.args),
-  }));
-}
-
-// --- Supported actions (browser actions only, no session/maintenance) ---
 const EXCLUDED_ACTIONS = new Set([
   'launch', 'close', 'use', 'sessions', 'analyze', 'clean', 'rary', 'sequence',
 ]);
 
-// --- Main ---
+// --- Parse ---
 
 const rawArgs = process.argv.slice(2);
 const { steps } = parseInlineSteps(rawArgs);
+const hasFullFlag = rawArgs.includes('--full');
+const hasScreenshotFlag = rawArgs.includes('--screenshot');
 
 if (steps.length === 0) {
-  console.log(JSON.stringify({
-    success: false,
-    error: 'Usage: pwi <action> [args...] [:: <action> [args...] ...]',
-  }));
+  console.log(JSON.stringify({ success: false, error: 'Usage: pwi <action> [args...] [:: <action> [args...] ...]' }));
   process.exit(1);
 }
 
-// Validate: no excluded commands
 for (const step of steps) {
   if (EXCLUDED_ACTIONS.has(step.action)) {
-    console.log(JSON.stringify({
-      success: false,
-      error: `"${step.action}" is not available in inline mode. Use "pw ${step.action}" instead.`,
-    }));
+    console.log(JSON.stringify({ success: false, error: `"${step.action}" is not available in inline mode. Use "pw ${step.action}" instead.` }));
     process.exit(1);
   }
 }
 
-// Single step: run directly as action
-if (steps.length === 1) {
-  const step = steps[0];
+// --- Execution ---
 
-  run(async ({ page }) => {
-    const { VarStore, executeAction } = await import('./sequence.js');
-    const { loadExtensionActions } = await import('./rary.js');
-    const { hasFlag, screenshotPath } = await import('./common.js');
-
-    const { actions: extActions, warnings } = await loadExtensionActions();
-    const mergedActionMap = { ...ACTION_MAP, ...extActions };
-
-    const vars = new VarStore();
-    const actionArgs = buildActionArgs(step.args);
-    const result = await executeAction(page, step.action, actionArgs, vars, mergedActionMap);
-
-    const takeScreenshot = hasFlag(process.argv.slice(2), 'screenshot');
-    let finalScreenshot;
-    if (takeScreenshot) {
-      finalScreenshot = screenshotPath();
-      await page.screenshot({ path: finalScreenshot });
-    }
-
-    return {
-      success: true,
-      data: result?.result ?? result,
-      ...(finalScreenshot ? { screenshot: finalScreenshot } : {}),
-      ...(warnings.length > 0 ? { warnings } : {}),
-    };
-  });
-} else {
-  // Multi-step: compile to sequence steps and run through sequence engine
+// Multi-step or --full → delegate to full runtime (run() with hooks, events, extensions)
+if (steps.length > 1 || hasFullFlag) {
+  const { run } = await import('./common.js');
   run(async ({ page }) => {
     const { VarStore, runSteps, validateSteps } = await import('./sequence.js');
     const { loadExtensionActions } = await import('./rary.js');
     const { hasFlag, screenshotPath } = await import('./common.js');
 
-    const seqSteps = toSequenceSteps(steps);
-
-    // Load extension actions
+    const seqSteps = steps.map(s => ({ action: s.action, args: buildActionArgs(s.args) }));
     const { actions: extActions, warnings } = await loadExtensionActions();
     const mergedActionMap = { ...ACTION_MAP, ...extActions };
 
-    // Validate steps
     const errors = validateSteps(seqSteps, mergedActionMap);
-    if (errors.length > 0) {
-      return { success: false, error: errors.join('; ') };
-    }
+    if (errors.length > 0) return { success: false, error: errors.join('; ') };
 
     const vars = new VarStore();
     const results: any[] = [];
-    const defs = new Map();
+    const outcome = await runSteps(page, seqSteps, vars, results, new Map(), 0, { actionMap: mergedActionMap });
 
-    const outcome = await runSteps(page, seqSteps, vars, results, defs, 0, {
-      actionMap: mergedActionMap,
-    });
-
-    const takeScreenshot = hasFlag(process.argv.slice(2), 'screenshot');
     let finalScreenshot;
-    if (takeScreenshot && outcome.success) {
+    if (hasScreenshotFlag && outcome.success) {
       finalScreenshot = screenshotPath();
       await page.screenshot({ path: finalScreenshot });
     }
 
     return {
       success: outcome.success,
-      data: { results },
+      data: steps.length === 1 ? (results[0]?.data ?? results[0]) : { results },
       ...(finalScreenshot ? { screenshot: finalScreenshot } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
-      ...(!outcome.success && outcome.failedAt !== undefined
-        ? { error: `Step ${outcome.failedAt} failed` }
-        : {}),
+      ...(!outcome.success && outcome.failedAt !== undefined ? { error: `Step ${outcome.failedAt} failed` } : {}),
     };
   });
+} else {
+  // --- Lightweight path: single step, no hooks/extensions/runtime ---
+  const step = steps[0];
+
+  try {
+    const { connectBrowser, parseArgs, hasFlag, parseFlag, screenshotPath, output } = await import('./common.js');
+    const cliArgs = parseArgs();
+
+    const { browser, context, page, session } = await connectBrowser({
+      headless: !hasFlag(cliArgs, 'headed'),
+      sessionName: parseFlag(cliArgs, 'session'),
+      restoreUrl: !hasFlag(cliArgs, 'no-restore'),
+    });
+
+    // Execute action directly from ACTION_MAP (no extension actions, no runtime)
+    const actionFn = ACTION_MAP[step.action];
+    if (!actionFn) {
+      output({ success: false, error: `Unknown action: "${step.action}". Use --full for extension actions.` });
+      process.exit(1);
+    }
+
+    const actionArgs = buildActionArgs(step.args);
+    const result = await actionFn(page, actionArgs);
+
+    let finalScreenshot;
+    if (hasScreenshotFlag) {
+      finalScreenshot = screenshotPath();
+      await page.screenshot({ path: finalScreenshot });
+    }
+
+    output({
+      success: true,
+      data: result?.result ?? result,
+      ...(finalScreenshot ? { screenshot: finalScreenshot } : {}),
+    });
+    process.exit(0);
+  } catch (err: any) {
+    const { output, buildErrorResult } = await import('./common.js');
+    output(buildErrorResult ? buildErrorResult(err) : { success: false, error: err.message });
+    process.exit(1);
+  }
 }
