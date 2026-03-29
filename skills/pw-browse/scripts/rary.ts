@@ -31,6 +31,7 @@ export interface LarryManifest {
   entry?: string;
   commands?: LarryCommand[];
   actions?: Record<string, LarryAction>;
+  events?: Record<string, { entry: string }>;
   extension?: {
     scope?: string;
   };
@@ -174,6 +175,20 @@ export function createRaryStore(opts: RaryStoreOptions) {
         if (manifest.rolling?.entry) {
           if (!existsSync(join(pkgDir(name), manifest.rolling.entry)))
             issues.push({ package: name, issue: `Rolling entry not found: ${manifest.rolling.entry}` });
+        }
+        // Check event handler entries
+        if (manifest.events) {
+          for (const [eventName, eventDef] of Object.entries(manifest.events)) {
+            if (eventDef?.entry && !existsSync(join(pkgDir(name), eventDef.entry)))
+              issues.push({ package: name, issue: `Event handler entry not found: ${eventName} → ${eventDef.entry}` });
+          }
+        }
+        // Check action entries
+        if (manifest.actions) {
+          for (const [actionName, actionDef] of Object.entries(manifest.actions)) {
+            if (actionDef?.entry && !existsSync(join(pkgDir(name), actionDef.entry)))
+              issues.push({ package: name, issue: `Action entry not found: ${actionName} → ${actionDef.entry}` });
+          }
         }
       }
 
