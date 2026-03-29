@@ -1,5 +1,5 @@
 // file-utils.ts — Safe filesystem utilities
-import { writeFileSync, unlinkSync, renameSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync, renameSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { randomBytes } from 'crypto';
 
@@ -32,7 +32,6 @@ export function atomicWriteJSON(filePath: string, data: any): void {
 export function readJSONSafe<T = any>(filePath: string): T | null {
   if (!existsSync(filePath)) return null;
   try {
-    const { readFileSync } = require('fs');
     return JSON.parse(readFileSync(filePath, 'utf-8'));
   } catch {
     return null;
