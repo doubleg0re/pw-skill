@@ -60,7 +60,15 @@ Rules:
 
 ### 3. Stable Tab Identity
 
-Core should expose a stable `tabId` model owned by pw-skill.
+Core should define the stable `tabId` contract and registry interface.
+
+Core should not become a long-running monitor just to maintain tab identity.
+
+That means:
+
+- core defines the `tabId` format
+- core defines the registry shape and payload contract
+- monitor-style extensions may allocate and maintain the live registry
 
 Do not rely on:
 
@@ -69,7 +77,8 @@ Do not rely on:
 
 Reason:
 
-- Extensions need a stable handle for overlay persistence, monitor state, and GUI sync.
+- extensions need a stable handle for overlay persistence, monitor state, and GUI sync
+- core should define the rules without taking ownership of persistent observation
 
 ### 4. Manifest Loading and Validation
 
@@ -88,6 +97,10 @@ Rules:
 - Reject extension-to-extension action collisions.
 - Validate manifest entries early and fail fast.
 
+At the current stage, there should be no priority system and no override permission model.
+
+If two extensions claim the same runtime action name, core should fail fast with an explicit error.
+
 ### 5. Cleanup Semantics
 
 Core should guarantee that extension cleanup registrations can actually run.
@@ -102,6 +115,28 @@ Expected behavior:
 
 - If an extension starts a sidecar process, temporary resource, or monitor task, it should be able to register cleanup for it.
 - Core should execute registered cleanups during shutdown paths.
+
+### 6. Logger Standardization
+
+Core should provide extension loggers in a standardized shape.
+
+Recommended rule:
+
+- extension runtime loggers should automatically prefix messages with the extension package name
+
+Implementation note:
+
+- runtime is created per session, not per extension
+- package-aware logger prefixing should therefore happen at hook/action/event invocation time through a per-extension runtime view, not inside `buildRuntime()`
+
+Examples:
+
+- `[pw-runtime-monitor] connected to cdp endpoint`
+- `[pw-persist-user-action] overlay restored`
+
+Reason:
+
+- runtime debugging gets much easier when it is immediately clear which extension produced a message
 
 ## What Core Should Not Do
 
