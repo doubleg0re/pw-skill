@@ -15,6 +15,7 @@ export interface TabEntry {
 interface StoreData {
   nextId: number;
   tabs: TabEntry[];
+  activeTabId?: number | null;
 }
 
 export interface TabStore {
@@ -28,11 +29,14 @@ export interface TabStore {
   remove(tabId: number): void;
   clear(): void;
   save(path: string): void;
+  getActiveTabId(): number | null;
+  setActiveTabId(tabId: number | null): void;
 }
 
 /** Load tab store from file, or create empty store on failure */
 export function loadStore(path: string): TabStore {
   let nextId = 1;
+  let activeTabId: number | null = null;
   const tabs = new Map<number, TabEntry>();
 
   // Restore from file
@@ -40,6 +44,7 @@ export function loadStore(path: string): TabStore {
     try {
       const raw: StoreData = JSON.parse(readFileSync(path, 'utf-8'));
       if (raw.nextId) nextId = raw.nextId;
+      if (raw.activeTabId != null) activeTabId = raw.activeTabId;
       if (Array.isArray(raw.tabs)) {
         for (const entry of raw.tabs) {
           tabs.set(entry.tabId, entry);
@@ -48,6 +53,7 @@ export function loadStore(path: string): TabStore {
     } catch {
       // Recovery failure fallback: clean start
       nextId = 1;
+      activeTabId = null;
       tabs.clear();
     }
   }
@@ -84,11 +90,13 @@ export function loadStore(path: string): TabStore {
       if (entry) Object.assign(entry, updates);
     },
     remove: (tabId) => { tabs.delete(tabId); },
-    clear: () => { tabs.clear(); nextId = 1; },
+    clear: () => { tabs.clear(); nextId = 1; activeTabId = null; },
     save: (savePath) => {
-      const data: StoreData = { nextId, tabs: Array.from(tabs.values()) };
+      const data: StoreData = { nextId, tabs: Array.from(tabs.values()), activeTabId };
       atomicWriteJSON(savePath, data);
     },
+    getActiveTabId: () => activeTabId,
+    setActiveTabId: (tabId) => { activeTabId = tabId; },
   };
 
   return store;

@@ -146,11 +146,10 @@ describe('syncTabs', () => {
     ];
 
     const events = syncTabs(store, targets, 'test-session');
-    expect(events).toHaveLength(2);
-    expect(events[0].event).toBe('tab:created');
-    expect(events[0].payload.url).toBe('http://a.com');
-    expect(events[1].event).toBe('tab:created');
-    expect(events[1].payload.url).toBe('http://b.com');
+    const created = events.filter(e => e.event === 'tab:created');
+    expect(created).toHaveLength(2);
+    expect(created[0].payload.url).toBe('http://a.com');
+    expect(created[1].payload.url).toBe('http://b.com');
     expect(store.count()).toBe(2);
   });
 
@@ -167,26 +166,29 @@ describe('syncTabs', () => {
 
   it('detects navigation as tab:navigated', () => {
     store.add({ cdpTargetId: 'T1', url: 'http://a.com', title: 'A' });
+    store.setActiveTabId(1); // already active
     const targets: PageTarget[] = [
       { cdpTargetId: 'T1', url: 'http://a.com/page2', title: 'A Page 2' },
     ];
 
     const events = syncTabs(store, targets, 'test-session');
-    expect(events).toHaveLength(1);
-    expect(events[0].event).toBe('tab:navigated');
-    expect(events[0].payload.url).toBe('http://a.com/page2');
-    expect(events[0].payload.tabId).toBe(1);
+    const navEvents = events.filter(e => e.event === 'tab:navigated');
+    expect(navEvents).toHaveLength(1);
+    expect(navEvents[0].payload.url).toBe('http://a.com/page2');
+    expect(navEvents[0].payload.tabId).toBe(1);
   });
 
   it('matches by URL fallback when cdpTargetId changes', () => {
     store.add({ cdpTargetId: 'OLD-ID', url: 'http://a.com', title: 'A' });
+    store.setActiveTabId(1); // already active
     const targets: PageTarget[] = [
       { cdpTargetId: 'NEW-ID', url: 'http://a.com', title: 'A' },
     ];
 
     const events = syncTabs(store, targets, 'test-session');
-    // URL match → no close/create, just update cdpTargetId
-    expect(events).toHaveLength(0);
+    // URL match → no close/create, just update cdpTargetId (activated unchanged)
+    const nonActivation = events.filter(e => e.event !== 'tab:activated' && e.event !== 'tab:deactivated');
+    expect(nonActivation).toHaveLength(0);
     expect(store.findByCdpId('NEW-ID')).toBeDefined();
     expect(store.findByCdpId('OLD-ID')).toBeUndefined();
   });
@@ -211,6 +213,7 @@ describe('syncTabs', () => {
 
   it('emits no events when registry matches live targets exactly', () => {
     store.add({ cdpTargetId: 'T1', url: 'http://a.com', title: 'A' });
+    store.setActiveTabId(1); // already active
     const targets: PageTarget[] = [
       { cdpTargetId: 'T1', url: 'http://a.com', title: 'A' },
     ];
@@ -251,5 +254,49 @@ describe('syncTabs', () => {
     expect(payload).toHaveProperty('url');
     expect(payload).toHaveProperty('title');
     expect(payload).toHaveProperty('timestamp');
+  });
+
+  // --- tab:activated / tab:deactivated ---
+
+  it('emits tab:activated for first active tab', () => {
+    const targets: PageTarget[] = [
+      { cdpTargetId: 'T1', url: 'http://a.com', title: 'A' },
+    ];
+    const events = syncTabs(store, targets, 'test-session');
+    const activated = events.filter(e => e.event === 'tab:activated');
+    expect(activated).toHaveLength(1);
+    expect(activated[0].payload.url).toBe('http://a.com');
+  });
+
+  it('emits activated + deactivated on tab switch', () => {
+    // First sync: T1 is active
+    store.add({ cdpTargetId: 'T1', url: 'http://a.com', title: 'A' });
+    store.add({ cdpTargetId: 'T2', url: 'http://b.com', title: 'B' });
+    store.setActiveTabId(1); // T1 was active
+
+    // Second sync: T2 is now first (active)
+    const targets: PageTarget[] = [
+      { cdpTargetId: 'T2', url: 'http://b.com', title: 'B' },
+      { cdpTargetId: 'T1', url: 'http://a.com', title: 'A' },
+    ];
+    const events = syncTabs(store, targets, 'test-session');
+    const deactivated = events.filter(e => e.event === 'tab:deactivated');
+    const activated = events.filter(e => e.event === 'tab:activated');
+    expect(deactivated).toHaveLength(1);
+    expect(deactivated[0].payload.tabId).toBe(1); // T1 deactivated
+    expect(activated).toHaveLength(1);
+    expect(activated[0].payload.tabId).toBe(2); // T2 activated
+  });
+
+  it('no activated/deactivated when active tab unchanged', () => {
+    store.add({ cdpTargetId: 'T1', url: 'http://a.com', title: 'A' });
+    store.setActiveTabId(1);
+
+    const targets: PageTarget[] = [
+      { cdpTargetId: 'T1', url: 'http://a.com', title: 'A' },
+    ];
+    const events = syncTabs(store, targets, 'test-session');
+    const actEvents = events.filter(e => e.event === 'tab:activated' || e.event === 'tab:deactivated');
+    expect(actEvents).toHaveLength(0);
   });
 });

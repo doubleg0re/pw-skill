@@ -22,7 +22,8 @@ export const TAB_EVENTS = {
   CREATED: 'tab:created',
   CLOSED: 'tab:closed',
   NAVIGATED: 'tab:navigated',
-  ACTIVATED: 'tab:activated', // best-effort, second-scope
+  ACTIVATED: 'tab:activated',
+  DEACTIVATED: 'tab:deactivated',
 } as const;
 
 export type TabEventName = (typeof TAB_EVENTS)[keyof typeof TAB_EVENTS];

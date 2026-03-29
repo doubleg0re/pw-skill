@@ -10,6 +10,7 @@ export const TAB_EVENTS = {
   CLOSED: 'tab:closed',
   NAVIGATED: 'tab:navigated',
   ACTIVATED: 'tab:activated',
+  DEACTIVATED: 'tab:deactivated',
 } as const;
 
 export type TabEventName = (typeof TAB_EVENTS)[keyof typeof TAB_EVENTS];
@@ -85,6 +86,29 @@ export function syncTabs(store: TabStore, liveTargets: PageTarget[], sessionName
         title: target.title,
       });
       events.push(buildEvent(TAB_EVENTS.CREATED, sessionName, newEntry.tabId, target.url, target.title, now));
+    }
+  }
+
+  // Pass 4: Detect active tab change (best-effort — CDP /json first target = active)
+  if (liveTargets.length > 0) {
+    const topTarget = liveTargets[0];
+    const topEntry = store.findByCdpId(topTarget.cdpTargetId);
+    const newActiveId = topEntry?.tabId ?? null;
+    const prevActiveId = store.getActiveTabId();
+
+    if (newActiveId !== prevActiveId) {
+      // Deactivate previous
+      if (prevActiveId != null) {
+        const prevEntry = store.get(prevActiveId);
+        if (prevEntry) {
+          events.push(buildEvent(TAB_EVENTS.DEACTIVATED, sessionName, prevActiveId, prevEntry.url, prevEntry.title, now));
+        }
+      }
+      // Activate new
+      if (newActiveId != null && topEntry) {
+        events.push(buildEvent(TAB_EVENTS.ACTIVATED, sessionName, newActiveId, topEntry.url, topEntry.title, now));
+      }
+      store.setActiveTabId(newActiveId);
     }
   }
 
