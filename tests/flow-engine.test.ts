@@ -982,7 +982,7 @@ describe('Flow Engine — return action', () => {
       { action: 'log', text: 'before' },
       { action: 'return', value: { value: 42 } } as any,
       { action: 'log', text: 'after' },
-    ], vars, results, emptyDefs());
+    ], vars, results, emptyDefs(), 0, { inSubflow: true });
 
     expect(outcome.success).toBe(true);
     expect(outcome.returnValue).toBe(42);
@@ -999,7 +999,7 @@ describe('Flow Engine — return action', () => {
 
     const outcome = await runSteps(mockPage(), [
       { action: 'return', value: { $ref: 'myResult' } } as any,
-    ], vars, results, emptyDefs());
+    ], vars, results, emptyDefs(), 0, { inSubflow: true });
 
     expect(outcome.returnValue).toEqual({ ok: true });
   });
@@ -1107,5 +1107,31 @@ describe('Flow Engine — subflow safety', () => {
 
     expect(outcome.success).toBe(false);
     expect(results.find(r => !r.success)?.error).toContain('Max call depth');
+  });
+});
+
+describe('Flow Engine — return restriction', () => {
+  it('return in top-level fails', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'return', value: { value: 42 } } as any,
+    ], vars, results, emptyDefs());
+
+    expect(outcome.success).toBe(false);
+    expect(results[0].error).toContain('only allowed inside');
+  });
+
+  it('return in subflow succeeds', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'return', value: { value: 42 } } as any,
+    ], vars, results, emptyDefs(), 0, { inSubflow: true });
+
+    expect(outcome.success).toBe(true);
+    expect(outcome.returnValue).toBe(42);
   });
 });

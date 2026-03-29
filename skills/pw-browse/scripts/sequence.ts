@@ -270,6 +270,7 @@ export interface RunOptions {
   callDepth?: number;
   callStack?: string[];
   actionMap?: Record<string, (page: any, args: any) => Promise<{ result?: any }>>;
+  inSubflow?: boolean; // true when inside a def type="flow" call
 }
 
 export async function runSteps(
@@ -435,6 +436,15 @@ export async function runSteps(
             results.push({ step: stepIndex, action: 'def', success: false, error: `Subflow info.type must be "subflow"` });
             return { success: false, failedAt: stepIndex };
           }
+          // Validate param contract: if both def.params and subflow info.parameters exist, they must match
+          if (step.params && subInfo.parameters) {
+            const defP = JSON.stringify(step.params.sort());
+            const subP = JSON.stringify([...subInfo.parameters].sort());
+            if (defP !== subP) {
+              results.push({ step: stepIndex, action: 'def', success: false, error: `Parameter mismatch: def.params=${JSON.stringify(step.params)} vs subflow.parameters=${JSON.stringify(subInfo.parameters)}` });
+              return { success: false, failedAt: stepIndex };
+            }
+          }
           defs.set(step.name!, { kind: 'flow', params: step.params || subInfo.parameters || [], path: absPath, steps: raw.flow, info: subInfo });
         } else {
           // func: items is Step[]
@@ -484,6 +494,7 @@ export async function runSteps(
               baseDir: (await import('path')).dirname(def.path),
               callDepth: (options.callDepth || 0) + 1,
               callStack: [...(options.callStack || []), step.name!],
+              inSubflow: true,
             }
           : options;
 
@@ -679,8 +690,12 @@ export async function runSteps(
         continue;
       }
 
-      // --- return ---
+      // --- return (subflow only) ---
       if (step.action === 'return') {
+        if (!options.inSubflow) {
+          results.push({ step: stepIndex, action: 'return', success: false, error: 'return is only allowed inside def type="flow" subflows' });
+          return { success: false, failedAt: stepIndex };
+        }
         let returnValue: any = null;
         if (step.value) {
           if ('$ref' in step.value) {
