@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync
 import { join } from 'path';
 import { homedir } from 'os';
 import { randomBytes } from 'crypto';
+import { atomicWriteJSON } from './file-utils.js';
+import { acquireLock, releaseLock } from './lock.js';
 
 // --- Session Types ---
 
@@ -115,7 +117,13 @@ export function createSessionStore(opts: SessionStoreOptions) {
         video,
       };
 
-      writeFileSync(join(dir, 'session.json'), JSON.stringify(session, null, 2));
+      const lockPath = join(dir, '.lock');
+      acquireLock(lockPath, 'createSession');
+      try {
+        atomicWriteJSON(join(dir, 'session.json'), session);
+      } finally {
+        releaseLock(lockPath);
+      }
       return session;
     },
 
@@ -133,7 +141,13 @@ export function createSessionStore(opts: SessionStoreOptions) {
       const session = this.getSession(name);
       if (!session) return;
       const updated = { ...session, ...updates };
-      writeFileSync(join(sessionDir(name), 'session.json'), JSON.stringify(updated, null, 2));
+      const lockPath = join(sessionDir(name), '.lock');
+      acquireLock(lockPath, 'updateSession');
+      try {
+        atomicWriteJSON(join(sessionDir(name), 'session.json'), updated);
+      } finally {
+        releaseLock(lockPath);
+      }
     },
 
     deleteSession(name: string, keepProfile: boolean = true): void {
