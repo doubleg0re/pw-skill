@@ -10,6 +10,13 @@ const headed = hasFlag(args, 'headed');
 async function main() {
   const { browser, context, session } = await connectBrowser({ headless: !headed });
   const { buildRuntime } = await import('./runtime.js');
+  const { assignTabId, buildTabEvent, restoreRegistry } = await import('./tab-registry.js');
+  const { join } = await import('path');
+
+  // Restore tab registry from session state
+  const registryPath = join(process.cwd(), '.playwright-state', 'tabs.json');
+  restoreRegistry(registryPath);
+
   const runtime = buildRuntime({ session });
 
   switch (command) {
@@ -19,14 +26,13 @@ async function main() {
       if (url !== 'about:blank') {
         await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
       }
-      const pages = context.pages();
-      const index = pages.indexOf(page);
       const tabUrl = page.url();
       const tabTitle = await page.title();
-      runtime.emitEvent('tab:created', { tabId: index, url: tabUrl, title: tabTitle });
+      const tab = assignTabId(tabUrl, tabTitle);
+      runtime.emitEvent('tab:created', buildTabEvent('tab:created', session.name, tab));
       output({
         success: true,
-        data: { index, url: tabUrl, title: tabTitle, totalTabs: pages.length },
+        data: { tabId: tab.tabId, url: tabUrl, title: tabTitle, totalTabs: context.pages().length },
       });
       break;
     }
@@ -57,9 +63,13 @@ async function main() {
         break;
       }
       const closedUrl = pages[idx].url();
+      const { findTabByUrl, buildTabEvent } = await import('./tab-registry.js');
+      const closedTab = findTabByUrl(closedUrl);
       await pages[idx].close();
-      runtime.emitEvent('tab:closed', { tabId: idx, url: closedUrl });
-      output({ success: true, data: { closed: idx, remaining: context.pages().length } });
+      if (closedTab) {
+        runtime.emitEvent('tab:closed', buildTabEvent('tab:closed', session.name, closedTab));
+      }
+      output({ success: true, data: { closed: idx, tabId: closedTab?.tabId, remaining: context.pages().length } });
       break;
     }
 
