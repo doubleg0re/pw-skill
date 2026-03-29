@@ -435,6 +435,42 @@ export async function detectChallenge(page: Page): Promise<ChallengeInfo> {
   }
 }
 
+// --- Error result builder (exported for testing) ---
+
+export function buildErrorResult(
+  errorMessage: string,
+  hookErrors: string[],
+  diagnostics?: { url?: string; title?: string; session?: string; tab?: number },
+  challenge?: { detected: boolean; type?: string },
+  screenshotPath?: string,
+): Result {
+  const errorResult: Result = { success: false, error: errorMessage };
+
+  if (diagnostics) {
+    errorResult.context = {
+      url: diagnostics.url,
+      title: diagnostics.title,
+      session: diagnostics.session,
+      tab: diagnostics.tab,
+    };
+  }
+
+  if (challenge?.detected) {
+    errorResult.challenge = challenge;
+    errorResult.error = `[BOT CHALLENGE DETECTED: ${challenge.type?.toUpperCase()}] ${errorMessage}`;
+  }
+
+  if (hookErrors.length > 0) {
+    errorResult.warnings = [...(errorResult.warnings || []), ...hookErrors.map(e => `Extension hook error: ${e}`)];
+  }
+
+  if (screenshotPath) {
+    errorResult.screenshot = screenshotPath;
+  }
+
+  return errorResult;
+}
+
 // --- Safe execution wrapper ---
 
 export async function run(
