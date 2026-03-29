@@ -13,7 +13,7 @@ function isAlive(pid: number): boolean {
 }
 
 export default async function(page: any, args: any, runtime?: any): Promise<{ result?: any }> {
-  const sessionName = runtime?.session?.name;
+  const sessionName = args?.session || runtime?.session?.name;
   if (!sessionName) return { result: { error: 'No active session' } };
 
   const dir = sessionDir(sessionName);
@@ -31,7 +31,6 @@ export default async function(page: any, args: any, runtime?: any): Promise<{ re
         if (!replace) {
           return { result: { error: `WS server already running (pid=${meta.pid}, port=${meta.port}). Use replace to restart.` } };
         }
-        // Kill existing
         try { process.kill(meta.pid, 'SIGTERM'); } catch {}
         await new Promise(r => setTimeout(r, 500));
       }
@@ -47,16 +46,31 @@ export default async function(page: any, args: any, runtime?: any): Promise<{ re
   );
   child.unref();
 
-  // Wait briefly for server to start and write metadata
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait and verify server actually started (metadata file written)
+  const maxWait = 3000;
+  const interval = 200;
+  let waited = 0;
+  while (waited < maxWait) {
+    await new Promise(r => setTimeout(r, interval));
+    waited += interval;
+    if (existsSync(metadataPath)) {
+      try {
+        const meta = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+        if (meta.pid && isAlive(meta.pid)) {
+          return {
+            result: {
+              started: true,
+              pid: meta.pid,
+              url: `ws://${meta.host}:${meta.port}`,
+              protocol: meta.protocol,
+              session: sessionName,
+            },
+          };
+        }
+      } catch {}
+    }
+  }
 
-  return {
-    result: {
-      started: true,
-      pid: child.pid,
-      url: `ws://${host}:${port}`,
-      protocol,
-      session: sessionName,
-    },
-  };
+  // Server didn't start in time
+  return { result: { error: 'WS server failed to start (metadata not written within 3s). Check protocol and port.' } };
 }

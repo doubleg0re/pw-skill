@@ -8,7 +8,7 @@ function sessionDir(sessionName: string): string {
 }
 
 export default async function(page: any, args: any, runtime?: any): Promise<{ result?: any }> {
-  const sessionName = runtime?.session?.name;
+  const sessionName = args?.session || runtime?.session?.name;
   if (!sessionName) return { result: { error: 'No active session' } };
 
   const metadataPath = join(sessionDir(sessionName), 'ws-server.json');
