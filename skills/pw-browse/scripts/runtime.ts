@@ -66,22 +66,26 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
   const logger = defaultLogger;
 
   const emitEvent = (event: string, payload: any): void => {
-    // Fire-and-forget: dispatch to matching handlers
-    for (const h of handlers) {
-      if (h.event === event) {
+    // Fire-and-forget: dispatch to matching handlers via Promise.allSettled
+    const matching = handlers.filter(h => h.event === event);
+    if (matching.length === 0) return;
+
+    Promise.allSettled(
+      matching.map(h => {
         try {
-          const result = h.fn(payload);
-          // If async, catch errors silently
-          if (result && typeof (result as any).catch === 'function') {
-            (result as any).catch((err: any) => {
-              logger.warn(`Event handler error (${h.packageName}:${event}): ${err instanceof Error ? err.message : String(err)}`);
-            });
-          }
+          return Promise.resolve(h.fn(payload));
         } catch (err) {
-          logger.warn(`Event handler error (${h.packageName}:${event}): ${err instanceof Error ? err.message : String(err)}`);
+          return Promise.reject(err);
         }
-      }
-    }
+      })
+    ).then(results => {
+      results.forEach((res, i) => {
+        if (res.status === 'rejected') {
+          const h = matching[i];
+          logger.warn(`Event handler error (${h.packageName}:${event}): ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`);
+        }
+      });
+    });
   };
 
   return {
