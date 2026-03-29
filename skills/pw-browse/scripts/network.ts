@@ -7,39 +7,44 @@ import { writeFileSync, readFileSync, existsSync } from 'fs';
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const LOG_FILE = join(STATE_DIR, 'network.log');
 
-const SENSITIVE_HEADERS = new Set([
-  'authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token',
+// Whitelist: only these headers are shown by default. Everything else → [REDACTED].
+const SAFE_HEADERS = new Set([
+  'content-type', 'content-length', 'accept', 'accept-language',
+  'user-agent', 'cache-control', 'host', 'origin', 'referer',
 ]);
-
-const SENSITIVE_FIELDS = /^(password|token|secret|api_key|apiKey|access_token|refresh_token)$/i;
 
 const MAX_BODY_LENGTH = 5000;
 
 function maskHeaders(headers: Record<string, string>): Record<string, string> {
   const masked: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    masked[key] = SENSITIVE_HEADERS.has(key.toLowerCase()) ? '[MASKED]' : value;
+    masked[key] = SAFE_HEADERS.has(key.toLowerCase()) ? value : '[REDACTED]';
   }
   return masked;
 }
 
-function maskSensitive(text: string): string {
+/**
+ * Body summary for default (non-raw) mode.
+ * JSON: show keys + types only. Non-JSON: content-type + length.
+ */
+function summarizeBody(text: string): string {
   try {
     const obj = JSON.parse(text);
-    const maskObj = (o: any): any => {
-      if (Array.isArray(o)) return o.map(maskObj);
+    const summarize = (o: any): any => {
+      if (Array.isArray(o)) return `[Array(${o.length})]`;
       if (o && typeof o === 'object') {
         const result: any = {};
         for (const [k, v] of Object.entries(o)) {
-          result[k] = SENSITIVE_FIELDS.test(k) ? '[MASKED]' : maskObj(v);
+          if (typeof v === 'object' && v !== null) result[k] = summarize(v);
+          else result[k] = `[${typeof v}]`;
         }
         return result;
       }
-      return o;
+      return `[${typeof o}]`;
     };
-    return JSON.stringify(maskObj(obj));
+    return JSON.stringify(summarize(obj));
   } catch {
-    return text;
+    return `[non-JSON, ${text.length} bytes]`;
   }
 }
 
@@ -116,9 +121,9 @@ run(async ({ page, args }) => {
 
       const lines = logs.map((l: any) => {
         const reqStr = l.reqBody ? JSON.stringify(l.reqBody) : '';
-        const req = reqStr ? ` req=${raw ? reqStr : truncate(maskSensitive(reqStr), MAX_BODY_LENGTH)}` : '';
+        const req = reqStr ? ` req=${raw ? reqStr : summarizeBody(reqStr)}` : '';
         const resStr = l.resBody ? JSON.stringify(l.resBody) : '';
-        const res = resStr ? ` res=${raw ? resStr : truncate(maskSensitive(resStr), MAX_BODY_LENGTH)}` : '';
+        const res = resStr ? ` res=${raw ? resStr : summarizeBody(resStr)}` : '';
         const err = l.error ? ` error=${l.error}` : '';
         const hdrs = l.headers ? ` headers=${JSON.stringify(raw ? l.headers : maskHeaders(l.headers))}` : '';
         return `[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.method} ${l.url} → ${l.status}${req}${res}${hdrs}${err}`;
