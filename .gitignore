@@ -5,3 +5,15 @@ package-lock.json
 !larry.png
 *.jpg
 .DS_Store
+
+# AI tool configs
+.claude/
+.cursor/
+.cursorignore
+.cursorules
+.windsurf/
+.windsurfrules
+.cline/
+.clinerules
+.codex/
+.aider*
