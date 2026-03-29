@@ -7,8 +7,10 @@ import {
   localStateDir,
 } from './session.js';
 import { checkRepair } from './rary.js';
+import { checkLock } from './lock.js';
 import { existsSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 
 export interface AnalyzeItem {
   name: string;
@@ -22,6 +24,10 @@ export interface AnalyzeResult {
   stale: AnalyzeItem[];
   orphaned: AnalyzeItem[];
   broken: AnalyzeItem[];
+  activeLocks: AnalyzeItem[];
+  staleLocks: AnalyzeItem[];
+  orphanLocks: AnalyzeItem[];
+  uncertainLocks: AnalyzeItem[];
 }
 
 export function analyze(cwd?: string): AnalyzeResult {
@@ -31,6 +37,10 @@ export function analyze(cwd?: string): AnalyzeResult {
     stale: [],
     orphaned: [],
     broken: [],
+    activeLocks: [],
+    staleLocks: [],
+    orphanLocks: [],
+    uncertainLocks: [],
   };
 
   // --- Sessions: live vs dead ---
@@ -95,6 +105,49 @@ export function analyze(cwd?: string): AnalyzeResult {
   const repairIssues = checkRepair();
   for (const issue of repairIssues) {
     result.broken.push({ name: issue.package, reason: issue.issue });
+  }
+
+  // --- Lock health ---
+  const globalSessions = join(homedir(), '.playwright-state', 'sessions');
+  if (existsSync(globalSessions)) {
+    for (const name of readdirSync(globalSessions)) {
+      const lockPath = join(globalSessions, name, '.lock');
+      if (!existsSync(lockPath)) continue;
+
+      const lockStatus = checkLock(lockPath);
+      const item: AnalyzeItem = {
+        name,
+        path: lockPath,
+        reason: lockStatus.reason || lockStatus.status,
+      };
+
+      const sessionExists = existsSync(join(globalSessions, name, 'session.json'));
+
+      if (!sessionExists) {
+        result.orphanLocks.push({ ...item, reason: 'Lock exists but session does not' });
+      } else if (lockStatus.status === 'active') {
+        result.activeLocks.push(item);
+      } else if (lockStatus.status === 'stale') {
+        result.staleLocks.push(item);
+      } else if (lockStatus.status === 'uncertain') {
+        result.uncertainLocks.push(item);
+      }
+    }
+  }
+
+  // Local lock files
+  if (existsSync(local)) {
+    for (const lockFile of ['.bind.lock', '.sequence.lock']) {
+      const lockPath = join(local, lockFile);
+      if (!existsSync(lockPath)) continue;
+
+      const lockStatus = checkLock(lockPath);
+      const item: AnalyzeItem = { name: lockFile, path: lockPath, reason: lockStatus.reason || lockStatus.status };
+
+      if (lockStatus.status === 'active') result.activeLocks.push(item);
+      else if (lockStatus.status === 'stale') result.staleLocks.push(item);
+      else if (lockStatus.status === 'uncertain') result.uncertainLocks.push(item);
+    }
   }
 
   return result;
