@@ -105,7 +105,7 @@ pw rary yoink <package-name>
 
 | Extension | Description |
 |---|---|
-| `pw-monitor` | Per-command tab sync — detects tab changes via CDP, emits `tab:created`/`closed`/`navigated` events |
+| `pw-monitor` | Real-time tab monitor — CDP WebSocket sidecar tracks tabs, emits `tab:*` events, powers GUI dashboard |
 | `pw-persist-user-action` | Persists user-action overlay state across navigation — re-injects overlay on tab change |
 
 ### Extension Dependencies in Flows
@@ -677,7 +677,7 @@ pw-skill/
         common.ts                 # Shared: connect, run wrapper, flags, screenshotPath
         session.ts                # Global session store (DI-based)
         session-commands.ts       # launch/use/sessions/close implementations
-        pwi.ts                    # Inline action shorthand (pwi / pw --inline)
+        pwi.ts                    # One-shot runner (temporary browser, no sessions)
         actions.ts                # Shared action module (CLI + sequence)
         sequence.ts               # Flow engine + requiresRary
         runtime.ts                # Extension Runtime SDK
@@ -693,7 +693,7 @@ pw-skill/
     pw-test/SKILL.md
     pw-close/SKILL.md
   extensions/
-    pw-monitor/                   # Per-command tab sync extension
+    pw-monitor/                   # Real-time tab monitor (CDP sidecar + GUI)
     pw-persist-user-action/       # Overlay persistence across navigation
   tests/                          # 325 tests (vitest)
   package.json

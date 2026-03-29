@@ -579,7 +579,7 @@ pw-skill uses the `rary` extension system. Extensions can add event handlers, ho
 
 | Extension | Description |
 |---|---|
-| `pw-monitor` | Per-command tab sync — detects tab changes, emits `tab:created`/`closed`/`navigated` |
+| `pw-monitor` | Real-time tab monitor — CDP WebSocket sidecar, `tab:*` events, GUI dashboard (`pw gui`) |
 | `pw-persist-user-action` | Persists user-action overlay across navigation |
 
 ### Extension dependency in flows
