@@ -112,3 +112,52 @@ describe('VarStore', () => {
     });
   });
 });
+
+describe('VarStore — resolveValue', () => {
+  it('resolves $ref to variable value', () => {
+    const vars = new VarStore();
+    vars.set('user', { name: 'Alice', age: 30 });
+    expect(vars.resolveValue({ $ref: 'user.name' })).toBe('Alice');
+    expect(vars.resolveValue({ $ref: 'user.age' })).toBe(30);
+    expect(vars.resolveValue({ $ref: 'user' })).toEqual({ name: 'Alice', age: 30 });
+  });
+
+  it('$literal passes through as-is', () => {
+    const vars = new VarStore();
+    const literal = { $ref: 'not-a-reference' };
+    expect(vars.resolveValue({ $literal: literal })).toEqual(literal);
+  });
+
+  it('recursively resolves arrays', () => {
+    const vars = new VarStore();
+    vars.set('x', 10);
+    expect(vars.resolveValue([{ $ref: 'x' }, 'hello', 42])).toEqual([10, 'hello', 42]);
+  });
+
+  it('recursively resolves objects', () => {
+    const vars = new VarStore();
+    vars.set('name', 'Alice');
+    expect(vars.resolveValue({ user: { $ref: 'name' }, static: 'value' })).toEqual({ user: 'Alice', static: 'value' });
+  });
+
+  it('string interpolation still works', () => {
+    const vars = new VarStore();
+    vars.set('x', 'world');
+    expect(vars.resolveValue('hello {{x}}')).toBe('hello world');
+  });
+
+  it('throws on depth exceeded', () => {
+    const vars = new VarStore();
+    // Create deeply nested structure
+    let deep: any = { value: 'end' };
+    for (let i = 0; i < 25; i++) deep = { nested: deep };
+    expect(() => vars.resolveValue(deep)).toThrow('depth exceeded');
+  });
+
+  it('preserves primitives', () => {
+    const vars = new VarStore();
+    expect(vars.resolveValue(42)).toBe(42);
+    expect(vars.resolveValue(true)).toBe(true);
+    expect(vars.resolveValue(null)).toBeNull();
+  });
+});

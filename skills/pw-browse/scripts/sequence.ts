@@ -70,6 +70,8 @@ interface Step {
   action?: string;
   args?: string[] | Record<string, any>;
   out?: string;
+  desc?: string;
+  comment?: string;
   // label / goto
   label?: string;
   // def / call
@@ -161,14 +163,54 @@ export class VarStore {
     });
   }
 
-  /** Interpolate the entire args array or object */
+  /**
+   * Resolve a value recursively:
+   * - string → interpolate {{}}
+   * - { "$ref": "path" } → resolve to variable value (type preserved)
+   * - { "$literal": ... } → unwrap and pass through as-is
+   * - array → recurse each element
+   * - plain object → recurse each value
+   */
+  resolveValue(val: any, depth: number = 0): any {
+    if (depth > 20) throw new Error('$ref resolution depth exceeded (max 20)');
+
+    // String → interpolate
+    if (typeof val === 'string') return this.interpolate(val);
+
+    // Null/undefined/primitive
+    if (val === null || val === undefined || typeof val !== 'object') return val;
+
+    // $literal → unwrap
+    if ('$literal' in val && Object.keys(val).length === 1) {
+      return val.$literal;
+    }
+
+    // $ref → resolve
+    if ('$ref' in val && Object.keys(val).length === 1) {
+      return this.get(val.$ref);
+    }
+
+    // Array → recurse
+    if (Array.isArray(val)) {
+      return val.map(item => this.resolveValue(item, depth + 1));
+    }
+
+    // Object → recurse values
+    const result: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) {
+      result[k] = this.resolveValue(v, depth + 1);
+    }
+    return result;
+  }
+
+  /** Interpolate/resolve the entire args array or object */
   interpolateArgs(args: string[] | Record<string, any>): any {
     if (Array.isArray(args)) {
-      return args.map(a => this.interpolate(a));
+      return args.map(a => this.resolveValue(a));
     }
     const result: Record<string, any> = {};
     for (const [k, v] of Object.entries(args)) {
-      result[k] = this.interpolate(v);
+      result[k] = this.resolveValue(v);
     }
     return result;
   }
