@@ -17,6 +17,16 @@ if (args[0] === '--inline' || args[0] === '-i') {
   process.exit(result.status ?? 1);
 }
 
+// :: chaining: forward to pwi if all segments are browser actions
+if (args.includes('::')) {
+  const pwiScript = join(SCRIPTS_DIR, 'pwi.ts');
+  const result = spawnSync(process.execPath, [...process.execArgv, pwiScript, ...args], {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+  });
+  process.exit(result.status ?? 1);
+}
+
 const command = args[0];
 const restArgs = args.slice(1);
 
