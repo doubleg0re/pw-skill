@@ -18,6 +18,11 @@ export interface LarryHook {
   scope?: 'page' | 'session' | 'context' | 'once';
 }
 
+export interface LarryAction {
+  entry: string;
+  description?: string;
+}
+
 export interface LarryManifest {
   name: string;
   version: string;
@@ -25,6 +30,8 @@ export interface LarryManifest {
   type?: 'script' | 'extension';
   entry?: string;
   commands?: LarryCommand[];
+  actions?: Record<string, LarryAction>;
+  events?: Record<string, { entry: string }>;
   extension?: {
     scope?: string;
   };
@@ -153,7 +160,7 @@ export function createRaryStore(opts: RaryStoreOptions) {
           if (!existsSync(join(pkgDir(name), manifest.entry)))
             issues.push({ package: name, issue: `Entry file not found: ${manifest.entry}` });
         }
-        if (manifest.commands) {
+        if (manifest.commands && Array.isArray(manifest.commands)) {
           for (const cmd of manifest.commands) {
             if (!existsSync(join(pkgDir(name), cmd.entry)))
               issues.push({ package: name, issue: `Command entry not found: ${cmd.name} → ${cmd.entry}` });
@@ -168,6 +175,20 @@ export function createRaryStore(opts: RaryStoreOptions) {
         if (manifest.rolling?.entry) {
           if (!existsSync(join(pkgDir(name), manifest.rolling.entry)))
             issues.push({ package: name, issue: `Rolling entry not found: ${manifest.rolling.entry}` });
+        }
+        // Check event handler entries
+        if (manifest.events) {
+          for (const [eventName, eventDef] of Object.entries(manifest.events)) {
+            if (eventDef?.entry && !existsSync(join(pkgDir(name), eventDef.entry)))
+              issues.push({ package: name, issue: `Event handler entry not found: ${eventName} → ${eventDef.entry}` });
+          }
+        }
+        // Check action entries
+        if (manifest.actions) {
+          for (const [actionName, actionDef] of Object.entries(manifest.actions)) {
+            if (actionDef?.entry && !existsSync(join(pkgDir(name), actionDef.entry)))
+              issues.push({ package: name, issue: `Action entry not found: ${actionName} → ${actionDef.entry}` });
+          }
         }
       }
 
@@ -201,10 +222,16 @@ export function createRaryStore(opts: RaryStoreOptions) {
         try {
           const hookUrl = pathToFileURL(hookPath).href;
           const hookModule = await import(hookUrl);
+          // Create per-extension runtime view with prefixed logger
+          let extContext = context;
+          if (context && typeof context === 'object' && context.logger) {
+            const { createExtensionView } = await import('./runtime.js');
+            extContext = createExtensionView(context, name);
+          }
           if (typeof hookModule.default === 'function') {
-            await hookModule.default(context);
+            await hookModule.default(extContext);
           } else if (typeof hookModule[hookName] === 'function') {
-            await hookModule[hookName](context);
+            await hookModule[hookName](extContext);
           }
           ran.push(name);
         } catch (err) {
@@ -213,6 +240,59 @@ export function createRaryStore(opts: RaryStoreOptions) {
       }
 
       return { ran, errors };
+    },
+
+    // --- Extension Actions ---
+
+    /**
+     * Load custom sequence actions from active extensions.
+     * Returns a map of action name → async function(page, args).
+     */
+    async loadExtensionActions(): Promise<{
+      actions: Record<string, (page: any, args: any) => Promise<{ result?: any }>>;
+      warnings: string[];
+      errors: string[];
+    }> {
+      const actions: Record<string, (page: any, args: any) => Promise<{ result?: any }>> = {};
+      const warnings: string[] = [];
+      const errors: string[] = [];
+
+      for (const { name, manifest } of this.getActiveExtensions()) {
+        if (!manifest?.actions) continue;
+
+        for (const [actionName, actionDef] of Object.entries(manifest.actions)) {
+          // Collision check
+          if (actions[actionName]) {
+            errors.push(`Extension action "${actionName}" is defined by multiple active packages`);
+            continue;
+          }
+
+          const actionPath = join(pkgDir(name), actionDef.entry);
+          if (!existsSync(actionPath)) {
+            errors.push(`${name}: action entry not found: ${actionPath}`);
+            continue;
+          }
+
+          try {
+            const actionUrl = pathToFileURL(actionPath).href;
+            const mod = await import(actionUrl);
+            const fn = mod.default || mod.run;
+            if (typeof fn !== 'function') {
+              errors.push(`${name}: action "${actionName}" must export default function or named "run"`);
+              continue;
+            }
+            actions[actionName] = fn;
+          } catch (err) {
+            errors.push(`${name}: failed to load action "${actionName}": ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+
+      if (Object.keys(actions).length > 0) {
+        warnings.push(`Active rary extensions registered custom sequence actions: ${Object.keys(actions).join(', ')}. Run only trusted extensions.`);
+      }
+
+      return { actions, warnings, errors };
     },
 
     // --- Paths ---
@@ -245,6 +325,7 @@ export const deactivateExtension = defaultStore.deactivateExtension.bind(default
 export const getActiveExtensions = defaultStore.getActiveExtensions.bind(defaultStore);
 export const checkRepair = defaultStore.checkRepair.bind(defaultStore);
 export const runHooks = defaultStore.runHooks.bind(defaultStore);
+export const loadExtensionActions = defaultStore.loadExtensionActions.bind(defaultStore);
 
 export const TOYBOX_DIR = defaultStore.toyboxDir;
 export const EXTENSIONS_FILE = defaultStore.extensionsFile;

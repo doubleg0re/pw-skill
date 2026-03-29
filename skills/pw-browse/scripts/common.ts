@@ -483,6 +483,21 @@ export async function run(
   }) => Promise<Result>,
 ): Promise<void> {
   let hookErrors: string[] = [];
+  let extensionRuntime: any = null;
+
+  // SIGINT/SIGTERM guard: attempt cleanup on unexpected termination
+  const signalHandler = async () => {
+    if (extensionRuntime) {
+      try {
+        const { runCleanups } = await import('./runtime.js');
+        await runCleanups(extensionRuntime);
+      } catch {}
+    }
+    process.exit(1);
+  };
+  process.once('SIGINT', signalHandler);
+  process.once('SIGTERM', signalHandler);
+
   try {
     const cliArgs = parseArgs();
     const headed = hasFlag(cliArgs, 'headed');
@@ -522,11 +537,19 @@ export async function run(
       }
     }
 
-    // --- Core: Run 'load' hooks for active extensions ---
-    const { runHooks } = await import('./rary.js');
+    // --- Core: Load event handlers + run 'load' hooks ---
+    const { runHooks, getActiveExtensions, packageDir } = await import('./rary.js');
+    const { buildRuntime, loadEventHandlers } = await import('./runtime.js');
     try {
-      const hookResult = await runHooks('load', { browser, context, page, session });
-      hookErrors = hookResult.errors;
+      const { handlers: eventHandlers, errors: eventErrors } = await loadEventHandlers(
+        () => getActiveExtensions().map(e => ({ name: e.name, manifest: e.manifest })),
+        packageDir,
+      );
+      hookErrors.push(...eventErrors);
+
+      extensionRuntime = buildRuntime({ session, browser, context, page, eventHandlers });
+      const hookResult = await runHooks('load', extensionRuntime);
+      hookErrors.push(...hookResult.errors);
     } catch {}
 
     const result = await fn({

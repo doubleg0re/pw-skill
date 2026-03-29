@@ -248,14 +248,16 @@ export async function executeAction(
   action: string,
   rawArgs: string[] | Record<string, any>,
   vars: VarStore,
+  runtimeActionMap?: Record<string, (page: any, args: any, runtime?: any) => Promise<{ result?: any }>>,
+  runtime?: any,
 ): Promise<{ result?: any }> {
   const a = vars.interpolateArgs(rawArgs);
-  const fn = ACTION_MAP[action] as (page: Page, a: any) => Promise<{ result?: any }>;
+  const map = runtimeActionMap || ACTION_MAP;
+  const fn = map[action] as (page: Page, a: any, runtime?: any) => Promise<{ result?: any }>;
   if (!fn) throw new Error(`Unknown action: ${action}`);
 
-  // Now 'a' can be either string[] or Record<string, any>
-  // Both are accepted by the refactored actions in actions.ts
-  return fn(page, a);
+  // Extension actions receive runtime as 3rd arg. Built-in actions ignore it.
+  return fn(page, a, runtime);
 }
 
 // --- Flow engine ---
@@ -264,9 +266,12 @@ export interface RunOptions {
   allowShell?: boolean;
   requestPermission?: boolean;
   debugLog?: boolean;
-  baseDir?: string; // base directory for resolving relative paths (subflows)
-  callDepth?: number; // current call nesting depth
-  callStack?: string[]; // call chain for cycle detection
+  baseDir?: string;
+  callDepth?: number;
+  callStack?: string[];
+  actionMap?: Record<string, (page: any, args: any, runtime?: any) => Promise<{ result?: any }>>;
+  runtime?: any; // ExtensionRuntimeContext for extension actions
+  inSubflow?: boolean;
 }
 
 export async function runSteps(
@@ -432,6 +437,15 @@ export async function runSteps(
             results.push({ step: stepIndex, action: 'def', success: false, error: `Subflow info.type must be "subflow"` });
             return { success: false, failedAt: stepIndex };
           }
+          // Validate param contract: if both def.params and subflow info.parameters exist, they must match
+          if (step.params && subInfo.parameters) {
+            const defP = JSON.stringify(step.params.sort());
+            const subP = JSON.stringify([...subInfo.parameters].sort());
+            if (defP !== subP) {
+              results.push({ step: stepIndex, action: 'def', success: false, error: `Parameter mismatch: def.params=${JSON.stringify(step.params)} vs subflow.parameters=${JSON.stringify(subInfo.parameters)}` });
+              return { success: false, failedAt: stepIndex };
+            }
+          }
           defs.set(step.name!, { kind: 'flow', params: step.params || subInfo.parameters || [], path: absPath, steps: raw.flow, info: subInfo });
         } else {
           // func: items is Step[]
@@ -481,6 +495,7 @@ export async function runSteps(
               baseDir: (await import('path')).dirname(def.path),
               callDepth: (options.callDepth || 0) + 1,
               callStack: [...(options.callStack || []), step.name!],
+              inSubflow: true,
             }
           : options;
 
@@ -676,8 +691,12 @@ export async function runSteps(
         continue;
       }
 
-      // --- return ---
+      // --- return (subflow only) ---
       if (step.action === 'return') {
+        if (!options.inSubflow) {
+          results.push({ step: stepIndex, action: 'return', success: false, error: 'return is only allowed inside def type="flow" subflows' });
+          return { success: false, failedAt: stepIndex };
+        }
         let returnValue: any = null;
         if (step.value) {
           if ('$ref' in step.value) {
@@ -775,7 +794,7 @@ export async function runSteps(
 
       // --- General action ---
       debugLog?.(stepIndex, step.action!, 'start');
-      const { result } = await executeAction(page, step.action!, step.args || [], vars);
+      const { result } = await executeAction(page, step.action!, step.args || [], vars, options.actionMap, options.runtime);
 
       // Set ephemeral registers
       vars.set('$ret', result);
@@ -788,6 +807,21 @@ export async function runSteps(
 
       results.push({ step: stepIndex, action: step.action!, success: true, ...(result !== undefined ? { data: result } : {}) });
       debugLog?.(stepIndex, step.action!, 'ok');
+
+      // Emit core tab events after relevant actions
+      if (options.runtime?.emitEvent) {
+        if (step.action === 'navigate') {
+          const { findTabByUrl, updateTab, assignTabId, buildTabEvent } = await import('./tab-registry.js');
+          // Find existing tab or assign a new stable ID
+          let navTab = findTabByUrl(result?.url);
+          if (navTab) {
+            updateTab(navTab.tabId, { url: result?.url, title: result?.title });
+          } else {
+            navTab = assignTabId(result?.url, result?.title);
+          }
+          options.runtime.emitEvent('tab:navigated', buildTabEvent('tab:navigated', options.runtime.session.name, navTab));
+        }
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       debugLog?.(stepIndex, step.action || 'unknown', `failed (${errorMsg.slice(0, 60)})`);
@@ -819,7 +853,10 @@ const KNOWN_ACTIONS = new Set([
   'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'return',
 ]);
 
-export function validateSteps(steps: Step[], prefix: string = ''): string[] {
+export function validateSteps(steps: Step[], prefix: string = '', extraKnownActions?: Set<string>): string[] {
+  const allKnown = extraKnownActions
+    ? new Set([...KNOWN_ACTIONS, ...extraKnownActions])
+    : KNOWN_ACTIONS;
   const errors: string[] = [];
 
   for (let i = 0; i < steps.length; i++) {
@@ -845,7 +882,7 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     }
 
     // Unknown action
-    if (!KNOWN_ACTIONS.has(action)) {
+    if (!allKnown.has(action)) {
       errors.push(`${loc}: unknown action "${action}"`);
     }
 
@@ -961,11 +998,11 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
 
     // Recurse into nested steps (skip condition def items — they're ConditionNode[], not Step[])
     if (step.items && !(step.action === 'def' && step.type === 'condition')) {
-      errors.push(...validateSteps(step.items as Step[], `${loc}.items → `));
+      errors.push(...validateSteps(step.items as Step[], `${loc}.items → `, extraKnownActions));
     }
-    if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `));
-    if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `));
-    if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `));
+    if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `, extraKnownActions));
+    if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `, extraKnownActions));
+    if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `, extraKnownActions));
   }
 
   return errors;
@@ -973,7 +1010,7 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
 
 // --- Entry point ---
 
-run(async ({ page, args: cliArgs }) => {
+run(async ({ page, args: cliArgs, session }) => {
   const input = cliArgs[0];
   if (!input) return { success: false, error: 'Usage: sequence.ts <json-string | json-file-path>' };
 
@@ -1007,14 +1044,31 @@ run(async ({ page, args: cliArgs }) => {
     return { success: false, error: 'Invalid JSON. Provide a JSON array or a path to a JSON file.' };
   }
 
+  // Build merged action map (built-in + rary extensions)
+  const { loadExtensionActions } = await import('./rary.js');
+  const extActions = await loadExtensionActions();
+  const mergedActionMap: Record<string, (page: any, args: any) => Promise<{ result?: any }>> = { ...ACTION_MAP };
+
+  // Check for built-in collisions
+  const builtinCollisions = Object.keys(extActions.actions).filter(k => k in ACTION_MAP);
+  if (builtinCollisions.length > 0) {
+    return { success: false, error: `Extension action conflicts with built-in: ${builtinCollisions.join(', ')}` };
+  }
+  if (extActions.errors.length > 0) {
+    return { success: false, error: 'Failed to load extension actions', data: { errors: extActions.errors } };
+  }
+  Object.assign(mergedActionMap, extActions.actions);
+
+  const extraKnownActions = new Set(Object.keys(extActions.actions));
+
   // Validate syntax before execution
-  const validationErrors = validateSteps(steps);
+  const validationErrors = validateSteps(steps, '', extraKnownActions);
   if (validationErrors.length > 0) {
     return { success: false, error: 'Validation failed', data: { errors: validationErrors } };
   }
 
   // Check for shell actions and build warnings
-  const warnings: string[] = [];
+  const warnings: string[] = [...extActions.warnings];
   const hasShell = steps.some(s => s.action === 'shell');
   if (hasShell && allowShell) {
     warnings.push('Warning: shell action enabled. Only run trusted sequences.');
@@ -1030,7 +1084,11 @@ run(async ({ page, args: cliArgs }) => {
   const { dirname } = await import('path');
   const baseDir = existsSync(input) ? dirname(input.startsWith('/') || input.includes(':') ? input : (await import('path')).resolve(input)) : process.cwd();
 
-  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir });
+  // Build runtime context for extension actions
+  const { buildRuntime } = await import('./runtime.js');
+  const seqRuntime = buildRuntime({ session, page });
+
+  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap, runtime: seqRuntime });
 
   // Clean up heartbeat and lock
   clearInterval(heartbeat);
