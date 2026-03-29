@@ -829,9 +829,18 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     // def
     if (action === 'def') {
       if (!step.name) errors.push(`${loc}: def requires "name"`);
-      if (step.type && step.type !== 'func' && step.type !== 'condition') {
-        errors.push(`${loc}: def type must be "func" or "condition"`);
+      if (step.type && !['func', 'condition', 'flow'].includes(step.type)) {
+        errors.push(`${loc}: def type must be "func", "condition", or "flow"`);
       }
+      if (step.type === 'flow') {
+        if (!step.path) errors.push(`${loc}: def type="flow" requires "path"`);
+        if (step.items) errors.push(`${loc}: def type="flow" cannot have "items" (use "path")`);
+      }
+    }
+
+    // return
+    if (action === 'return') {
+      if (!step.value) errors.push(`${loc}: return requires "value"`);
     }
 
     // call

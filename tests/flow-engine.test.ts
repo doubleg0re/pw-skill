@@ -1033,3 +1033,20 @@ describe('Flow Engine — call flow captures return', () => {
     expect(logs[1].data).toBe('got done');
   });
 });
+
+describe('validateSteps — subflow', () => {
+  it('def flow requires path', () => {
+    const errors = validateSteps([{ action: 'def', type: 'flow', name: 'x' } as any]);
+    expect(errors[0]).toContain('requires "path"');
+  });
+
+  it('def flow forbids items', () => {
+    const errors = validateSteps([{ action: 'def', type: 'flow', name: 'x', path: './f.json', items: [] } as any]);
+    expect(errors[0]).toContain('cannot have "items"');
+  });
+
+  it('return requires value', () => {
+    const errors = validateSteps([{ action: 'return' }]);
+    expect(errors[0]).toContain('requires "value"');
+  });
+});
