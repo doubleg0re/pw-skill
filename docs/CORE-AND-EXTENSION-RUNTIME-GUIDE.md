@@ -45,14 +45,40 @@ Guidelines:
 
 Core may generate and dispatch runtime events, but it should not become a long-running monitor by itself.
 
-Recommended built-in events:
+#### Standard tab events
 
-- `tab:created`
-- `tab:closed`
-- `tab:navigated`
-- `tab:activated` (best-effort)
+Core defines these standard event names (exported as `TAB_EVENTS` from `tab-registry.ts`):
 
-Rules:
+- `tab:created` — a new tab was detected or opened
+- `tab:closed` — a tab was closed or disappeared
+- `tab:navigated` — a tab changed URL
+- `tab:activated` — a tab became the active/focused tab (best-effort, second-scope)
+
+#### Canonical payload contract
+
+All `tab:*` events must use the `TabEventPayload` shape:
+
+```typescript
+{
+  event: string;     // one of the TAB_EVENTS values
+  session: string;   // session name
+  tabId: number;     // stable pw-skill tab ID
+  url: string;       // current URL
+  title?: string;    // page title (optional)
+  timestamp: string; // ISO 8601
+}
+```
+
+Required fields: `event`, `session`, `tabId`, `url`, `timestamp`. The `title` field is optional.
+
+#### Ownership model
+
+- Core defines the event names, payload contract, and `TAB_EVENTS` constants.
+- `pw-monitor` (and similar extensions) may publish `tab:*` events — they supplement core, not replace it.
+- Other extensions should consume `tab:*` events, not redefine them.
+- Extension-specific events must use namespaced names (e.g., `pw-monitor:state-updated`).
+
+#### Dispatch rules
 
 - `emitEvent()` is fire-and-forget.
 - Handler failures must never block core flow.

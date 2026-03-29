@@ -4,6 +4,7 @@ import { pathToFileURL } from 'url';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { SessionInfo } from './session.js';
+import { TAB_EVENTS, removeTab } from './tab-registry.js';
 
 // --- Runtime Context ---
 
@@ -113,8 +114,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
 
   const emitEvent = (event: string, payload: any): void => {
     // Core tab registry GC: auto-remove tab on tab:closed
-    if (event === 'tab:closed' && payload?.tabId != null) {
-      import('./tab-registry.js').then(({ removeTab }) => removeTab(payload.tabId)).catch(() => {});
+    if (event === TAB_EVENTS.CLOSED && payload?.tabId != null) {
+      try { removeTab(payload.tabId); } catch {}
     }
 
     // Fire-and-forget: dispatch to matching handlers via Promise.allSettled
