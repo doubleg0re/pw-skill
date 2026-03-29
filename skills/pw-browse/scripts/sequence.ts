@@ -853,8 +853,10 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
       errors.push(`${loc}: "out" cannot start with "$" (reserved for built-in variables like $index, $error)`);
     }
 
-    // Recurse into nested steps
-    if (step.items) errors.push(...validateSteps(step.items as Step[], `${loc}.items → `));
+    // Recurse into nested steps (skip condition def items — they're ConditionNode[], not Step[])
+    if (step.items && !(step.action === 'def' && step.type === 'condition')) {
+      errors.push(...validateSteps(step.items as Step[], `${loc}.items → `));
+    }
     if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `));
     if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `));
     if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `));

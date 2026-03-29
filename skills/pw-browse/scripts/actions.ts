@@ -80,6 +80,12 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
 
   // wait user-action: pause for human intervention (headed only)
   if (target === 'user-action') {
+    // Headless guard — user can't interact with overlay in headless mode
+    const isHeadless = await page.evaluate(() => !window.outerHeight || !window.outerWidth).catch(() => true);
+    if (isHeadless) {
+      throw new Error('wait user-action requires --headed (no visible browser window for user interaction)');
+    }
+
     const prompt = (Array.isArray(a) ? a[1] : a.prompt) || 'Complete the action, then click Continue';
     const actions: string[] = (Array.isArray(a) ? undefined : a.actions) || ['continue'];
     const focus = Array.isArray(a) ? undefined : a.focus;
@@ -134,6 +140,10 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
 
   // wait user-alert: informational overlay, auto-dismiss on click
   if (target === 'user-alert') {
+    const isHeadless = await page.evaluate(() => !window.outerHeight || !window.outerWidth).catch(() => true);
+    if (isHeadless) {
+      throw new Error('wait user-alert requires --headed (no visible browser window)');
+    }
     const prompt = (Array.isArray(a) ? a[1] : a.prompt) || 'Please complete the action.';
 
     await page.evaluate((promptMsg: string) => {
@@ -178,8 +188,8 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
         return el.outerHTML;
       }, { sel: selector, field }).catch(() => null);
 
-      // Poll for change
-      const result = await page.waitForFunction(({ sel, field, initial }) => {
+      // Poll for change + evaluate trigger if provided
+      const result = await page.waitForFunction(({ sel, field, initial, triggerDef }) => {
         const el = document.querySelector(sel);
         if (!el) return initial !== null ? { changed: true, current: null } : null;
         let current: any;
@@ -190,11 +200,30 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
         } else {
           current = el.outerHTML;
         }
-        if (current !== initial) {
-          return { changed: true, current };
+
+        const changed = current !== initial;
+
+        // If trigger is defined, evaluate it against $changed/$current
+        if (triggerDef && changed) {
+          // Simple in-browser trigger evaluation
+          const evalLeaf = (node: any, vars: Record<string, any>): boolean => {
+            if (node.and) return node.and.every((c: any) => evalLeaf(c, vars));
+            if (node.or) return node.or.some((c: any) => evalLeaf(c, vars));
+            const ref = node.ref;
+            const val = ref?.startsWith('$') ? vars[ref] : undefined;
+            if ('eq' in node) return val == node.eq;
+            if ('neq' in node) return val != node.neq;
+            if ('contains' in node) return String(val ?? '').includes(String(node.contains));
+            if ('exists' in node) return node.exists ? val != null : val == null;
+            return false;
+          };
+          const vars = { $changed: changed, $current: current, $previous: initial };
+          if (!evalLeaf(triggerDef, vars)) return null; // trigger not satisfied yet
         }
+
+        if (changed) return { changed: true, current };
         return null;
-      }, { sel: selector, field, initial }, { timeout });
+      }, { sel: selector, field, initial, triggerDef: trigger || null }, { timeout });
 
       const data = await result.jsonValue() as any;
 
