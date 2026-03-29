@@ -18,21 +18,31 @@ if (args[0] === '--inline' || args[0] === '-i') {
   process.exit(result.status ?? 1);
 }
 
-// :: chaining: forward to pwi if all segments are browser actions
+// :: chaining: build sequence JSON and run through full runtime (session-based)
 if (args.includes('::')) {
-  // Validate: extract action names from each segment, reject non-chainable commands
+  // Actions that can be chained (must exist in ACTION_MAP or be extension actions)
   const CHAINABLE_ACTIONS = new Set([
     'navigate', 'screenshot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
-    'fill', 'type', 'select', 'upload', 'download', 'submit', 'copy', 'paste',
-    'dump', 'attr', 'find', 'wait', 'fetch', 'evaluate',
+    'fill', 'type', 'select', 'upload', 'submit',
+    'dump', 'attr', 'wait', 'fetch', 'evaluate',
   ]);
-  const segments: string[] = [];
-  let current: string | null = null;
+  // Parse segments: split by ::, extract action names
+  const segments: { action: string; args: string[] }[] = [];
+  let current: string[] = [];
+  const globalFlags: string[] = [];
   for (const a of args) {
-    if (a === '::') { current = null; continue; }
-    if (current === null && !a.startsWith('--')) { current = a; segments.push(a); }
+    if (a === '::') {
+      if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
+      current = [];
+    } else if (a.startsWith('--')) {
+      globalFlags.push(a);
+    } else {
+      current.push(a);
+    }
   }
-  const rejected = segments.filter(s => !CHAINABLE_ACTIONS.has(s));
+  if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
+
+  const rejected = segments.filter(s => !CHAINABLE_ACTIONS.has(s.action)).map(s => s.action);
   if (rejected.length > 0) {
     console.log(JSON.stringify({
       success: false,
@@ -41,8 +51,10 @@ if (args.includes('::')) {
     process.exit(1);
   }
 
-  const pwiScript = join(SCRIPTS_DIR, 'pwi.ts');
-  const result = spawnSync(process.execPath, [...process.execArgv, pwiScript, ...args], {
+  // Build inline sequence JSON and run through sequence.ts (full runtime)
+  const seqSteps = JSON.stringify(segments.map(s => ({ action: s.action, args: s.args })));
+  const seqScript = join(SCRIPTS_DIR, 'sequence.ts');
+  const result = spawnSync(process.execPath, [...process.execArgv, seqScript, seqSteps, ...globalFlags], {
     stdio: 'inherit',
     cwd: process.cwd(),
   });
