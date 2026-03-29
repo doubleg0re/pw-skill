@@ -1009,9 +1009,12 @@ export function validateSteps(steps: Step[], prefix: string = '', extraKnownActi
   return errors;
 }
 
-// --- Entry point ---
+// --- Entry point (only when run directly, not when imported) ---
 
-run(async ({ page, args: cliArgs, session }) => {
+const isDirectRun = process.argv[1]?.replace(/\\/g, '/').endsWith('/sequence.ts')
+  || process.argv[1]?.replace(/\\/g, '/').endsWith('/sequence.js');
+
+if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   const input = cliArgs[0];
   if (!input) return { success: false, error: 'Usage: sequence.ts <json-string | json-file-path>' };
 

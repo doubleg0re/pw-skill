@@ -6,6 +6,17 @@ import { join, resolve } from 'path';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
+
+// --inline mode: delegate to pwi
+if (args[0] === '--inline' || args[0] === '-i') {
+  const pwiScript = join(SCRIPTS_DIR, 'pwi.ts');
+  const result = spawnSync(process.execPath, [...process.execArgv, pwiScript, ...args.slice(1)], {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+  });
+  process.exit(result.status ?? 1);
+}
+
 const command = args[0];
 const restArgs = args.slice(1);
 
