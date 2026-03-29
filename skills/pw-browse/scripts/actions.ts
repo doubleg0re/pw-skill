@@ -73,7 +73,7 @@ export async function actionType(page: Page, a: ActionArgs): Promise<{ result?: 
   return {};
 }
 
-export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+export async function actionWait(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
   const target = getArg(a, 'target', 0);
   const attr = getArg(a, 'attr', 1);
   const value = getArg(a, 'value', 2);
@@ -90,6 +90,19 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
     const actions: string[] = (Array.isArray(a) ? undefined : a.actions) || ['continue'];
     const focus = Array.isArray(a) ? undefined : a.focus;
     const idle = Number(Array.isArray(a) ? undefined : a.idle) || 0;
+
+    // Emit user-action:started so extensions can persist state
+    if (runtime?.emitEvent) {
+      const tabId = runtime.tab?.id ?? 0;
+      runtime.emitEvent('user-action:started', {
+        session: runtime.session?.name,
+        tabId,
+        prompt,
+        actions,
+        focus,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     // Focus element if specified
     if (focus) {
@@ -134,6 +147,17 @@ export async function actionWait(page: Page, a: ActionArgs): Promise<{ result?: 
     await page.evaluate(() => {
       document.getElementById('__pw_user_action_overlay')?.remove();
     });
+
+    // Emit user-action:completed so extensions can clear state
+    if (runtime?.emitEvent) {
+      const tabId = runtime.tab?.id ?? 0;
+      runtime.emitEvent('user-action:completed', {
+        session: runtime.session?.name,
+        tabId,
+        action: clicked,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     return { result: { waited: 'user-action', prompt, action: clicked } };
   }
