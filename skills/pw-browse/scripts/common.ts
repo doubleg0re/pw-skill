@@ -147,8 +147,12 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
   let session: SessionInfo;
   try {
     session = resolveSession(options.sessionName);
-  } catch {
-    // No active session — will launch below
+  } catch (err) {
+    // If session was explicitly specified, propagate the error — don't silently create a new one
+    if (options.sessionName) {
+      throw err;
+    }
+    // No active session and none specified — auto-launch
     return launchNewSession({ headless, viewport, video, videoDir });
   }
 
