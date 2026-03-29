@@ -26,7 +26,15 @@ if (args.includes('::')) {
     'fill', 'type', 'select', 'upload', 'submit',
     'dump', 'attr', 'wait', 'fetch', 'evaluate',
   ]);
-  // Parse segments: split by ::, extract action names
+  // Global flags that apply to the whole execution, not individual steps
+  const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'video', 'no-restore']);
+  function isGlobalFlag(a: string): boolean {
+    if (!a.startsWith('--')) return false;
+    const name = a.replace(/^--/, '').split('=')[0];
+    return GLOBAL_FLAG_NAMES.has(name);
+  }
+
+  // Parse segments: split by ::, keep per-step flags with their step
   const segments: { action: string; args: string[] }[] = [];
   let current: string[] = [];
   const globalFlags: string[] = [];
@@ -34,7 +42,7 @@ if (args.includes('::')) {
     if (a === '::') {
       if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
       current = [];
-    } else if (a.startsWith('--')) {
+    } else if (isGlobalFlag(a)) {
       globalFlags.push(a);
     } else {
       current.push(a);
@@ -51,8 +59,27 @@ if (args.includes('::')) {
     process.exit(1);
   }
 
+  // Convert per-step args: --flag=value → object, positional → indexed
+  function buildStepArgs(args: string[]): any {
+    const hasFlags = args.some(a => a.startsWith('--'));
+    if (!hasFlags) return args; // pure positional → array
+    const result: Record<string, any> = {};
+    let idx = 0;
+    for (const a of args) {
+      if (a.startsWith('--')) {
+        const eqIndex = a.indexOf('=');
+        if (eqIndex > 0) result[a.slice(2, eqIndex)] = a.slice(eqIndex + 1);
+        else result[a.slice(2)] = true;
+      } else {
+        result[idx] = a;
+        idx++;
+      }
+    }
+    return result;
+  }
+
   // Build inline sequence JSON and run through sequence.ts (full runtime)
-  const seqSteps = JSON.stringify(segments.map(s => ({ action: s.action, args: s.args })));
+  const seqSteps = JSON.stringify(segments.map(s => ({ action: s.action, args: buildStepArgs(s.args) })));
   const seqScript = join(SCRIPTS_DIR, 'sequence.ts');
   const result = spawnSync(process.execPath, [...process.execArgv, seqScript, seqSteps, ...globalFlags], {
     stdio: 'inherit',
