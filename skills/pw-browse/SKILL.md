@@ -33,17 +33,30 @@ npx tsx scripts/playwright/{name}.ts [args...]
 npx tsx ~/.claude/skills/pw-browse/scripts/{name}.ts [args...]
 ```
 
+## Execution Model
+
+`pw` commands connect to a persistent browser session via CDP. `pwi` launches a temporary browser and closes it after execution.
+
+**Session resolution order** (for `pw` commands):
+1. `--session=name` (explicit)
+2. Bound session via `pw use`
+3. Auto-select if only one session alive
+4. Auto-launch if no sessions
+5. Error if multiple sessions without `--session`
+
+**Error recovery**: Dead bound session falls through to auto-select. Explicit `--session=dead` always errors. No session at all auto-launches.
+
 ## Global Flags
 
-All scripts support the following flags:
-
-| Flag | Description |
-|------|-------------|
-| `--session=N` | Target a specific named session (default: auto-resolved via `pw use` binding or single active session) |
-| `--tab=N` | Target a specific tab (default: 0) |
-| `--headed` | Show browser window |
-| `--viewport=WxH` | Viewport size (default: 1920x1080) |
-| `--video[=name]` | Enable video recording |
+| Flag | Applies to | Description |
+|------|-----------|-------------|
+| `--session=N` | `pw` only | Target a specific named session |
+| `--tab=N` | `pw` only | Target a specific tab (default: 0) |
+| `--headed` | `pw` and `pwi` | Show browser window |
+| `--viewport=WxH` | `pw` and `pwi` | Viewport size (default: 1920x1080) |
+| `--video[=name]` | `pw` only | Enable video recording |
+| `--screenshot` | `pw` and `pwi` | Take screenshot after action |
+| `--no-restore` | `pw` only | Don't restore last URL on reconnect |
 
 ## General-purpose Script Reference (25 scripts)
 
