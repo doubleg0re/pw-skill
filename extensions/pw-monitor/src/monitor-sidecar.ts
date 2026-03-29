@@ -106,27 +106,27 @@ async function connect(): Promise<void> {
     ws.send(JSON.stringify({ id: msgId++, method, params }));
   }
 
-  ws.on('open', () => {
+  ws.addEventListener('open', () => {
     process.stderr.write(`[monitor-sidecar] connected to ${browserWsUrl}\n`);
     // Enable target discovery
     send('Target.setDiscoverTargets', { discover: true });
   });
 
-  ws.on('message', (raw: Buffer) => {
+  ws.addEventListener('message', (event: MessageEvent) => {
     try {
-      const msg = JSON.parse(raw.toString());
+      const msg = JSON.parse(typeof event.data === 'string' ? event.data : event.data.toString());
       handleCdpEvent(msg);
     } catch {}
   });
 
-  ws.on('close', () => {
+  ws.addEventListener('close', () => {
     process.stderr.write('[monitor-sidecar] CDP connection closed, exiting\n');
     persistRegistry();
     process.exit(0);
   });
 
-  ws.on('error', (err: Error) => {
-    process.stderr.write(`[monitor-sidecar] CDP error: ${err.message}\n`);
+  ws.addEventListener('error', () => {
+    process.stderr.write(`[monitor-sidecar] CDP WebSocket error\n`);
   });
 }
 
