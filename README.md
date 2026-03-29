@@ -126,6 +126,77 @@ Flows can declare required extensions via `info.requiresRary`:
 
 Missing extensions fail fast with a clear error. CLI override: `pw sequence flow.json --rary=pw-monitor`.
 
+## Execution Model
+
+### pw vs pwi
+
+| | `pw` | `pwi` |
+|---|---|---|
+| Browser | Persistent (CDP server, named session) | Temporary (launches, executes, closes) |
+| Requires `pw launch` | Yes | No |
+| Session management | Full (named, resumable, multi-session) | None |
+| Extensions/hooks | Loaded every command | None |
+| Use case | Ongoing work, complex flows | Quick one-shot tasks |
+
+### Session Resolution (`pw` commands)
+
+When you run a `pw` command, the session is resolved in this order:
+
+1. **`--session=name`** — Explicit flag. If the named session doesn't exist or is dead, error.
+2. **Bound session** — Via `pw use <name>`. If the bound session is dead, falls through.
+3. **Auto-select** — If exactly one session is alive, use it.
+4. **No session** — Auto-launches a new session.
+5. **Multiple sessions** — Error: "Specify `--session=<name>` or run `pw use <name>`."
+
+### Global Flags
+
+| Flag | Where it applies | Effect |
+|------|-----------------|--------|
+| `--session=N` | `pw` commands only | Target a specific named session |
+| `--tab=N` | `pw` commands only | Target a specific tab (default: 0) |
+| `--headed` | `pw` and `pwi` | Show browser window |
+| `--viewport=WxH` | `pw` and `pwi` | Set viewport size (default: 1920x1080) |
+| `--video[=name]` | `pw` commands only | Enable video recording |
+| `--screenshot` | `pw` and `pwi` | Take screenshot after action |
+| `--no-restore` | `pw` commands only | Don't restore last URL on reconnect |
+
+### What happens on each `pw` command
+
+```
+pw navigate url
+ │
+ ├─ 1. Session resolution (see above)
+ ├─ 2. CDP reconnect (reuses existing browser/page/DOM)
+ ├─ 3. --tab selection (if specified)
+ ├─ 4. Load extension event handlers
+ ├─ 5. Build runtime context (session, page, tabId, emitEvent)
+ ├─ 6. Run extension load hooks (e.g., pw-monitor tab sync)
+ ├─ 7. Execute the action
+ └─ 8. Output JSON result
+```
+
+### What happens on each `pwi` command
+
+```
+pwi navigate url
+ │
+ ├─ 1. chromium.launch() — temporary browser
+ ├─ 2. Execute the action(s)
+ ├─ 3. Output JSON result
+ └─ 4. browser.close() — browser gone
+```
+
+### Error & Recovery
+
+| Situation | Behavior |
+|-----------|----------|
+| `--session=ghost` (doesn't exist) | Error: "Session not found" |
+| `--session=dead` (PID dead) | Error: "Session not running" |
+| Bound session died | Falls through to auto-select |
+| No sessions at all | Auto-launches a new one |
+| CDP reconnect fails | Tries WebSocket fallback |
+| Session profile exists but no session.json | `pw launch --resume=name` to restart |
+
 ## Session Management
 
 Sessions are the core of pw-skill. Each session is a named, persistent Chromium process with its own user-data directory stored globally at `~/.playwright-state/sessions/`.
