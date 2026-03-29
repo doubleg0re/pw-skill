@@ -562,14 +562,16 @@ pw-skill/
 - **Console/Network inject**: Patches browser globals to capture logs even between CDP disconnects.
 - **Browser auth in HTTP**: `fetch` and `submit` use browser cookies, so API calls are authenticated automatically.
 - **Windows compatible**: Uses `taskkill` for session close on Windows.
-- **Sensitive data masking**: Network and console dumps mask auth headers and credential fields by default.
+- **Whitelist security redaction**: Network dumps only show safe headers (content-type, accept, etc.). Bodies summarized by default. `--raw` for full debug. `--verbose` for richer summaries.
+- **File-based locking**: Cross-process session locks with stale detection (5min TTL), heartbeat for long operations, atomic JSON writes.
+- **$ref resolution**: `{ "$ref": "path" }` preserves types in sequence args. `{ "$literal": ... }` for escape. Depth-limited.
 - **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
 - **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.
 - **Standardized result schema**: All environment-dependent operations report `warnings: string[]` array and consistent status fields.
 
 ## Tests
 
-124 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, and rary store operations.
+228 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, and connect edge cases.
 
 ```bash
 npm test           # run all tests
