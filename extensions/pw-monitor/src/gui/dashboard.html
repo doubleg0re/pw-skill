@@ -150,20 +150,42 @@ function render(state) {
     document.getElementById('tabs-list').innerHTML = html;
   }
 
-  // Pending actions
+  // Pending actions (with clickable buttons when WS connected)
   const pending = state.pendingActions || [];
   if (pending.length === 0) {
     document.getElementById('pending-list').innerHTML = '<span class="empty">none</span>';
   } else {
     let html = '';
     for (const p of pending) {
+      const buttons = (p.actions || []).map(a =>
+        `<button class="action-btn" data-tab="${p.tabId}" data-action="${esc(a)}"
+          style="background:#4f46e5;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:6px;"
+          ${wsConn ? '' : 'disabled title="Connect WS server to enable"'}>${esc(a)}</button>`
+      ).join('');
       html += `<div class="pending-action">
         <div><span class="badge pending">tab ${p.tabId}</span></div>
         <div class="prompt">${esc(p.prompt)}</div>
-        <div class="actions">${(p.actions || []).map(a => `<span>${esc(a)}</span>`).join('')}</div>
+        <div class="actions">${buttons}</div>
       </div>`;
     }
     document.getElementById('pending-list').innerHTML = html;
+
+    // Bind click handlers
+    document.querySelectorAll('.action-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!wsConn) return;
+        const tabId = parseInt(btn.getAttribute('data-tab') || '0', 10);
+        const action = btn.getAttribute('data-action') || 'continue';
+        wsConn.send(JSON.stringify({
+          type: 'action',
+          action: 'user-action:click',
+          tabId,
+          data: { action },
+        }));
+        btn.textContent = 'sent...';
+        btn.setAttribute('disabled', 'true');
+      });
+    });
   }
 }
 
@@ -173,9 +195,45 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// SSE: real-time updates via fs.watch, fallback to polling
-let useSSE = true;
+// --- Connection: try WS first, then SSE, then polling ---
+let wsConn = null;
 let eventCount = 0;
+const WS_PORT = 47831;
+
+function connectWS() {
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${WS_PORT}`);
+    ws.onopen = () => {
+      wsConn = ws;
+      document.getElementById('poll-status').textContent = 'WS connected';
+    };
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'snapshot' || msg.type === 'event') {
+          eventCount++;
+          document.getElementById('poll-status').textContent = `WS live #${eventCount}`;
+          render(msg.data);
+        } else if (msg.type === 'action-result') {
+          document.getElementById('poll-status').textContent = `action: ${msg.result}`;
+        } else if (msg.type === 'error') {
+          document.getElementById('poll-status').textContent = `WS error: ${msg.error}`;
+        }
+      } catch {}
+    };
+    ws.onclose = () => {
+      wsConn = null;
+      document.getElementById('poll-status').textContent = 'WS disconnected, using SSE';
+      connectSSE();
+    };
+    ws.onerror = () => {
+      // WS not available, fall back to SSE
+      connectSSE();
+    };
+  } catch {
+    connectSSE();
+  }
+}
 
 function connectSSE() {
   const es = new EventSource('/api/events');
@@ -183,21 +241,19 @@ function connectSSE() {
     try {
       const state = JSON.parse(event.data);
       eventCount++;
-      document.getElementById('poll-status').textContent = `live #${eventCount}`;
+      document.getElementById('poll-status').textContent = `SSE #${eventCount}`;
       render(state);
     } catch {}
   };
   es.onerror = () => {
     es.close();
-    useSSE = false;
-    document.getElementById('poll-status').textContent = 'SSE lost, polling...';
-    // Fallback to polling
+    document.getElementById('poll-status').textContent = 'polling...';
     setInterval(poll, 1000);
   };
 }
 
-// Initial fetch + start SSE
-poll().then(() => connectSSE());
+// Initial fetch, then try WS → SSE → polling
+poll().then(() => connectWS());
 </script>
 
 </body>
