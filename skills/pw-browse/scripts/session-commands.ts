@@ -60,7 +60,10 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
     const userDataDir = sessionUserDataDir(sessionName);
     const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(!headed, userDataDir);
     const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null));
-    if (cdpEndpoint) updateSession(sessionName, { cdpEndpoint });
+    if (cdpEndpoint) {
+      updateSession(sessionName, { cdpEndpoint });
+      (session as any).cdpEndpoint = cdpEndpoint;
+    }
 
     // Auto-bind to current project
     bindSession(sessionName);

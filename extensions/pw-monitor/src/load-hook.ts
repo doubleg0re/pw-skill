@@ -1,15 +1,28 @@
 // load-hook.ts — Per-command tab sync hook
 // Runs at the start of every pw command when pw-monitor is active.
-// Restores persisted tab registry, syncs against live CDP targets,
-// emits change events, and persists updated state.
+// If sidecar is alive, reads its registry directly (already fresh).
+// Otherwise falls back to per-command CDP sync.
 import { join } from 'path';
 import { homedir } from 'os';
+import { existsSync, readFileSync } from 'fs';
 import { extractCdpPort, fetchTargets } from './cdp-targets.js';
 import { loadStore } from './tab-store.js';
 import { syncTabs } from './tab-sync.js';
 
 function getSessionDir(sessionName: string): string {
   return join(homedir(), '.playwright-state', 'sessions', sessionName);
+}
+
+function isSidecarAlive(registryPath: string): boolean {
+  if (!existsSync(registryPath)) return false;
+  try {
+    const data = JSON.parse(readFileSync(registryPath, 'utf-8'));
+    if (!data.sidecarPid) return false;
+    process.kill(data.sidecarPid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export default async (ctx: any) => {
@@ -22,10 +35,16 @@ export default async (ctx: any) => {
   const sessionDir = getSessionDir(ctx.session.name);
   const registryPath = join(sessionDir, 'monitor-tabs.json');
 
-  // 1. Restore store (falls back to empty on failure)
+  // If sidecar is alive, registry is already fresh — just read and emit
+  if (isSidecarAlive(registryPath)) {
+    const store = loadStore(registryPath);
+    ctx.logger.info(`sidecar active, ${store.count()} tabs tracked`);
+    return;
+  }
+
+  // Fallback: per-command sync (sidecar not running)
   const store = loadStore(registryPath);
 
-  // 2. Fetch live targets
   let liveTargets;
   try {
     liveTargets = await fetchTargets(port);
@@ -36,18 +55,13 @@ export default async (ctx: any) => {
     return;
   }
 
-  // 3. Sync and collect events
   const events = syncTabs(store, liveTargets, ctx.session.name);
 
-  // 4. Emit events
   for (const evt of events) {
     ctx.emitEvent(evt.event, evt.payload);
   }
 
-  // 5. Persist
   store.save(registryPath);
-
-  // 6. Register cleanup to persist again on exit (captures any mid-command changes)
   ctx.registerCleanup(() => store.save(registryPath));
 
   ctx.logger.info(`synced ${store.count()} tabs (${events.length} changes)`);
