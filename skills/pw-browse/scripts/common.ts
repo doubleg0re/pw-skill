@@ -446,6 +446,7 @@ export async function run(
     session: SessionInfo;
   }) => Promise<Result>,
 ): Promise<void> {
+  let hookErrors: string[] = [];
   try {
     const cliArgs = parseArgs();
     const headed = hasFlag(cliArgs, 'headed');
@@ -487,7 +488,6 @@ export async function run(
 
     // --- Core: Run 'load' hooks for active extensions ---
     const { runHooks } = await import('./rary.js');
-    let hookErrors: string[] = [];
     try {
       const hookResult = await runHooks('load', { browser, context, page, session });
       hookErrors = hookResult.errors;
