@@ -1,12 +1,15 @@
-// ~/.claude/skills/pw-browse/scripts/status.ts
-// Query browser session status
-import { chromium } from 'playwright';
-import { existsSync, readFileSync, readdirSync } from 'fs';
-import { join, resolve, basename } from 'path';
-import { homedir } from 'os';
+// status.ts — Session status via global session store
+import {
+  listSessions,
+  isProcessAlive,
+  getBoundSession,
+  getSession,
+  resolveSession,
+} from './session.js';
+import { basename } from 'path';
 
-const args = process.argv.slice(2);
-const command = args[0] || 'current'; // current | all | pages
+const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const command = args[0] || 'current';
 
 async function isPortAlive(port: number): Promise<any> {
   try {
@@ -29,138 +32,111 @@ async function getPages(port: number): Promise<any[]> {
 async function main() {
   switch (command) {
     case 'current': {
-      const stateDir = resolve(process.cwd(), '.playwright-state');
-      const sessionFile = join(stateDir, 'current-session.txt');
-      let sessionName = 'default';
-      if (existsSync(sessionFile)) {
-        sessionName = readFileSync(sessionFile, 'utf-8').trim();
-      }
-
-      const globalStateDir = join(homedir(), '.playwright-state', 'sessions');
-      const sessionJsonFile = join(globalStateDir, sessionName, 'session.json');
-      
-      if (!existsSync(sessionJsonFile)) {
-        console.log(JSON.stringify({ success: true, data: { status: 'no browser', project: basename(process.cwd()), session: sessionName } }));
+      // Use session resolution: --session flag → binding → auto-select
+      const sessionFlag = process.argv.find(a => a.startsWith('--session='))?.slice('--session='.length);
+      let session;
+      try {
+        session = resolveSession(sessionFlag);
+      } catch (err) {
+        console.log(JSON.stringify({
+          success: true,
+          data: { status: 'no session', project: basename(process.cwd()), error: (err as Error).message },
+        }));
         return;
       }
-      
-      const sessionData = JSON.parse(readFileSync(sessionJsonFile, 'utf-8'));
-      let port = sessionData.port;
-      
-      // If cdpEndpoint exists, try to extract port from it for better accuracy on Windows
-      if (sessionData.cdpEndpoint) {
-        const match = sessionData.cdpEndpoint.match(/:(\d+)\//);
-        if (match) port = parseInt(match[1]);
+
+      const port = session.cdpEndpoint
+        ? parseInt(session.cdpEndpoint.match(/:(\d+)\//)?.[1] || '0')
+        : session.port;
+
+      const alive = isProcessAlive(session.pid);
+      if (!alive) {
+        console.log(JSON.stringify({
+          success: true,
+          data: { status: 'dead', session: session.name, pid: session.pid, port },
+        }));
+        return;
       }
 
       const info = await isPortAlive(port);
-      if (!info) {
-        console.log(JSON.stringify({ success: true, data: { status: 'dead', port, session: sessionName } }));
-        return;
-      }
-      const pages = await getPages(port);
+      const pages = info ? await getPages(port) : [];
       const pageList = pages
         .filter((p: any) => p.type === 'page')
         .map((p: any) => ({ title: p.title, url: p.url }));
-
-      // Check for bot challenge in the current page
-      let challengeDetected = false;
-      if (pageList.length > 0) {
-        // Simple heuristic for status command: look for common challenge keywords or URLs
-        const currentUrl = pageList[0].url;
-        const currentTitle = pageList[0].title;
-        if (
-          currentUrl.includes('/sorry/index') || 
-          currentUrl.includes('/captcha') || 
-          currentTitle.toLowerCase().includes('captcha') ||
-          currentTitle.toLowerCase().includes('challenge')
-        ) {
-          challengeDetected = true;
-        }
-      }
 
       console.log(JSON.stringify({
         success: true,
         data: {
           status: 'alive',
-          session: sessionName,
+          session: session.name,
+          pid: session.pid,
           port,
+          cdpEndpoint: session.cdpEndpoint || null,
+          lastUrl: session.lastUrl || null,
           project: basename(process.cwd()),
-          browser: info.Browser,
+          bound: getBoundSession() === session.name,
+          browser: info?.Browser || null,
           pages: pageList,
-          challengeDetected, // Added standard field
         },
       }));
       return;
     }
 
     case 'pages': {
-      const stateDir = resolve(process.cwd(), '.playwright-state');
-      const portFile = join(stateDir, 'cdp-port.txt');
-      if (!existsSync(portFile)) {
+      const sessionFlag = process.argv.find(a => a.startsWith('--session='))?.slice('--session='.length);
+      let session;
+      try {
+        session = resolveSession(sessionFlag);
+      } catch {
         console.log(JSON.stringify({ success: true, data: [] }));
         return;
       }
-      const port = parseInt(readFileSync(portFile, 'utf-8').trim());
+
+      const port = session.cdpEndpoint
+        ? parseInt(session.cdpEndpoint.match(/:(\d+)\//)?.[1] || '0')
+        : session.port;
+
       const pages = await getPages(port);
       const pageList = pages
         .filter((p: any) => p.type === 'page')
         .map((p: any, i: number) => ({ index: i, title: p.title, url: p.url, id: p.id }));
+
       console.log(JSON.stringify({ success: true, data: pageList }));
       return;
     }
 
     case 'all': {
-      // Scanning all .playwright-state/cdp-port.txt under home directory is impractical,
-      // so search in common workspace paths
-      const home = homedir();
-      const searchDirs = [
-        resolve(home, 'Workspace'),
-        resolve(home, 'Projects'),
-        resolve(home, 'Developer'),
-        resolve(home, 'Code'),
-        process.cwd(),
-      ];
+      const sessions = listSessions();
+      const results = [];
 
-      const sessions: any[] = [];
-      const checked = new Set<string>();
+      for (const s of sessions) {
+        const alive = isProcessAlive(s.pid);
+        const port = s.cdpEndpoint
+          ? parseInt(s.cdpEndpoint.match(/:(\d+)\//)?.[1] || '0')
+          : s.port;
 
-      for (const dir of searchDirs) {
-        if (!existsSync(dir)) continue;
-        try {
-          const entries = readdirSync(dir, { withFileTypes: true });
-          for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            // Search up to 2 levels deep
-            const paths = [
-              join(dir, entry.name, '.playwright-state', 'cdp-port.txt'),
-              ...(() => {
-                try {
-                  return readdirSync(join(dir, entry.name), { withFileTypes: true })
-                    .filter(e => e.isDirectory())
-                    .map(e => join(dir, entry.name, e.name, '.playwright-state', 'cdp-port.txt'));
-                } catch { return []; }
-              })(),
-            ];
-            for (const portFile of paths) {
-              if (checked.has(portFile) || !existsSync(portFile)) continue;
-              checked.add(portFile);
-              const port = parseInt(readFileSync(portFile, 'utf-8').trim());
-              const info = await isPortAlive(port);
-              const projectDir = resolve(portFile, '..', '..');
-              sessions.push({
-                project: basename(projectDir),
-                path: projectDir,
-                port,
-                status: info ? 'alive' : 'dead',
-                browser: info?.Browser || null,
-              });
-            }
-          }
-        } catch {}
+        let browser = null;
+        let pageCount = 0;
+        if (alive) {
+          const info = await isPortAlive(port);
+          browser = info?.Browser || null;
+          const pages = info ? await getPages(port) : [];
+          pageCount = pages.filter((p: any) => p.type === 'page').length;
+        }
+
+        results.push({
+          name: s.name,
+          pid: s.pid,
+          port,
+          status: alive ? 'alive' : 'dead',
+          bound: getBoundSession() === s.name,
+          browser,
+          pages: pageCount,
+          lastUrl: s.lastUrl || null,
+        });
       }
 
-      console.log(JSON.stringify({ success: true, data: sessions }));
+      console.log(JSON.stringify({ success: true, data: results }));
       return;
     }
 
