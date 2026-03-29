@@ -1,0 +1,26 @@
+# Images
+larry.png
+*.png
+*.jpg
+
+# Docs (not needed for npm package)
+docs/
+SEQUENCE-SYNTAX.md
+
+# Tests
+tests/
+
+# Plans and configs
+.claude/
+.cursor/
+.windsurf/
+.cline/
+.codex/
+.aider*
+
+# State
+.playwright-state/
+
+# Misc
+bash.exe.stackdump
+TASK.md
