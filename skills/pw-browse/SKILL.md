@@ -541,20 +541,20 @@ Clean up unnecessary temporary scripts when running `pw-close`.
 
 ## Inline Mode (pwi)
 
-`pwi` is a one-shot shorthand for quick browser actions. Same runtime, same extensions.
+`pwi` is a lightweight one-shot runner. Single actions execute directly without loading hooks, event handlers, or extensions.
 
 ```bash
-# Single action
+# Lightweight (no hooks/extensions — fast)
 npx tsx {script_path}/pwi.ts navigate https://example.com
 npx tsx {script_path}/pwi.ts click "#login"
 npx tsx {script_path}/pwi.ts dump --selector="h1" --text
 
-# Chained actions (:: separator)
-npx tsx {script_path}/pwi.ts fill "#email" "admin@test.com" :: fill "#password" "secret" :: click "#submit"
-npx tsx {script_path}/pwi.ts navigate https://example.com :: screenshot
+# Full runtime (--full flag or multi-step)
+npx tsx {script_path}/pwi.ts navigate url --full
+npx tsx {script_path}/pwi.ts fill "#email" "test" :: click "#submit"
 ```
 
-Also available via `pw --inline` or `pw -i`. Top-level `pw` also supports `::` chaining for browser actions:
+For extension actions, use `--full`. Top-level `pw` chaining always uses full runtime:
 
 ```bash
 npx tsx {script_path}/pw.ts navigate https://example.com :: click "#login" :: wait 1000
