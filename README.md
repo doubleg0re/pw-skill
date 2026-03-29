@@ -571,6 +571,19 @@ pw-skill/
 - **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.
 - **Standardized result schema**: All environment-dependent operations report `warnings: string[]` array and consistent status fields.
 
+## Core vs Extensions
+
+pw-skill keeps the core runtime lightweight.
+
+The core provides browser/session capabilities, runtime context, and event bridges.
+Heavier runtime features such as persistent monitors, sidecars, GUI overlays, and advanced event streaming are intended to live in rary extensions rather than the core runtime.
+
+In short:
+- core = thin runtime platform
+- extensions = optional runtime products
+
+See [Core and Extension Runtime Guide](docs/CORE-AND-EXTENSION-RUNTIME-GUIDE.md).
+
 ## Tests
 
 265 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, connect edge cases, runtime SDK, and settings.
