@@ -811,18 +811,15 @@ export async function runSteps(
       // Emit core tab events after relevant actions
       if (options.runtime?.emitEvent) {
         if (step.action === 'navigate') {
-          const { findTabByUrl, updateTab, buildTabEvent } = await import('./tab-registry.js');
-          // Update existing tab or use a fallback payload
-          const navTab = findTabByUrl(result?.url);
+          const { findTabByUrl, updateTab, assignTabId, buildTabEvent } = await import('./tab-registry.js');
+          // Find existing tab or assign a new stable ID
+          let navTab = findTabByUrl(result?.url);
           if (navTab) {
             updateTab(navTab.tabId, { url: result?.url, title: result?.title });
-            options.runtime.emitEvent('tab:navigated', buildTabEvent('tab:navigated', options.runtime.session.name, navTab));
           } else {
-            options.runtime.emitEvent('tab:navigated', {
-              event: 'tab:navigated', session: options.runtime.session.name,
-              tabId: 0, url: result?.url, title: result?.title, timestamp: new Date().toISOString(),
-            });
+            navTab = assignTabId(result?.url, result?.title);
           }
+          options.runtime.emitEvent('tab:navigated', buildTabEvent('tab:navigated', options.runtime.session.name, navTab));
         }
       }
     } catch (err) {

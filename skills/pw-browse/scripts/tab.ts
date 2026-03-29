@@ -13,8 +13,9 @@ async function main() {
   const { assignTabId, buildTabEvent, restoreRegistry } = await import('./tab-registry.js');
   const { join } = await import('path');
 
-  // Restore tab registry from session state
-  const registryPath = join(process.cwd(), '.playwright-state', 'tabs.json');
+  // Restore tab registry from session-scoped state (not project-local)
+  const { globalSessionDir } = await import('./session.js');
+  const registryPath = join(globalSessionDir(session.name), 'tabs.json');
   restoreRegistry(registryPath);
 
   const runtime = buildRuntime({ session });
