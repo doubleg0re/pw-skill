@@ -248,9 +248,11 @@ export async function executeAction(
   action: string,
   rawArgs: string[] | Record<string, any>,
   vars: VarStore,
+  runtimeActionMap?: Record<string, (page: any, args: any) => Promise<{ result?: any }>>,
 ): Promise<{ result?: any }> {
   const a = vars.interpolateArgs(rawArgs);
-  const fn = ACTION_MAP[action] as (page: Page, a: any) => Promise<{ result?: any }>;
+  const map = runtimeActionMap || ACTION_MAP;
+  const fn = map[action] as (page: Page, a: any) => Promise<{ result?: any }>;
   if (!fn) throw new Error(`Unknown action: ${action}`);
 
   // Now 'a' can be either string[] or Record<string, any>
@@ -264,9 +266,10 @@ export interface RunOptions {
   allowShell?: boolean;
   requestPermission?: boolean;
   debugLog?: boolean;
-  baseDir?: string; // base directory for resolving relative paths (subflows)
-  callDepth?: number; // current call nesting depth
-  callStack?: string[]; // call chain for cycle detection
+  baseDir?: string;
+  callDepth?: number;
+  callStack?: string[];
+  actionMap?: Record<string, (page: any, args: any) => Promise<{ result?: any }>>;
 }
 
 export async function runSteps(
@@ -775,7 +778,7 @@ export async function runSteps(
 
       // --- General action ---
       debugLog?.(stepIndex, step.action!, 'start');
-      const { result } = await executeAction(page, step.action!, step.args || [], vars);
+      const { result } = await executeAction(page, step.action!, step.args || [], vars, options.actionMap);
 
       // Set ephemeral registers
       vars.set('$ret', result);
@@ -819,7 +822,10 @@ const KNOWN_ACTIONS = new Set([
   'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'return',
 ]);
 
-export function validateSteps(steps: Step[], prefix: string = ''): string[] {
+export function validateSteps(steps: Step[], prefix: string = '', extraKnownActions?: Set<string>): string[] {
+  const allKnown = extraKnownActions
+    ? new Set([...KNOWN_ACTIONS, ...extraKnownActions])
+    : KNOWN_ACTIONS;
   const errors: string[] = [];
 
   for (let i = 0; i < steps.length; i++) {
@@ -845,7 +851,7 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     }
 
     // Unknown action
-    if (!KNOWN_ACTIONS.has(action)) {
+    if (!allKnown.has(action)) {
       errors.push(`${loc}: unknown action "${action}"`);
     }
 
@@ -961,11 +967,11 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
 
     // Recurse into nested steps (skip condition def items — they're ConditionNode[], not Step[])
     if (step.items && !(step.action === 'def' && step.type === 'condition')) {
-      errors.push(...validateSteps(step.items as Step[], `${loc}.items → `));
+      errors.push(...validateSteps(step.items as Step[], `${loc}.items → `, extraKnownActions));
     }
-    if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `));
-    if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `));
-    if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `));
+    if (step.then) errors.push(...validateSteps(step.then, `${loc}.then → `, extraKnownActions));
+    if (step.else) errors.push(...validateSteps(step.else, `${loc}.else → `, extraKnownActions));
+    if (step.finally) errors.push(...validateSteps(step.finally as Step[], `${loc}.finally → `, extraKnownActions));
   }
 
   return errors;
@@ -1007,14 +1013,31 @@ run(async ({ page, args: cliArgs }) => {
     return { success: false, error: 'Invalid JSON. Provide a JSON array or a path to a JSON file.' };
   }
 
+  // Build merged action map (built-in + rary extensions)
+  const { loadExtensionActions } = await import('./rary.js');
+  const extActions = await loadExtensionActions();
+  const mergedActionMap: Record<string, (page: any, args: any) => Promise<{ result?: any }>> = { ...ACTION_MAP };
+
+  // Check for built-in collisions
+  const builtinCollisions = Object.keys(extActions.actions).filter(k => k in ACTION_MAP);
+  if (builtinCollisions.length > 0) {
+    return { success: false, error: `Extension action conflicts with built-in: ${builtinCollisions.join(', ')}` };
+  }
+  if (extActions.errors.length > 0) {
+    return { success: false, error: 'Failed to load extension actions', data: { errors: extActions.errors } };
+  }
+  Object.assign(mergedActionMap, extActions.actions);
+
+  const extraKnownActions = new Set(Object.keys(extActions.actions));
+
   // Validate syntax before execution
-  const validationErrors = validateSteps(steps);
+  const validationErrors = validateSteps(steps, '', extraKnownActions);
   if (validationErrors.length > 0) {
     return { success: false, error: 'Validation failed', data: { errors: validationErrors } };
   }
 
   // Check for shell actions and build warnings
-  const warnings: string[] = [];
+  const warnings: string[] = [...extActions.warnings];
   const hasShell = steps.some(s => s.action === 'shell');
   if (hasShell && allowShell) {
     warnings.push('Warning: shell action enabled. Only run trusted sequences.');
@@ -1030,7 +1053,7 @@ run(async ({ page, args: cliArgs }) => {
   const { dirname } = await import('path');
   const baseDir = existsSync(input) ? dirname(input.startsWith('/') || input.includes(':') ? input : (await import('path')).resolve(input)) : process.cwd();
 
-  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir });
+  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap });
 
   // Clean up heartbeat and lock
   clearInterval(heartbeat);
