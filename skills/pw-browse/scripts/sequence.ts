@@ -811,7 +811,7 @@ export async function runSteps(
       // Emit core tab events after relevant actions
       if (options.runtime?.emitEvent) {
         if (step.action === 'navigate') {
-          const { findTabByPageIndex, findTabByUrl, updateTab, assignTabId, buildTabEvent } = await import('./tab-registry.js');
+          const { findTabByPageIndex, findTabByUrl, updateTab, assignTabId, buildTabEvent, TAB_EVENTS } = await import('./tab-registry.js');
           // Find existing tab: prefer pageIndex (accurate), fall back to URL
           const pageIndex = page.context().pages().indexOf(page);
           let navTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(result?.url);
@@ -820,7 +820,7 @@ export async function runSteps(
           } else {
             navTab = assignTabId(result?.url, result?.title, pageIndex >= 0 ? pageIndex : undefined);
           }
-          options.runtime.emitEvent('tab:navigated', buildTabEvent('tab:navigated', options.runtime.session.name, navTab));
+          options.runtime.emitEvent(TAB_EVENTS.NAVIGATED, buildTabEvent(TAB_EVENTS.NAVIGATED, options.runtime.session.name, navTab));
         }
       }
     } catch (err) {

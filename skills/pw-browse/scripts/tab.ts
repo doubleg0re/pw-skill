@@ -10,7 +10,7 @@ const headed = hasFlag(args, 'headed');
 async function main() {
   const { browser, context, session } = await connectBrowser({ headless: !headed });
   const { buildRuntime } = await import('./runtime.js');
-  const { assignTabId, buildTabEvent, restoreRegistry } = await import('./tab-registry.js');
+  const { assignTabId, buildTabEvent, restoreRegistry, TAB_EVENTS } = await import('./tab-registry.js');
   const { join } = await import('path');
 
   // Restore tab registry from session-scoped state (not project-local)
@@ -31,7 +31,7 @@ async function main() {
       const tabTitle = await page.title();
       const pageIndex = context.pages().indexOf(page);
       const tab = assignTabId(tabUrl, tabTitle, pageIndex);
-      runtime.emitEvent('tab:created', buildTabEvent('tab:created', session.name, tab));
+      runtime.emitEvent(TAB_EVENTS.CREATED, buildTabEvent(TAB_EVENTS.CREATED, session.name, tab));
       output({
         success: true,
         data: { tabId: tab.tabId, url: tabUrl, title: tabTitle, totalTabs: context.pages().length },
@@ -64,11 +64,11 @@ async function main() {
         output({ success: false, error: `Invalid index. ${pages.length} tabs open (0-${pages.length - 1})` });
         break;
       }
-      const { findTabByPageIndex, findTabByUrl, buildTabEvent } = await import('./tab-registry.js');
+      const { findTabByPageIndex, findTabByUrl, buildTabEvent: buildCloseEvent, TAB_EVENTS: CLOSE_EVENTS } = await import('./tab-registry.js');
       const closedTab = findTabByPageIndex(idx) || findTabByUrl(pages[idx].url());
       await pages[idx].close();
       if (closedTab) {
-        runtime.emitEvent('tab:closed', buildTabEvent('tab:closed', session.name, closedTab));
+        runtime.emitEvent(CLOSE_EVENTS.CLOSED, buildCloseEvent(CLOSE_EVENTS.CLOSED, session.name, closedTab));
       }
       output({ success: true, data: { closed: idx, tabId: closedTab?.tabId, remaining: context.pages().length } });
       break;

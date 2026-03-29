@@ -13,15 +13,32 @@ export interface TabEntry {
   createdAt: string;
 }
 
+// --- Core tab event contract ---
+// These are the standard runtime event names. Both core and extensions
+// may emit them, but they must follow the same payload contract.
+// Extensions emitting tab:* are supplementing core, not replacing it.
+
+export const TAB_EVENTS = {
+  CREATED: 'tab:created',
+  CLOSED: 'tab:closed',
+  NAVIGATED: 'tab:navigated',
+  ACTIVATED: 'tab:activated', // best-effort, second-scope
+} as const;
+
+export type TabEventName = (typeof TAB_EVENTS)[keyof typeof TAB_EVENTS];
+
 /** Canonical tab event payload — all tab:* events must use this shape */
 export interface TabEventPayload {
-  event: string;
+  event: TabEventName;
   session: string;
   tabId: number;
   url: string;
   title?: string;
   timestamp: string;
 }
+
+/** Required fields for TabEventPayload validation */
+export const TAB_EVENT_REQUIRED_FIELDS = ['event', 'session', 'tabId', 'url', 'timestamp'] as const;
 
 let nextId = 1;
 const registry = new Map<number, TabEntry>();
