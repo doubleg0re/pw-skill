@@ -566,12 +566,14 @@ pw-skill/
 - **File-based locking**: Cross-process session locks with stale detection (5min TTL), heartbeat for long operations, atomic JSON writes.
 - **$ref resolution**: `{ "$ref": "path" }` preserves types in sequence args. `{ "$literal": ... }` for escape. Depth-limited.
 - **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
+- **Extension Runtime SDK**: `ExtensionRuntimeContext` gives extensions session info, `cdpEndpoint`, `emitEvent()`, lazy browser/page access, and `registerCleanup()`. Extensions can register custom sequence actions, event handlers, and build persistent monitors — all without making core heavy.
+- **Extension sequence actions**: Active rary extensions can register custom actions in `larry.json` that become first-class sequence DSL actions. Per-run merged map, built-in collision rejection.
 - **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.
 - **Standardized result schema**: All environment-dependent operations report `warnings: string[]` array and consistent status fields.
 
 ## Tests
 
-228 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, and connect edge cases.
+265 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, connect edge cases, runtime SDK, and settings.
 
 ```bash
 npm test           # run all tests
