@@ -1050,3 +1050,62 @@ describe('validateSteps — subflow', () => {
     expect(errors[0]).toContain('requires "value"');
   });
 });
+
+describe('Flow Engine — subflow safety', () => {
+  it('$ret fallback symmetric with out (Option B)', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const defs = emptyDefs();
+
+    // func def with no return — last step result should go to both out and $ret
+    defs.set('noReturn', { kind: 'block', params: [], body: [
+      { action: 'log', text: 'inner' },
+    ] });
+
+    await runSteps(mockPage(), [
+      { action: 'call', name: 'noReturn', out: 'result' },
+    ], vars, results, defs);
+
+    expect(vars.get('result')).toBe('inner');
+    expect(vars.get('$ret')).toBe('inner');
+  });
+
+  it('cycle detection catches A->A', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const defs = emptyDefs();
+
+    defs.set('loopFlow', {
+      kind: 'flow', params: [], path: '/fake', steps: [
+        { action: 'call', name: 'loopFlow' },
+      ], info: { type: 'subflow' },
+    } as any);
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'call', name: 'loopFlow' },
+    ], vars, results, defs, 0, { callStack: [] });
+
+    expect(outcome.success).toBe(false);
+    const err = results.find(r => !r.success);
+    expect(err?.error).toContain('cycle detected');
+  });
+
+  it('max call depth protection', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const defs = emptyDefs();
+
+    defs.set('deep', {
+      kind: 'flow', params: [], path: '/fake', steps: [
+        { action: 'log', text: 'deep' },
+      ], info: { type: 'subflow' },
+    } as any);
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'call', name: 'deep' },
+    ], vars, results, defs, 0, { callDepth: 21 });
+
+    expect(outcome.success).toBe(false);
+    expect(results.find(r => !r.success)?.error).toContain('Max call depth');
+  });
+});

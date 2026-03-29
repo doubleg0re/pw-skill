@@ -253,6 +253,9 @@ export interface RunOptions {
   allowShell?: boolean;
   requestPermission?: boolean;
   debugLog?: boolean;
+  baseDir?: string; // base directory for resolving relative paths (subflows)
+  callDepth?: number; // current call nesting depth
+  callStack?: string[]; // call chain for cycle detection
 }
 
 export async function runSteps(
@@ -402,8 +405,8 @@ export async function runSteps(
             results.push({ step: stepIndex, action: 'def', success: false, error: `def type="flow" requires "path"` });
             return { success: false, failedAt: stepIndex };
           }
-          const { resolve } = await import('path');
-          const absPath = resolve(flowPath);
+          const { resolve, dirname } = await import('path');
+          const absPath = options.baseDir ? resolve(options.baseDir, flowPath) : resolve(flowPath);
           if (!existsSync(absPath)) {
             results.push({ step: stepIndex, action: 'def', success: false, error: `Subflow file not found: ${absPath}` });
             return { success: false, failedAt: stepIndex };
@@ -459,17 +462,41 @@ export async function runSteps(
           }
         }
         results.push({ step: stepIndex, action: 'call', success: true, data: { name: step.name, kind: def.kind } });
-        const sub = await runSteps(page, callBody, vars, results, defs, stepIndex * 1000, options);
+
+        // For flow calls: set baseDir to subflow's directory, track call depth/stack
+        const callOptions = def.kind === 'flow'
+          ? {
+              ...options,
+              baseDir: (await import('path')).dirname(def.path),
+              callDepth: (options.callDepth || 0) + 1,
+              callStack: [...(options.callStack || []), step.name!],
+            }
+          : options;
+
+        // Call depth protection
+        const MAX_CALL_DEPTH = 20;
+        if ((callOptions.callDepth || 0) > MAX_CALL_DEPTH) {
+          results.push({ step: stepIndex, action: 'call', success: false, error: `Max call depth (${MAX_CALL_DEPTH}) exceeded` });
+          return { success: false, failedAt: stepIndex };
+        }
+
+        // Cycle detection
+        if (def.kind === 'flow' && (options.callStack || []).includes(step.name!)) {
+          const chain = [...(options.callStack || []), step.name!].join(' -> ');
+          results.push({ step: stepIndex, action: 'call', success: false, error: `Subflow cycle detected: ${chain}` });
+          return { success: false, failedAt: stepIndex };
+        }
+
+        const sub = await runSteps(page, callBody, vars, results, defs, stepIndex * 1000, callOptions);
         if (!sub.success) return sub;
 
         // Capture return value (flow) or last step data (func)
-        if (sub.returnValue !== undefined) {
-          if (step.out) vars.set(step.out, sub.returnValue);
-          vars.set('$ret', sub.returnValue);
-        } else if (step.out) {
-          const lastResult = results[results.length - 1];
-          vars.set(step.out, lastResult?.data);
-        }
+        // Option B: $ret and out are always symmetric
+        const callResult = sub.returnValue !== undefined
+          ? sub.returnValue
+          : results[results.length - 1]?.data;
+        if (step.out) vars.set(step.out, callResult);
+        vars.set('$ret', callResult);
         if (sub.goto) {
           if (labelMap.has(sub.goto)) {
             if (++jumpCount > MAX_JUMPS) return { success: false, failedAt: stepIndex };
@@ -988,7 +1015,11 @@ run(async ({ page, args: cliArgs }) => {
   const vars = new VarStore();
   const results: StepResult[] = [];
   const defs = new Map<string, DefEntry>();
-  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog });
+  // Determine base directory for subflow path resolution
+  const { dirname } = await import('path');
+  const baseDir = existsSync(input) ? dirname(input.startsWith('/') || input.includes(':') ? input : (await import('path')).resolve(input)) : process.cwd();
+
+  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir });
 
   // Clean up heartbeat and lock
   clearInterval(heartbeat);
