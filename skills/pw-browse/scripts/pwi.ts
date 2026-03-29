@@ -1,29 +1,30 @@
 #!/usr/bin/env npx tsx
-// pwi — Lightweight inline action runner for pw-skill
-// Connects to browser directly without loading hooks, event handlers,
-// or runtime extensions. For full runtime, use pw :: chaining or pw sequence.
+// pwi — Lightweight one-shot browser runner
+// Launches a temporary browser, executes action(s), and exits.
+// No sessions, no CDP server, no hooks, no extensions.
+// For session-based work, use pw instead.
 //
 // Usage:
 //   pwi navigate https://example.com
-//   pwi click "#login"
-//   pwi dump --selector="#app" --text
-//   pwi navigate url :: click "#btn"       (multi-step → full runtime fallback)
-//   pwi navigate url --full                (force full runtime)
+//   pwi navigate https://example.com --screenshot
+//   pwi dump --selector="h1" --text
+//   pwi navigate url :: click "#login" :: screenshot
+import { chromium } from 'playwright';
 import { ACTION_MAP } from './actions.js';
 
-// --- Inline arg parser ---
+// --- Arg parser ---
 
 interface InlineStep {
   action: string;
   args: string[];
 }
 
-const GLOBAL_FLAGS = new Set(['session', 'headed', 'viewport', 'video', 'tab', 'no-restore', 'screenshot', 'full']);
+const OPTION_FLAGS = new Set(['headed', 'screenshot', 'viewport']);
 
-function isGlobalFlag(arg: string): boolean {
+function isOptionFlag(arg: string): boolean {
   if (!arg.startsWith('--')) return false;
   const name = arg.replace(/^--/, '').split('=')[0];
-  return GLOBAL_FLAGS.has(name);
+  return OPTION_FLAGS.has(name);
 }
 
 function parseInlineSteps(argv: string[]): { steps: InlineStep[] } {
@@ -34,7 +35,7 @@ function parseInlineSteps(argv: string[]): { steps: InlineStep[] } {
     if (arg === '::') {
       if (current.length > 0) segments.push(current);
       current = [];
-    } else if (isGlobalFlag(arg)) {
+    } else if (isOptionFlag(arg)) {
       // skip — handled separately
     } else {
       current.push(arg);
@@ -74,8 +75,12 @@ const EXCLUDED_ACTIONS = new Set([
 
 const rawArgs = process.argv.slice(2);
 const { steps } = parseInlineSteps(rawArgs);
-const hasFullFlag = rawArgs.includes('--full');
-const hasScreenshotFlag = rawArgs.includes('--screenshot');
+const headed = rawArgs.includes('--headed');
+const takeScreenshot = rawArgs.includes('--screenshot');
+const viewportFlag = rawArgs.find(a => a.startsWith('--viewport='));
+const viewport = viewportFlag
+  ? { width: parseInt(viewportFlag.split('=')[1].split('x')[0]), height: parseInt(viewportFlag.split('=')[1].split('x')[1]) }
+  : { width: 1920, height: 1080 };
 
 if (steps.length === 0) {
   console.log(JSON.stringify({ success: false, error: 'Usage: pwi <action> [args...] [:: <action> [args...] ...]' }));
@@ -84,85 +89,54 @@ if (steps.length === 0) {
 
 for (const step of steps) {
   if (EXCLUDED_ACTIONS.has(step.action)) {
-    console.log(JSON.stringify({ success: false, error: `"${step.action}" is not available in inline mode. Use "pw ${step.action}" instead.` }));
+    console.log(JSON.stringify({ success: false, error: `"${step.action}" is not available in pwi. Use "pw ${step.action}" instead.` }));
+    process.exit(1);
+  }
+  if (!ACTION_MAP[step.action]) {
+    console.log(JSON.stringify({ success: false, error: `Unknown action: "${step.action}". pwi only supports built-in actions.` }));
     process.exit(1);
   }
 }
 
-// --- Execution ---
+// --- Execute ---
 
-// Multi-step or --full → delegate to full runtime (run() with hooks, events, extensions)
-if (steps.length > 1 || hasFullFlag) {
-  const { run } = await import('./common.js');
-  run(async ({ page }) => {
-    const { VarStore, runSteps, validateSteps } = await import('./sequence.js');
-    const { loadExtensionActions } = await import('./rary.js');
-    const { hasFlag, screenshotPath } = await import('./common.js');
-
-    const seqSteps = steps.map(s => ({ action: s.action, args: buildActionArgs(s.args) }));
-    const { actions: extActions, warnings } = await loadExtensionActions();
-    const mergedActionMap = { ...ACTION_MAP, ...extActions };
-
-    const errors = validateSteps(seqSteps, mergedActionMap);
-    if (errors.length > 0) return { success: false, error: errors.join('; ') };
-
-    const vars = new VarStore();
-    const results: any[] = [];
-    const outcome = await runSteps(page, seqSteps, vars, results, new Map(), 0, { actionMap: mergedActionMap });
-
-    let finalScreenshot;
-    if (hasScreenshotFlag && outcome.success) {
-      finalScreenshot = screenshotPath();
-      await page.screenshot({ path: finalScreenshot });
-    }
-
-    return {
-      success: outcome.success,
-      data: steps.length === 1 ? (results[0]?.data ?? results[0]) : { results },
-      ...(finalScreenshot ? { screenshot: finalScreenshot } : {}),
-      ...(warnings.length > 0 ? { warnings } : {}),
-      ...(!outcome.success && outcome.failedAt !== undefined ? { error: `Step ${outcome.failedAt} failed` } : {}),
-    };
-  });
-} else {
-  // --- Lightweight path: single step, no hooks/extensions/runtime ---
-  const step = steps[0];
+async function main() {
+  const browser = await chromium.launch({ headless: !headed });
+  const context = await browser.newContext({ viewport });
+  const page = await context.newPage();
 
   try {
-    const { connectBrowser, parseArgs, hasFlag, parseFlag, screenshotPath, output } = await import('./common.js');
-    const cliArgs = parseArgs();
+    const results: any[] = [];
 
-    const { browser, context, page, session } = await connectBrowser({
-      headless: !hasFlag(cliArgs, 'headed'),
-      sessionName: parseFlag(cliArgs, 'session'),
-      restoreUrl: !hasFlag(cliArgs, 'no-restore'),
-    });
-
-    // Execute action directly from ACTION_MAP (no extension actions, no runtime)
-    const actionFn = ACTION_MAP[step.action];
-    if (!actionFn) {
-      output({ success: false, error: `Unknown action: "${step.action}". Use --full for extension actions.` });
-      process.exit(1);
+    for (const step of steps) {
+      const actionArgs = buildActionArgs(step.args);
+      const result = await ACTION_MAP[step.action](page, actionArgs);
+      results.push({ action: step.action, success: true, data: result?.result ?? result });
     }
 
-    const actionArgs = buildActionArgs(step.args);
-    const result = await actionFn(page, actionArgs);
-
-    let finalScreenshot;
-    if (hasScreenshotFlag) {
-      finalScreenshot = screenshotPath();
-      await page.screenshot({ path: finalScreenshot });
+    let screenshotPath: string | undefined;
+    if (takeScreenshot) {
+      const { ensureStateDir, screenshotPath: getPath } = await import('./common.js');
+      ensureStateDir();
+      screenshotPath = getPath();
+      await page.screenshot({ path: screenshotPath });
     }
 
-    output({
+    const output = {
       success: true,
-      data: result?.result ?? result,
-      ...(finalScreenshot ? { screenshot: finalScreenshot } : {}),
-    });
-    process.exit(0);
+      data: steps.length === 1 ? results[0].data : { results },
+      ...(screenshotPath ? { screenshot: screenshotPath } : {}),
+    };
+
+    console.log(JSON.stringify(output));
   } catch (err: any) {
-    const { output, buildErrorResult } = await import('./common.js');
-    output(buildErrorResult ? buildErrorResult(err) : { success: false, error: err.message });
-    process.exit(1);
+    console.log(JSON.stringify({ success: false, error: err.message }));
+  } finally {
+    await browser.close();
   }
 }
+
+main().catch(err => {
+  console.log(JSON.stringify({ success: false, error: err.message }));
+  process.exit(1);
+});
