@@ -60,26 +60,30 @@ pw console dump
 pw close --session=dev
 ```
 
-## Inline Mode (`pwi`)
+## One-shot Mode (`pwi`)
 
-`pwi` is a one-shot shorthand for quick browser actions. Same runtime, same extensions — just shorter.
+`pwi` launches a temporary browser, executes the action(s), and exits. No sessions, no CDP server, no hooks, no extensions. Just Playwright directly.
 
 ```bash
-# Single action
-pwi navigate https://example.com
-pwi click "#login"
+# One-shot: launches browser → executes → closes
+pwi navigate https://example.com --screenshot
 pwi dump --selector="h1" --text
+pwi navigate url :: click "#login" :: screenshot
 
-# Chained actions (:: separator)
-pwi fill "#email" "admin@test.com" :: fill "#password" "secret" :: click "#submit"
-pwi navigate https://example.com :: screenshot
-
-# Also works from pw directly
-pw navigate https://example.com :: click "#login" :: wait 1000
-pw --inline fill "#email" "test@test.com"
+# Options
+pwi navigate url --headed          # show browser window
+pwi navigate url --viewport=800x600
 ```
 
-Chaining is restricted to browser actions only. Session, admin, and package commands (`launch`, `close`, `rary`, etc.) are not chainable — use them as separate `pw` commands.
+No `pw launch` needed. For session-based persistent work, use `pw` instead.
+
+| Command | Browser | Session | Hooks/Extensions |
+|---------|---------|---------|------------------|
+| `pwi action` | temporary, auto-closes | none | none |
+| `pw action` | persistent via CDP | required | loaded |
+| `pw a :: b` | persistent via CDP | required | loaded |
+
+Chaining is restricted to browser actions only. Session, admin, and package commands (`launch`, `close`, `rary`, etc.) are not chainable.
 
 ## Extensions
 
@@ -640,7 +644,7 @@ pw-skill/
 - **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
 - **Extension Runtime SDK**: `ExtensionRuntimeContext` gives extensions session info, `cdpEndpoint`, `emitEvent()`, lazy browser/page access, and `registerCleanup()`. Extensions can register custom sequence actions, event handlers, and build persistent monitors — all without making core heavy.
 - **Extension sequence actions**: Active rary extensions can register custom actions in `larry.json` that become first-class sequence DSL actions. Per-run merged map, built-in collision rejection.
-- **Inline mode (`pwi`)**: `pwi navigate url :: click #btn :: screenshot` — one-shot shorthand that compiles to sequence steps. Same runtime, same extensions, no new DSL.
+- **One-shot mode (`pwi`)**: Launches a temporary browser, executes action(s), and exits. No sessions, no CDP server, no hooks. For quick tasks without `pw launch`.
 - **Stable tab events**: `TAB_EVENTS` constants with canonical `TabEventPayload`. Core and extensions follow the same contract. Cross-contract tests enforce consistency.
 - **requiresRary**: Flows declare extension dependencies via `info.requiresRary`. Missing extensions fail fast. CLI `--rary=name` also supported.
 - **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.

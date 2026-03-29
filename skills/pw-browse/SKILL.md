@@ -539,22 +539,18 @@ run(async ({ page }) => {
 Write temporary scripts in the project's `scripts/playwright/` directory.
 Clean up unnecessary temporary scripts when running `pw-close`.
 
-## Inline Mode (pwi)
+## One-shot Mode (pwi)
 
-`pwi` is a one-shot shorthand for quick browser actions. Same runtime, same extensions.
+`pwi` launches a temporary browser, executes the action(s), and exits. No `pw launch` needed. No sessions, no hooks, no extensions.
 
 ```bash
-# Single action
-npx tsx {script_path}/pwi.ts navigate https://example.com
-npx tsx {script_path}/pwi.ts click "#login"
+# One-shot: launches browser → executes → closes
+npx tsx {script_path}/pwi.ts navigate https://example.com --screenshot
 npx tsx {script_path}/pwi.ts dump --selector="h1" --text
-
-# Chained actions (:: separator)
-npx tsx {script_path}/pwi.ts fill "#email" "admin@test.com" :: fill "#password" "secret" :: click "#submit"
-npx tsx {script_path}/pwi.ts navigate https://example.com :: screenshot
+npx tsx {script_path}/pwi.ts navigate url :: click "#login" :: screenshot --headed
 ```
 
-Also available via `pw --inline` or `pw -i`. Top-level `pw` also supports `::` chaining for browser actions:
+For session-based persistent work, use `pw` commands instead:
 
 ```bash
 npx tsx {script_path}/pw.ts navigate https://example.com :: click "#login" :: wait 1000
