@@ -15,7 +15,7 @@ interface InlineStep {
 }
 
 // Global flags consumed by run() via process.argv — not forwarded to actions
-const GLOBAL_FLAGS = new Set(['session', 'headed', 'viewport', 'video', 'tab', 'no-restore']);
+const GLOBAL_FLAGS = new Set(['session', 'headed', 'viewport', 'video', 'tab', 'no-restore', 'screenshot']);
 
 function isGlobalFlag(arg: string): boolean {
   if (!arg.startsWith('--')) return false;
@@ -130,6 +130,7 @@ if (steps.length === 1) {
   run(async ({ page }) => {
     const { VarStore, executeAction } = await import('./sequence.js');
     const { loadExtensionActions } = await import('./rary.js');
+    const { hasFlag, screenshotPath } = await import('./common.js');
 
     const { actions: extActions, warnings } = await loadExtensionActions();
     const mergedActionMap = { ...ACTION_MAP, ...extActions };
@@ -137,9 +138,18 @@ if (steps.length === 1) {
     const vars = new VarStore();
     const actionArgs = buildActionArgs(step.args);
     const result = await executeAction(page, step.action, actionArgs, vars, mergedActionMap);
+
+    const takeScreenshot = hasFlag(process.argv.slice(2), 'screenshot');
+    let finalScreenshot;
+    if (takeScreenshot) {
+      finalScreenshot = screenshotPath();
+      await page.screenshot({ path: finalScreenshot });
+    }
+
     return {
       success: true,
       data: result?.result ?? result,
+      ...(finalScreenshot ? { screenshot: finalScreenshot } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
     };
   });
@@ -148,6 +158,7 @@ if (steps.length === 1) {
   run(async ({ page }) => {
     const { VarStore, runSteps, validateSteps } = await import('./sequence.js');
     const { loadExtensionActions } = await import('./rary.js');
+    const { hasFlag, screenshotPath } = await import('./common.js');
 
     const seqSteps = toSequenceSteps(steps);
 
@@ -169,9 +180,17 @@ if (steps.length === 1) {
       actionMap: mergedActionMap,
     });
 
+    const takeScreenshot = hasFlag(process.argv.slice(2), 'screenshot');
+    let finalScreenshot;
+    if (takeScreenshot && outcome.success) {
+      finalScreenshot = screenshotPath();
+      await page.screenshot({ path: finalScreenshot });
+    }
+
     return {
       success: outcome.success,
       data: { results },
+      ...(finalScreenshot ? { screenshot: finalScreenshot } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
       ...(!outcome.success && outcome.failedAt !== undefined
         ? { error: `Step ${outcome.failedAt} failed` }
