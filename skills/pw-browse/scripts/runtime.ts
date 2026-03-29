@@ -113,35 +113,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
   const handlers = opts.eventHandlers || [];
   const logger = defaultLogger;
 
-  const emitEvent = (event: string, payload: any): void => {
-    // Core tab registry GC: auto-remove tab on tab:closed
-    if (event === TAB_EVENTS.CLOSED && payload?.tabId != null) {
-      try { removeTab(payload.tabId); } catch {}
-    }
-
-    // Fire-and-forget: dispatch to matching handlers via Promise.allSettled
-    const matching = handlers.filter(h => h.event === event);
-    if (matching.length === 0) return;
-
-    Promise.allSettled(
-      matching.map(h => {
-        try {
-          return Promise.resolve(h.fn(payload));
-        } catch (err) {
-          return Promise.reject(err);
-        }
-      })
-    ).then(results => {
-      results.forEach((res, i) => {
-        if (res.status === 'rejected') {
-          const h = matching[i];
-          logger.warn(`Event handler error (${h.packageName}:${event}): ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`);
-        }
-      });
-    });
-  };
-
-  return {
+  // Build runtime object first so emitEvent can pass it to handlers
+  const runtime: ExtensionRuntimeContext & { _cleanups: (() => Promise<void> | void)[] } = {
     session: {
       id: opts.session.id,
       name: opts.session.name,
@@ -157,13 +130,43 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
     getPage: async () => opts.page,
     tab: opts.tab ?? (opts.page ? {
       url: typeof opts.page.url === 'function' ? opts.page.url() : undefined,
-      title: undefined, // lazy — call getPage().title() if needed
+      title: undefined,
     } : undefined),
-    emitEvent,
+    emitEvent: null as any, // set below
     registerCleanup: (fn) => { cleanups.push(fn); },
     logger,
     _cleanups: cleanups,
   };
+
+  runtime.emitEvent = (event: string, payload: any): void => {
+    // Core tab registry GC: auto-remove tab on tab:closed
+    if (event === TAB_EVENTS.CLOSED && payload?.tabId != null) {
+      try { removeTab(payload.tabId); } catch {}
+    }
+
+    // Fire-and-forget: dispatch to matching handlers with runtime context
+    const matching = handlers.filter(h => h.event === event);
+    if (matching.length === 0) return;
+
+    Promise.allSettled(
+      matching.map(h => {
+        try {
+          return Promise.resolve(h.fn(payload, runtime));
+        } catch (err) {
+          return Promise.reject(err);
+        }
+      })
+    ).then(results => {
+      results.forEach((res, i) => {
+        if (res.status === 'rejected') {
+          const h = matching[i];
+          logger.warn(`Event handler error (${h.packageName}:${event}): ${res.reason instanceof Error ? res.reason.message : String(res.reason)}`);
+        }
+      });
+    });
+  };
+
+  return runtime;
 }
 
 /**

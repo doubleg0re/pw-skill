@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresRary } from '../skills/pw-browse/scripts/sequence.js';
+import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresRary, loadParams } from '../skills/pw-browse/scripts/sequence.js';
 
 // Mock page object — only need methods that flow control actions use
 function mockPage(overrides: Record<string, any> = {}): any {
@@ -1028,6 +1028,63 @@ describe('validateRequiresRary', () => {
     expect(err).toContain('"a"');
     expect(err).toContain('"c"');
     expect(err).not.toContain('"b"');
+  });
+});
+
+// --- loadParams ---
+
+describe('loadParams', () => {
+  it('loads params from JSON string', () => {
+    const vars = new VarStore();
+    const err = loadParams(vars, '{"url":"https://example.com","name":"test"}');
+    expect(err).toBeNull();
+    expect(vars.get('url')).toBe('https://example.com');
+    expect(vars.get('name')).toBe('test');
+  });
+
+  it('rejects invalid JSON', () => {
+    const vars = new VarStore();
+    expect(loadParams(vars, 'NOT JSON')).toContain('not valid JSON');
+  });
+
+  it('rejects arrays', () => {
+    const vars = new VarStore();
+    expect(loadParams(vars, '[1,2,3]')).toContain('must be a JSON object');
+  });
+
+  it('rejects forbidden keys', () => {
+    const vars = new VarStore();
+    const err = loadParams(vars, '{"action":"navigate","url":"test"}');
+    expect(err).toContain('forbidden keys');
+    expect(err).toContain('action');
+  });
+
+  it('skips $id and load metadata keys', () => {
+    const vars = new VarStore();
+    const err = loadParams(vars, '{"$id":"test","url":"https://example.com"}');
+    expect(err).toBeNull();
+    expect(vars.get('$id')).toBeUndefined();
+    expect(vars.get('url')).toBe('https://example.com');
+  });
+
+  it('loads nested objects as values', () => {
+    const vars = new VarStore();
+    loadParams(vars, '{"credentials":{"email":"a@b.com","pass":"secret"}}');
+    expect(vars.get('credentials')).toEqual({ email: 'a@b.com', pass: 'secret' });
+  });
+
+  it('loads from file path', () => {
+    const { writeFileSync, mkdtempSync, rmSync } = require('fs');
+    const { join } = require('path');
+    const tmpDir = mkdtempSync(join(require('os').tmpdir(), 'params-test-'));
+    const filePath = join(tmpDir, 'params.json');
+    writeFileSync(filePath, '{"site":"https://example.com"}');
+
+    const vars = new VarStore();
+    const err = loadParams(vars, filePath);
+    expect(err).toBeNull();
+    expect(vars.get('site')).toBe('https://example.com');
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 

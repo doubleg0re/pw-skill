@@ -1009,6 +1009,54 @@ export function validateSteps(steps: Step[], prefix: string = '', extraKnownActi
   return errors;
 }
 
+// --- Params loading (exported for testing) ---
+
+const FORBIDDEN_PARAM_KEYS = new Set([
+  'action', 'def', 'call', 'condition', 'each', 'loop', 'try', 'catch',
+  'finally', 'shell', 'return', 'flow', 'items', 'comment',
+]);
+
+/** Load params from JSON string or file path into VarStore. Returns error string or null. */
+export function loadParams(vars: VarStore, paramsArg: string): string | null {
+  let data: Record<string, any>;
+  try {
+    if (existsSync(paramsArg)) {
+      data = JSON.parse(readFileSync(paramsArg, 'utf-8'));
+    } else {
+      data = JSON.parse(paramsArg);
+    }
+  } catch {
+    return `Invalid --params: not valid JSON or file not found.`;
+  }
+
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return `--params must be a JSON object, not ${Array.isArray(data) ? 'array' : typeof data}.`;
+  }
+
+  // Check forbidden keys
+  const forbidden = Object.keys(data).filter(k => FORBIDDEN_PARAM_KEYS.has(k));
+  if (forbidden.length > 0) {
+    return `--params contains forbidden keys: ${forbidden.join(', ')}. Params are data-only.`;
+  }
+
+  // Load referenced param files ($id and load are metadata, skip them)
+  for (const [key, value] of Object.entries(data)) {
+    if (key === '$id' || key === 'load') continue;
+    vars.set(key, value);
+  }
+
+  // Handle "load" — merge additional param files
+  if (Array.isArray(data.load)) {
+    for (const loadPath of data.load) {
+      if (typeof loadPath !== 'string') continue;
+      const subError = loadParams(vars, loadPath);
+      if (subError) return subError;
+    }
+  }
+
+  return null;
+}
+
 // --- requiresRary validation (exported for testing) ---
 
 export function validateRequiresRary(
@@ -1121,6 +1169,16 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   }
 
   const vars = new VarStore();
+
+  // --- --params: inject external parameters into VarStore ---
+  const paramsArg = cliArgs.find((a: string) => a.startsWith('--params='))?.slice('--params='.length)
+    || (cliArgs.indexOf('--params') >= 0 ? cliArgs[cliArgs.indexOf('--params') + 1] : undefined);
+
+  if (paramsArg) {
+    const paramsError = loadParams(vars, paramsArg);
+    if (paramsError) return { success: false, error: paramsError };
+  }
+
   const results: StepResult[] = [];
   const defs = new Map<string, DefEntry>();
   // Determine base directory for subflow path resolution

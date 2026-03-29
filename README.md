@@ -165,6 +165,8 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | `pw tab close <index>` | Close tab |
 | `pw status` | Session status (pages, URL, title) |
 
+> **Caution for AI agents:** Unless the user explicitly asks to close every session, avoid using `--all`. Other agents or background tasks may have active sessions you do not know about. Prefer plain `pw close` to safely terminate the current bound session.
+
 ### Debugging
 
 | Command | Description |
@@ -536,8 +538,11 @@ pw-skill/
         common.ts                 # Shared: connect, run wrapper, flags, screenshotPath
         session.ts                # Global session store (DI-based)
         session-commands.ts       # launch/use/sessions/close implementations
+        pwi.ts                    # Inline action shorthand (pwi / pw --inline)
         actions.ts                # Shared action module (CLI + sequence)
-        sequence.ts               # Flow engine
+        sequence.ts               # Flow engine + requiresRary
+        runtime.ts                # Extension Runtime SDK
+        tab-registry.ts           # Stable tab identity + TAB_EVENTS contract
         trace.ts                  # Trace recording
         video.ts                  # Video management
         video-utils.ts            # Video rename helpers
@@ -548,7 +553,10 @@ pw-skill/
         tab.ts, status.ts
     pw-test/SKILL.md
     pw-close/SKILL.md
-  tests/                          # 124 tests (vitest)
+  extensions/
+    pw-monitor/                   # Per-command tab sync extension
+    pw-persist-user-action/       # Overlay persistence across navigation
+  tests/                          # 325 tests (vitest)
   package.json
 ```
 
@@ -568,6 +576,9 @@ pw-skill/
 - **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
 - **Extension Runtime SDK**: `ExtensionRuntimeContext` gives extensions session info, `cdpEndpoint`, `emitEvent()`, lazy browser/page access, and `registerCleanup()`. Extensions can register custom sequence actions, event handlers, and build persistent monitors — all without making core heavy.
 - **Extension sequence actions**: Active rary extensions can register custom actions in `larry.json` that become first-class sequence DSL actions. Per-run merged map, built-in collision rejection.
+- **Inline mode (`pwi`)**: `pwi navigate url :: click #btn :: screenshot` — one-shot shorthand that compiles to sequence steps. Same runtime, same extensions, no new DSL.
+- **Stable tab events**: `TAB_EVENTS` constants with canonical `TabEventPayload`. Core and extensions follow the same contract. Cross-contract tests enforce consistency.
+- **requiresRary**: Flows declare extension dependencies via `info.requiresRary`. Missing extensions fail fast. CLI `--rary=name` also supported.
 - **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.
 - **Standardized result schema**: All environment-dependent operations report `warnings: string[]` array and consistent status fields.
 
@@ -586,7 +597,7 @@ See [Core and Extension Runtime Guide](docs/CORE-AND-EXTENSION-RUNTIME-GUIDE.md)
 
 ## Tests
 
-265 tests using vitest, covering session management, sequence flow engine, variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, connect edge cases, runtime SDK, and settings.
+325 tests using vitest, covering session management, sequence flow engine (incl. requiresRary), variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, connect edge cases, runtime SDK, event contract validation, tab sync (pw-monitor), pending action state (pw-persist-user-action), and settings.
 
 ```bash
 npm test           # run all tests
