@@ -586,9 +586,9 @@ describe('validateSteps', () => {
     expect(errors[0]).toContain('then');
   });
 
-  it('step with no action or label is an error', () => {
+  it('step with no action, label, or comment is an error', () => {
     const errors = validateSteps([{} as any]);
-    expect(errors[0]).toContain('no action or label');
+    expect(errors[0]).toContain('no action');
   });
 });
 
@@ -933,5 +933,40 @@ describe('Flow Engine — ephemeral registers', () => {
 
     const logs = results.filter(r => r.action === 'log');
     expect(logs[0].data).toContain('boom');
+  });
+});
+
+// --- Wrapper format ---
+
+describe('Flow Engine — wrapper format', () => {
+  it('comment-only step is skipped', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    await runSteps(mockPage(), [
+      { comment: 'this is a note' } as any,
+      { action: 'log', text: 'after comment' },
+    ], vars, results, emptyDefs());
+
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs).toHaveLength(1);
+    expect(logs[0].data).toBe('after comment');
+  });
+});
+
+describe('validateSteps — wrapper', () => {
+  it('comment-only step is valid', () => {
+    const errors = validateSteps([{ comment: 'note' } as any]);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('comment + action is invalid', () => {
+    const errors = validateSteps([{ comment: 'note', action: 'click', args: ['#x'] } as any]);
+    expect(errors[0]).toContain('both "comment" and "action"');
+  });
+
+  it('empty step is invalid', () => {
+    const errors = validateSteps([{} as any]);
+    expect(errors[0]).toContain('no action');
   });
 });

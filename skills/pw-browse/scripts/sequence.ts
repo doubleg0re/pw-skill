@@ -70,7 +70,7 @@ interface Step {
   action?: string;
   args?: string[] | Record<string, any>;
   out?: string;
-  desc?: string;
+  // comment (no-op documentation)
   comment?: string;
   // label / goto
   label?: string;
@@ -719,14 +719,23 @@ export function validateSteps(steps: Step[], prefix: string = ''): string[] {
     const step = steps[i];
     const loc = `${prefix}Step ${i}`;
 
-    // Label-only step
+    // Label-only or comment-only step
     if (!step.action && step.label) continue;
-    if (!step.action && !step.label) {
-      errors.push(`${loc}: step has no action or label`);
+    if (!step.action && step.comment) {
+      // comment-only step — valid no-op
+      continue;
+    }
+    if (!step.action && !step.label && !step.comment) {
+      errors.push(`${loc}: step has no action, label, or comment`);
       continue;
     }
 
     const action = step.action!;
+
+    // comment + action is invalid
+    if (step.comment && step.action) {
+      errors.push(`${loc}: step cannot have both "comment" and "action"`);
+    }
 
     // Unknown action
     if (!KNOWN_ACTIONS.has(action)) {
@@ -861,17 +870,23 @@ run(async ({ page, args: cliArgs }) => {
   const heartbeat = setInterval(() => refreshLock(lockPath), 30000);
 
   let steps: Step[];
+  let info: any = undefined;
   try {
-    if (existsSync(input)) {
-      steps = JSON.parse(readFileSync(input, 'utf-8'));
+    const raw = existsSync(input)
+      ? JSON.parse(readFileSync(input, 'utf-8'))
+      : JSON.parse(input);
+
+    if (Array.isArray(raw)) {
+      steps = raw;
+    } else if (raw && typeof raw === 'object' && Array.isArray(raw.flow)) {
+      steps = raw.flow;
+      info = raw.info || undefined;
     } else {
-      steps = JSON.parse(input);
+      return { success: false, error: 'JSON must be an array of steps or an object with { info?, flow: [...] }.' };
     }
   } catch {
     return { success: false, error: 'Invalid JSON. Provide a JSON array or a path to a JSON file.' };
   }
-
-  if (!Array.isArray(steps)) return { success: false, error: 'JSON must be an array of steps.' };
 
   // Validate syntax before execution
   const validationErrors = validateSteps(steps);
@@ -905,6 +920,7 @@ run(async ({ page, args: cliArgs }) => {
     success: outcome.success,
     screenshot: path,
     data: {
+      ...(info ? { info } : {}),
       completed: results.filter(r => r.success).length,
       total: results.length,
       results,
