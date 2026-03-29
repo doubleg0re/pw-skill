@@ -4,6 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import {
   createSessionStore,
+  getProcessStartTime,
   type SessionStore,
 } from '../skills/pw-browse/scripts/session.js';
 
@@ -96,5 +97,19 @@ describe('hookErrors visibility', () => {
       // success path
     } catch {}
     expect(hookErrors).toHaveLength(0);
+  });
+});
+
+describe('getProcessStartTime', () => {
+  it('returns ISO string for own process', () => {
+    const startTime = getProcessStartTime(process.pid);
+    expect(startTime).not.toBeNull();
+    // Should be a valid ISO date
+    expect(new Date(startTime!).getTime()).toBeGreaterThan(0);
+  });
+
+  it('returns null for dead PID', () => {
+    const startTime = getProcessStartTime(99999999);
+    expect(startTime).toBeNull();
   });
 });

@@ -35,6 +35,35 @@ export function generateSessionId(): string {
 
 import { execSync } from 'child_process';
 
+/**
+ * Get process start time as ISO string. Used to detect PID recycling.
+ * Returns null if unavailable.
+ */
+export function getProcessStartTime(pid: number): string | null {
+  try {
+    if (process.platform === 'win32') {
+      const output = execSync(`wmic process where ProcessId=${pid} get CreationDate /format:list`, {
+        encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const match = output.match(/CreationDate=(\d{14})/);
+      if (match) {
+        const s = match[1];
+        return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(8, 10)}:${s.slice(10, 12)}:${s.slice(12, 14)}Z`;
+      }
+      return null;
+    } else {
+      const output = execSync(`ps -o lstart= -p ${pid}`, {
+        encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const trimmed = output.trim();
+      if (!trimmed) return null;
+      return new Date(trimmed).toISOString();
+    }
+  } catch {
+    return null;
+  }
+}
+
 export function isProcessAlive(pid: number): boolean {
   try {
     // Basic signal check (works on Unix, limited on Windows)
