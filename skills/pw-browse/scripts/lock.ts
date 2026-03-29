@@ -2,12 +2,13 @@
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
 import { atomicWriteJSON, readJSONSafe } from './file-utils.js';
-import { isProcessAlive } from './session.js';
+import { isProcessAlive, getProcessStartTime } from './session.js';
 
 const DEFAULT_STALE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface LockInfo {
   pid: number;
+  processStartTime?: string | null;
   createdAt: string;
   updatedAt: string;
   operation?: string;
@@ -51,6 +52,7 @@ export function acquireLock(lockPath: string, operation?: string): boolean {
   const now = new Date().toISOString();
   const lock: LockInfo = {
     pid: process.pid,
+    processStartTime: getProcessStartTime(process.pid),
     createdAt: now,
     updatedAt: now,
     ...(operation ? { operation } : {}),
@@ -100,7 +102,16 @@ export function checkLock(lockPath: string, staleTtlMs: number = DEFAULT_STALE_T
     return { status: 'stale', lock, reason: `pid ${lock.pid} dead` };
   }
 
-  // PID alive but lock is very old → uncertain (PID recycling risk)
+  // PID alive — verify it's the same process (PID recycling defense)
+  if (lock.processStartTime) {
+    const currentStartTime = getProcessStartTime(lock.pid);
+    if (currentStartTime && currentStartTime !== lock.processStartTime) {
+      // PID was recycled — different process occupies this PID now
+      return { status: 'stale', lock, reason: `pid ${lock.pid} recycled (start time mismatch: lock=${lock.processStartTime}, current=${currentStartTime})` };
+    }
+  }
+
+  // PID alive but lock is very old → uncertain
   if (age > staleTtlMs) {
     return { status: 'uncertain', lock, reason: `pid ${lock.pid} alive but lock age ${Math.round(age / 1000)}s exceeds TTL` };
   }

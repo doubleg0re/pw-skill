@@ -160,4 +160,19 @@ describe('VarStore — resolveValue', () => {
     expect(vars.resolveValue(true)).toBe(true);
     expect(vars.resolveValue(null)).toBeNull();
   });
+
+  it('throws on cycle detection', () => {
+    const vars = new VarStore();
+    const obj: any = { a: 1 };
+    obj.self = obj; // circular reference
+    expect(() => vars.resolveValue(obj)).toThrow('cycle detected');
+  });
+
+  it('throws on node count exceeded', () => {
+    const vars = new VarStore();
+    // Create a wide object with 600 keys
+    const wide: any = {};
+    for (let i = 0; i < 600; i++) wide[`k${i}`] = i;
+    expect(() => vars.resolveValue(wide)).toThrow('node count exceeded');
+  });
 });

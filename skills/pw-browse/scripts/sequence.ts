@@ -181,14 +181,25 @@ export class VarStore {
    * - array → recurse each element
    * - plain object → recurse each value
    */
-  resolveValue(val: any, depth: number = 0): any {
-    if (depth > 20) throw new Error('$ref resolution depth exceeded (max 20)');
+  private static MAX_RESOLVE_DEPTH = 20;
+  private static MAX_RESOLVE_NODES = 500;
+
+  resolveValue(val: any, depth: number = 0, state?: { nodeCount: number; visited: Set<any> }): any {
+    const s = state || { nodeCount: 0, visited: new Set() };
+
+    if (depth > VarStore.MAX_RESOLVE_DEPTH) throw new Error('$ref resolution depth exceeded (max 20)');
+    if (s.nodeCount > VarStore.MAX_RESOLVE_NODES) throw new Error('$ref resolution node count exceeded (max 500)');
+    s.nodeCount++;
 
     // String → interpolate
     if (typeof val === 'string') return this.interpolate(val);
 
     // Null/undefined/primitive
     if (val === null || val === undefined || typeof val !== 'object') return val;
+
+    // Cycle detection
+    if (s.visited.has(val)) throw new Error('$ref resolution cycle detected');
+    s.visited.add(val);
 
     // $literal → unwrap
     if ('$literal' in val && Object.keys(val).length === 1) {
@@ -202,13 +213,13 @@ export class VarStore {
 
     // Array → recurse
     if (Array.isArray(val)) {
-      return val.map(item => this.resolveValue(item, depth + 1));
+      return val.map(item => this.resolveValue(item, depth + 1, s));
     }
 
     // Object → recurse values
     const result: Record<string, any> = {};
     for (const [k, v] of Object.entries(val)) {
-      result[k] = this.resolveValue(v, depth + 1);
+      result[k] = this.resolveValue(v, depth + 1, s);
     }
     return result;
   }
