@@ -1,0 +1,15 @@
+{
+  "name": "pw-monitor",
+  "version": "0.1.0",
+  "description": "Runtime tab monitor — syncs live browser targets with stable tab registry",
+  "type": "extension",
+  "hooks": {
+    "load": {
+      "entry": "src/load-hook.ts"
+    },
+    "close": {
+      "entry": "src/close-hook.ts"
+    }
+  },
+  "events": {}
+}
