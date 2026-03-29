@@ -7,6 +7,7 @@ import { atomicWriteJSON } from './file-utils.js';
 
 export interface TabEntry {
   tabId: number;
+  pageIndex?: number; // Playwright page array index at creation time
   url: string;
   title?: string;
   createdAt: string;
@@ -26,9 +27,10 @@ let nextId = 1;
 const registry = new Map<number, TabEntry>();
 let persistPath: string | null = null;
 
-export function assignTabId(url: string, title?: string): TabEntry {
+export function assignTabId(url: string, title?: string, pageIndex?: number): TabEntry {
   const entry: TabEntry = {
     tabId: nextId++,
+    pageIndex,
     url,
     title,
     createdAt: new Date().toISOString(),
@@ -62,6 +64,13 @@ export function listTabs(): TabEntry[] {
 export function findTabByUrl(url: string): TabEntry | undefined {
   for (const entry of registry.values()) {
     if (entry.url === url) return entry;
+  }
+  return undefined;
+}
+
+export function findTabByPageIndex(pageIndex: number): TabEntry | undefined {
+  for (const entry of registry.values()) {
+    if (entry.pageIndex === pageIndex) return entry;
   }
   return undefined;
 }

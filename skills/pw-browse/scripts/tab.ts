@@ -29,7 +29,8 @@ async function main() {
       }
       const tabUrl = page.url();
       const tabTitle = await page.title();
-      const tab = assignTabId(tabUrl, tabTitle);
+      const pageIndex = context.pages().indexOf(page);
+      const tab = assignTabId(tabUrl, tabTitle, pageIndex);
       runtime.emitEvent('tab:created', buildTabEvent('tab:created', session.name, tab));
       output({
         success: true,
@@ -63,9 +64,8 @@ async function main() {
         output({ success: false, error: `Invalid index. ${pages.length} tabs open (0-${pages.length - 1})` });
         break;
       }
-      const closedUrl = pages[idx].url();
-      const { findTabByUrl, buildTabEvent } = await import('./tab-registry.js');
-      const closedTab = findTabByUrl(closedUrl);
+      const { findTabByPageIndex, findTabByUrl, buildTabEvent } = await import('./tab-registry.js');
+      const closedTab = findTabByPageIndex(idx) || findTabByUrl(pages[idx].url());
       await pages[idx].close();
       if (closedTab) {
         runtime.emitEvent('tab:closed', buildTabEvent('tab:closed', session.name, closedTab));
