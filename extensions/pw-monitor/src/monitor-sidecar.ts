@@ -123,7 +123,7 @@ async function connect(): Promise<void> {
           persistRegistry();
         }
       } catch {}
-    }, 2000);
+    }, 500);
   });
 
   ws.addEventListener('message', (event: MessageEvent) => {

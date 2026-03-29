@@ -97,7 +97,7 @@
   <div id="pending-list"><span class="empty">none</span></div>
 </div>
 
-<div class="footer">pw-monitor dashboard &mdash; file polling @ 1s</div>
+<div class="footer">pw-monitor dashboard &mdash; SSE via fs.watch (polling fallback)</div>
 
 <script>
 const API = '/api/state';
@@ -173,9 +173,31 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// Poll every 1 second
-poll();
-setInterval(poll, 1000);
+// SSE: real-time updates via fs.watch, fallback to polling
+let useSSE = true;
+let eventCount = 0;
+
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (event) => {
+    try {
+      const state = JSON.parse(event.data);
+      eventCount++;
+      document.getElementById('poll-status').textContent = `live #${eventCount}`;
+      render(state);
+    } catch {}
+  };
+  es.onerror = () => {
+    es.close();
+    useSSE = false;
+    document.getElementById('poll-status').textContent = 'SSE lost, polling...';
+    // Fallback to polling
+    setInterval(poll, 1000);
+  };
+}
+
+// Initial fetch + start SSE
+poll().then(() => connectSSE());
 </script>
 
 </body>
