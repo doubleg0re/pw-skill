@@ -60,6 +60,68 @@ pw console dump
 pw close --session=dev
 ```
 
+## Inline Mode (`pwi`)
+
+`pwi` is a one-shot shorthand for quick browser actions. Same runtime, same extensions — just shorter.
+
+```bash
+# Single action
+pwi navigate https://example.com
+pwi click "#login"
+pwi dump --selector="h1" --text
+
+# Chained actions (:: separator)
+pwi fill "#email" "admin@test.com" :: fill "#password" "secret" :: click "#submit"
+pwi navigate https://example.com :: screenshot
+
+# Also works from pw directly
+pw navigate https://example.com :: click "#login" :: wait 1000
+pw --inline fill "#email" "test@test.com"
+```
+
+Chaining is restricted to browser actions only. Session, admin, and package commands (`launch`, `close`, `rary`, etc.) are not chainable — use them as separate `pw` commands.
+
+## Extensions
+
+pw-skill uses a lightweight extension system called `rary`. Extensions can add event handlers, hooks, and custom sequence actions.
+
+```bash
+# Install and activate an extension
+pw rary get <repo-or-path>
+pw rary put <package-name>
+
+# List installed extensions
+pw rary toybox
+
+# Deactivate
+pw rary yoink <package-name>
+```
+
+### Built-in Extensions
+
+| Extension | Description |
+|---|---|
+| `pw-monitor` | Per-command tab sync — detects tab changes via CDP, emits `tab:created`/`closed`/`navigated` events |
+| `pw-persist-user-action` | Persists user-action overlay state across navigation — re-injects overlay on tab change |
+
+### Extension Dependencies in Flows
+
+Flows can declare required extensions via `info.requiresRary`:
+
+```json
+{
+  "info": {
+    "name": "login-flow",
+    "requiresRary": ["pw-monitor"]
+  },
+  "flow": [
+    { "action": "navigate", "args": ["https://example.com/login"] }
+  ]
+}
+```
+
+Missing extensions fail fast with a clear error. CLI override: `pw sequence flow.json --rary=pw-monitor`.
+
 ## Session Management
 
 Sessions are the core of pw-skill. Each session is a named, persistent Chromium process with its own user-data directory stored globally at `~/.playwright-state/sessions/`.
@@ -212,7 +274,9 @@ Sequence is a full flow engine that runs JSON action lists with variables, branc
 pw sequence ./login-flow.json
 pw sequence '[{"action":"navigate","args":["http://localhost:3000"]}]'
 pw sequence flow.json --allow-shell
-pw sequence flow.json --allow-shell --request-permission --headed
+pw sequence flow.json --params '{"url":"https://example.com","user":"admin"}'
+pw sequence flow.json --params ./params/prod.json
+pw sequence flow.json --rary=pw-monitor
 ```
 
 ### Variables

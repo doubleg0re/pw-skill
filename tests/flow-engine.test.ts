@@ -985,12 +985,22 @@ describe('validateRequiresRary', () => {
     expect(validateRequiresRary(info, [], active)).toBeNull();
   });
 
-  it('returns error when extension missing', () => {
+  it('returns error when extension not installed', () => {
     const info = { requiresRary: ['pw-monitor'] };
     const active = new Set(['pw-other']);
     const err = validateRequiresRary(info, [], active);
     expect(err).toContain('"pw-monitor"');
-    expect(err).toContain('not active');
+    expect(err).toContain('not installed');
+  });
+
+  it('distinguishes installed-but-inactive from not-installed', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const active = new Set<string>();
+    const installed = new Set(['pw-monitor']);
+    const err = validateRequiresRary(info, [], active, installed);
+    expect(err).toContain('"pw-monitor"');
+    expect(err).toContain('installed but not active');
+    expect(err).toContain('pw rary put');
   });
 
   it('combines info and cli requirements', () => {

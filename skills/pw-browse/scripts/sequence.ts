@@ -1063,6 +1063,7 @@ export function validateRequiresRary(
   info: any,
   cliRary: string[],
   activeExtensions: Set<string>,
+  installedExtensions?: Set<string>,
 ): string | null {
   // Format validation
   if (info?.requiresRary !== undefined) {
@@ -1079,11 +1080,17 @@ export function validateRequiresRary(
   if (required.length === 0) return null;
 
   const missing = required.filter(name => !activeExtensions.has(name));
-  if (missing.length > 0) {
-    return `Flow requires rary extension(s) not active: ${missing.map(n => `"${n}"`).join(', ')}. Activate with \`pw rary put <package>\`.`;
-  }
+  if (missing.length === 0) return null;
 
-  return null;
+  // Distinguish installed-but-inactive from not-installed
+  const details = missing.map(name => {
+    if (installedExtensions?.has(name)) {
+      return `"${name}" (installed but not active — run \`pw rary put ${name}\`)`;
+    }
+    return `"${name}" (not installed — run \`pw rary get <repo> && pw rary put ${name}\`)`;
+  });
+
+  return `Flow requires rary extension(s): ${details.join(', ')}`;
 }
 
 // --- Entry point (only when run directly, not when imported) ---
@@ -1128,9 +1135,10 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   // Validate and check requiresRary
   const raryFlag = process.argv.find(a => a.startsWith('--rary='));
   const cliRary = raryFlag ? raryFlag.slice('--rary='.length).split(',').map(s => s.trim()).filter(Boolean) : [];
-  const { getActiveExtensions } = await import('./rary.js');
+  const { getActiveExtensions, listPackages } = await import('./rary.js');
   const activeNames = new Set(getActiveExtensions().map((e: any) => e.name));
-  const raryError = validateRequiresRary(info, cliRary, activeNames);
+  const installedNames = new Set(listPackages().map((p: any) => p.name));
+  const raryError = validateRequiresRary(info, cliRary, activeNames, installedNames);
   if (raryError) {
     return { success: false, error: raryError };
   }
