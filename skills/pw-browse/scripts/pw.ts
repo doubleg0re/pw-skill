@@ -35,6 +35,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   submit:      { script: 'submit.ts',      desc: 'Submit form' },
   copy:        { script: 'copy.ts',        desc: 'Copy text/HTML/image' },
   paste:       { script: 'paste.ts',       desc: 'Paste text/image' },
+  dump:        { script: 'dump.ts',        desc: 'Dump raw DOM/HTML/text' },
   attr:        { script: 'attr.ts',        desc: 'Read/write DOM attribute' },
   find:        { script: 'find.ts',        desc: 'Query DOM elements' },
   wait:        { script: 'wait.ts',        desc: 'Wait for condition' },
@@ -93,6 +94,7 @@ Browser actions:
   submit [form-selector] [--wait=/url]       Submit form
   copy <selector> [--format=text|html|outer|image] Copy text/HTML/image
   paste [selector] [--text=T] [--image=path]   Paste text or image
+  dump [--body] [--selector=S] [--text]       Dump raw DOM/HTML/text
   attr <selector> <name> [--set=value]       Read/write DOM attribute
   find <selector> [--detail=tag|class|full]  Query DOM elements
   wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
