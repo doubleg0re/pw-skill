@@ -970,3 +970,66 @@ describe('validateSteps — wrapper', () => {
     expect(errors[0]).toContain('no action');
   });
 });
+
+// --- Subflow ---
+
+describe('Flow Engine — return action', () => {
+  it('return exits with value', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'log', text: 'before' },
+      { action: 'return', value: { value: 42 } } as any,
+      { action: 'log', text: 'after' },
+    ], vars, results, emptyDefs());
+
+    expect(outcome.success).toBe(true);
+    expect(outcome.returnValue).toBe(42);
+    // 'after' should not run
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs).toHaveLength(1);
+    expect(logs[0].data).toBe('before');
+  });
+
+  it('return with $ref resolves variable', async () => {
+    const vars = new VarStore();
+    vars.set('myResult', { ok: true });
+    const results: any[] = [];
+
+    const outcome = await runSteps(mockPage(), [
+      { action: 'return', value: { $ref: 'myResult' } } as any,
+    ], vars, results, emptyDefs());
+
+    expect(outcome.returnValue).toEqual({ ok: true });
+  });
+});
+
+describe('Flow Engine — call flow captures return', () => {
+  it('call captures return value in out', async () => {
+    const vars = new VarStore();
+    const results: any[] = [];
+    const defs = emptyDefs();
+
+    // Simulate a flow def inline (normally loaded from file)
+    defs.set('myFlow', {
+      kind: 'flow',
+      params: ['x'],
+      path: '',
+      steps: [
+        { action: 'log', text: 'in flow {{x}}' },
+        { action: 'return', value: { value: 'done' } },
+      ],
+      info: { type: 'subflow', parameters: ['x'], returns: 'string' },
+    } as any);
+
+    await runSteps(mockPage(), [
+      { action: 'call', name: 'myFlow', args: ['hello'], out: 'result' },
+      { action: 'log', text: 'got {{result}}' },
+    ], vars, results, defs);
+
+    expect(vars.get('result')).toBe('done');
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[1].data).toBe('got done');
+  });
+});

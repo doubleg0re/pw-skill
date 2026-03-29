@@ -75,10 +75,13 @@ interface Step {
   // label / goto
   label?: string;
   // def / call
-  type?: 'func' | 'condition';
+  type?: 'func' | 'condition' | 'flow';
   name?: string;
   params?: string[];
   items?: Step[] | ConditionNode[];
+  path?: string;
+  // return
+  value?: any;
   // log
   text?: string;
   // condition (leaf — backward compat)
@@ -110,9 +113,16 @@ interface Step {
 
 const MAX_JUMPS = 100;
 
+export interface SubflowInfo {
+  type: 'subflow';
+  parameters?: string[];
+  returns?: string;
+}
+
 export type DefEntry =
   | { kind: 'block'; params: string[]; body: Step[] }
-  | { kind: 'condition'; condition: ConditionNode };
+  | { kind: 'condition'; condition: ConditionNode }
+  | { kind: 'flow'; params: string[]; path: string; steps: Step[]; info: SubflowInfo };
 
 interface StepResult {
   step: number;
@@ -253,7 +263,7 @@ export async function runSteps(
   defs: Map<string, DefEntry>,
   baseIndex: number = 0,
   options: RunOptions = {},
-): Promise<{ success: boolean; failedAt?: number; goto?: string }> {
+): Promise<{ success: boolean; failedAt?: number; goto?: string; returnValue?: any }> {
   // Debug log helper
   const debugLog = options.debugLog
     ? (stepIdx: number, action: string, status: string, detail?: string) => {
@@ -378,17 +388,40 @@ export async function runSteps(
         continue;
       }
 
-      // --- def (func or condition) ---
+      // --- def (func, condition, or flow) ---
       if (step.action === 'def') {
         const defType = step.type || 'func';
         if (defType === 'condition') {
-          // items is ConditionNode[] — wrap in "or" if multiple, use single if one
           const condItems = (step.items || []) as ConditionNode[];
           const condition: ConditionNode = condItems.length === 1 ? condItems[0] : { or: condItems };
           defs.set(step.name!, { kind: 'condition', condition });
+        } else if (defType === 'flow') {
+          // Load external subflow file
+          const flowPath = step.path;
+          if (!flowPath) {
+            results.push({ step: stepIndex, action: 'def', success: false, error: `def type="flow" requires "path"` });
+            return { success: false, failedAt: stepIndex };
+          }
+          const { resolve } = await import('path');
+          const absPath = resolve(flowPath);
+          if (!existsSync(absPath)) {
+            results.push({ step: stepIndex, action: 'def', success: false, error: `Subflow file not found: ${absPath}` });
+            return { success: false, failedAt: stepIndex };
+          }
+          const raw = JSON.parse(readFileSync(absPath, 'utf-8'));
+          if (!raw || typeof raw !== 'object' || !Array.isArray(raw.flow)) {
+            results.push({ step: stepIndex, action: 'def', success: false, error: `Subflow file must be { info: { type: "subflow" }, flow: [...] }` });
+            return { success: false, failedAt: stepIndex };
+          }
+          const subInfo: SubflowInfo = raw.info || {};
+          if (subInfo.type !== 'subflow') {
+            results.push({ step: stepIndex, action: 'def', success: false, error: `Subflow info.type must be "subflow"` });
+            return { success: false, failedAt: stepIndex };
+          }
+          defs.set(step.name!, { kind: 'flow', params: step.params || subInfo.parameters || [], path: absPath, steps: raw.flow, info: subInfo });
         } else {
           // func: items is Step[]
-          defs.set(step.name!, { kind: 'block', params: step.params || [], body: (step.items || step.items || []) as Step[] });
+          defs.set(step.name!, { kind: 'block', params: step.params || [], body: (step.items || []) as Step[] });
         }
         results.push({ step: stepIndex, action: 'def', success: true, data: { name: step.name, type: defType } });
         i++;
@@ -408,10 +441,14 @@ export async function runSteps(
           return { success: false, failedAt: stepIndex };
         }
 
-        // Block def: inject args and run body
+        // Determine body and params
+        const callBody = def.kind === 'flow' ? def.steps : def.body;
+        const callParams = def.params;
+
+        // Inject args
         if (step.args) {
           if (Array.isArray(step.args)) {
-            def.params.forEach((p, idx) => {
+            callParams.forEach((p, idx) => {
               const v = (step.args as string[])[idx];
               vars.set(p, typeof v === 'string' ? vars.interpolate(v) : v);
             });
@@ -421,11 +458,15 @@ export async function runSteps(
             }
           }
         }
-        results.push({ step: stepIndex, action: 'call', success: true, data: { name: step.name } });
-        const sub = await runSteps(page, def.body, vars, results, defs, stepIndex * 1000, options);
+        results.push({ step: stepIndex, action: 'call', success: true, data: { name: step.name, kind: def.kind } });
+        const sub = await runSteps(page, callBody, vars, results, defs, stepIndex * 1000, options);
         if (!sub.success) return sub;
-        // Store call result to out (data from the last step)
-        if (step.out) {
+
+        // Capture return value (flow) or last step data (func)
+        if (sub.returnValue !== undefined) {
+          if (step.out) vars.set(step.out, sub.returnValue);
+          vars.set('$ret', sub.returnValue);
+        } else if (step.out) {
           const lastResult = results[results.length - 1];
           vars.set(step.out, lastResult?.data);
         }
@@ -597,6 +638,24 @@ export async function runSteps(
         continue;
       }
 
+      // --- return ---
+      if (step.action === 'return') {
+        let returnValue: any = null;
+        if (step.value) {
+          if ('$ref' in step.value) {
+            returnValue = vars.get(step.value.$ref);
+          } else if ('ref' in step.value) {
+            returnValue = vars.get(step.value.ref);
+          } else if ('value' in step.value) {
+            returnValue = step.value.value;
+          } else {
+            returnValue = vars.resolveValue(step.value);
+          }
+        }
+        results.push({ step: stepIndex, action: 'return', success: true, data: returnValue });
+        return { success: true, returnValue };
+      }
+
       // --- set ---
       if (step.action === 'set') {
         const setItems = (step.items || {}) as Record<string, { ref?: string; value?: any }>;
@@ -719,7 +778,7 @@ export async function runSteps(
 const KNOWN_ACTIONS = new Set([
   'navigate', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'upload', 'attr', 'submit', 'fetch', 'screenshot',
-  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump',
+  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'return',
 ]);
 
 export function validateSteps(steps: Step[], prefix: string = ''): string[] {
