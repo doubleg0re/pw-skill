@@ -248,13 +248,18 @@ async function killSession(name: string): Promise<{ hookErrors?: string[] }> {
   const session = getSession(name);
   if (!session) return {};
 
-  // Run extension close hooks before killing
-  const { buildRuntime } = await import('./runtime.js');
+  // Run extension close hooks + cleanups before killing
+  const { buildRuntime, runCleanups } = await import('./runtime.js');
   const closeRuntime = buildRuntime({ session });
   const hookResult = await runHooks('close', closeRuntime).catch((err) => ({
     ran: [] as string[],
     errors: [`Close hooks failed: ${err instanceof Error ? err.message : String(err)}`],
   }));
+  // Run registered cleanups
+  const cleanupResult = await runCleanups(closeRuntime).catch(() => ({ ran: 0, errors: [] as string[] }));
+  if (cleanupResult.errors.length > 0) {
+    hookResult.errors.push(...cleanupResult.errors.map(e => `Cleanup error: ${e}`));
+  }
 
   // Kill by PID
   if (isProcessAlive(session.pid)) {

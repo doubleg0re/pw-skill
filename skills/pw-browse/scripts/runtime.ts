@@ -60,7 +60,7 @@ const defaultLogger = {
   error: (msg: string) => process.stderr.write(`[pw:error] ${msg}\n`),
 };
 
-export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext {
+export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext & { _cleanups: (() => Promise<void> | void)[] } {
   const cleanups: (() => Promise<void> | void)[] = [];
   const handlers = opts.eventHandlers || [];
   const logger = defaultLogger;
@@ -109,15 +109,30 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
     emitEvent,
     registerCleanup: (fn) => { cleanups.push(fn); },
     logger,
+    _cleanups: cleanups,
   };
 }
 
 /**
  * Run all registered cleanups (called during close).
  */
-export async function runCleanups(runtime: ExtensionRuntimeContext): Promise<void> {
-  // Access cleanups via a known internal structure
-  // For now, cleanups are fire-and-forget too
+export async function runCleanups(runtime: ExtensionRuntimeContext): Promise<{ ran: number; errors: string[] }> {
+  const cleanups = (runtime as any)._cleanups as (() => Promise<void> | void)[] || [];
+  const errors: string[] = [];
+  let ran = 0;
+
+  for (const fn of cleanups) {
+    try {
+      await fn();
+      ran++;
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Clear after running
+  cleanups.length = 0;
+  return { ran, errors };
 }
 
 // --- Event handler loader ---

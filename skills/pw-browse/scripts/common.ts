@@ -522,13 +522,19 @@ export async function run(
       }
     }
 
-    // --- Core: Run 'load' hooks for active extensions ---
-    const { runHooks } = await import('./rary.js');
+    // --- Core: Load event handlers + run 'load' hooks ---
+    const { runHooks, getActiveExtensions, packageDir } = await import('./rary.js');
+    const { buildRuntime, loadEventHandlers } = await import('./runtime.js');
     try {
-      const { buildRuntime } = await import('./runtime.js');
-      const extensionRuntime = buildRuntime({ session, browser, context, page });
+      const { handlers: eventHandlers, errors: eventErrors } = await loadEventHandlers(
+        () => getActiveExtensions().map(e => ({ name: e.name, manifest: e.manifest })),
+        packageDir,
+      );
+      hookErrors.push(...eventErrors);
+
+      const extensionRuntime = buildRuntime({ session, browser, context, page, eventHandlers });
       const hookResult = await runHooks('load', extensionRuntime);
-      hookErrors = hookResult.errors;
+      hookErrors.push(...hookResult.errors);
     } catch {}
 
     const result = await fn({
