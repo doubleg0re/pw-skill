@@ -1,19 +1,11 @@
 // ws-server-start — Start WebSocket server for session
 import { spawn } from 'child_process';
 import { join } from 'path';
-import { homedir } from 'os';
 import { existsSync, readFileSync } from 'fs';
-
-function sessionDir(sessionName: string): string {
-  return join(homedir(), '.playwright-state', 'sessions', sessionName);
-}
-
-function isAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
+import { resolveSessionName, sessionDir, isAlive } from '../utils.js';
 
 export default async function(page: any, args: any, runtime?: any): Promise<{ result?: any }> {
-  const sessionName = args?.session || runtime?.session?.name;
+  const sessionName = resolveSessionName(args, runtime);
   if (!sessionName) return { result: { error: 'No active session' } };
 
   const dir = sessionDir(sessionName);
@@ -46,7 +38,7 @@ export default async function(page: any, args: any, runtime?: any): Promise<{ re
   );
   child.unref();
 
-  // Wait and verify server actually started (metadata file written)
+  // Wait and verify server actually started
   const maxWait = 3000;
   const interval = 200;
   let waited = 0;
@@ -71,6 +63,5 @@ export default async function(page: any, args: any, runtime?: any): Promise<{ re
     }
   }
 
-  // Server didn't start in time
   return { result: { error: 'WS server failed to start (metadata not written within 3s). Check protocol and port.' } };
 }

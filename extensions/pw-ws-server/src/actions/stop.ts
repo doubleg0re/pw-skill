@@ -1,14 +1,10 @@
 // ws-server-stop — Stop WebSocket server for session
 import { join } from 'path';
-import { homedir } from 'os';
 import { existsSync, readFileSync, unlinkSync } from 'fs';
-
-function sessionDir(sessionName: string): string {
-  return join(homedir(), '.playwright-state', 'sessions', sessionName);
-}
+import { resolveSessionName, sessionDir } from '../utils.js';
 
 export default async function(page: any, args: any, runtime?: any): Promise<{ result?: any }> {
-  const sessionName = args?.session || runtime?.session?.name;
+  const sessionName = resolveSessionName(args, runtime);
   if (!sessionName) return { result: { error: 'No active session' } };
 
   const metadataPath = join(sessionDir(sessionName), 'ws-server.json');
