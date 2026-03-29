@@ -1009,6 +1009,64 @@ export function validateSteps(steps: Step[], prefix: string = '', extraKnownActi
   return errors;
 }
 
+// --- Step shorthand normalization (exported for testing) ---
+
+// Keys that indicate an explicit step (not shorthand)
+const EXPLICIT_STEP_KEYS = new Set([
+  'action', 'comment', 'condition', 'each', 'loop', 'try', 'def', 'call',
+  'shell', 'return', 'set', 'log',
+]);
+
+/**
+ * Normalize a shorthand step into explicit form.
+ *
+ * Shorthand: { "navigate": "https://example.com" }
+ *        or: { "fill": ["#email", "test@test.com"] }
+ * Explicit:  { "action": "navigate", "args": ["https://example.com"] }
+ *
+ * Rules:
+ * - Must be a single-key object (excluding "comment")
+ * - Key must not be an explicit step key
+ * - Value becomes args (wrapped in array if not already)
+ * - Multi-key objects with shorthand + metadata are rejected
+ */
+export function normalizeStep(step: any): any {
+  if (!step || typeof step !== 'object' || Array.isArray(step)) return step;
+
+  // Already explicit form
+  const keys = Object.keys(step);
+  if (keys.some(k => EXPLICIT_STEP_KEYS.has(k))) return step;
+
+  // Comment-only step
+  if (keys.length === 1 && keys[0] === 'comment') return step;
+
+  // Filter out comment key for shorthand detection
+  const nonCommentKeys = keys.filter(k => k !== 'comment');
+
+  if (nonCommentKeys.length === 0) return step;
+
+  if (nonCommentKeys.length === 1) {
+    const actionName = nonCommentKeys[0];
+    const value = step[actionName];
+    // Array → use as positional args
+    // Plain object → use as named args (ActionArgs Record style)
+    // Primitive → wrap as single-element array
+    let args: any;
+    if (Array.isArray(value)) {
+      args = value;
+    } else if (value !== null && typeof value === 'object') {
+      args = value; // named object args — pass through as-is
+    } else {
+      args = [value]; // string, number, etc → positional
+    }
+    return { action: actionName, args };
+  }
+
+  // Multiple non-comment, non-explicit keys → ambiguous, reject
+  // (could be shorthand + metadata, which is not allowed)
+  return step;
+}
+
 // --- Params loading (exported for testing) ---
 
 const FORBIDDEN_PARAM_KEYS = new Set([
@@ -1125,9 +1183,15 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
     } else if (raw && typeof raw === 'object' && Array.isArray(raw.flow)) {
       steps = raw.flow;
       info = raw.info || undefined;
+    } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      // Single-step root object → wrap as [step]
+      steps = [raw];
     } else {
-      return { success: false, error: 'JSON must be an array of steps or an object with { info?, flow: [...] }.' };
+      return { success: false, error: 'JSON must be an array of steps, an object with { info?, flow: [...] }, or a single step object.' };
     }
+
+    // Normalize shorthand steps: { "actionName": args } → { action, args }
+    steps = steps.map(normalizeStep);
   } catch {
     return { success: false, error: 'Invalid JSON. Provide a JSON array or a path to a JSON file.' };
   }

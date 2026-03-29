@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresRary, loadParams } from '../skills/pw-browse/scripts/sequence.js';
+import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresRary, loadParams, normalizeStep } from '../skills/pw-browse/scripts/sequence.js';
 
 // Mock page object — only need methods that flow control actions use
 function mockPage(overrides: Record<string, any> = {}): any {
@@ -1095,6 +1095,57 @@ describe('loadParams', () => {
     expect(err).toBeNull();
     expect(vars.get('site')).toBe('https://example.com');
     rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+// --- normalizeStep (shorthand) ---
+
+describe('normalizeStep', () => {
+  it('converts shorthand with array args', () => {
+    const result = normalizeStep({ navigate: ['https://example.com'] });
+    expect(result).toEqual({ action: 'navigate', args: ['https://example.com'] });
+  });
+
+  it('wraps non-array value as single-element array', () => {
+    const result = normalizeStep({ navigate: 'https://example.com' });
+    expect(result).toEqual({ action: 'navigate', args: ['https://example.com'] });
+  });
+
+  it('passes through explicit action step', () => {
+    const step = { action: 'navigate', args: ['https://example.com'] };
+    expect(normalizeStep(step)).toBe(step);
+  });
+
+  it('passes through comment-only step', () => {
+    const step = { comment: 'a note' };
+    expect(normalizeStep(step)).toBe(step);
+  });
+
+  it('passes through condition step', () => {
+    const step = { condition: { ref: '$x', eq: 1 }, then: [] };
+    expect(normalizeStep(step)).toBe(step);
+  });
+
+  it('passes object args as-is (named args, not wrapped)', () => {
+    const result = normalizeStep({ dump: { selector: '#app', text: true } });
+    expect(result).toEqual({ action: 'dump', args: { selector: '#app', text: true } });
+  });
+
+  it('handles extension action shorthand', () => {
+    const result = normalizeStep({ 'persist-user-action': ['Please log in', ['done', 'cancel']] });
+    expect(result).toEqual({ action: 'persist-user-action', args: ['Please log in', ['done', 'cancel']] });
+  });
+
+  it('passes through multi-key non-explicit object (ambiguous)', () => {
+    const step = { navigate: ['https://example.com'], out: 'x' };
+    // Not shorthand (multi-key), not explicit (no "action") — passes through for later validation to catch
+    const result = normalizeStep(step);
+    expect(result).toBe(step);
+  });
+
+  it('handles null/undefined gracefully', () => {
+    expect(normalizeStep(null)).toBeNull();
+    expect(normalizeStep(undefined)).toBeUndefined();
   });
 });
 
