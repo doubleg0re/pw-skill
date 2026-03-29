@@ -104,7 +104,12 @@ if (!window.__PW_NETWORK_PATCHED) {
 
 run(async ({ page, args }) => {
   const command = args[0] || 'dump'; // inject | dump | clear | tail | find
-  const raw = hasFlag(process.argv.slice(2), 'raw');
+  const { resolveRedactionLevel } = await import('./settings.js');
+  const { parseFlag: pf } = await import('./common.js');
+  const cliLevel = pf(process.argv.slice(2), 'redaction-level');
+  const cliRaw = hasFlag(process.argv.slice(2), 'raw');
+  const level = resolveRedactionLevel({ cliRaw, cliLevel });
+  const raw = level === 'raw';
 
   switch (command) {
     case 'inject': {
@@ -119,11 +124,17 @@ run(async ({ page, args }) => {
       const logs = await page.evaluate('window.__PW_NETWORK || []') as any[];
       ensureStateDir();
 
+      const formatBody = (str: string): string => {
+        if (raw) return str;
+        if (level === 'verbose') return str.length > MAX_BODY_LENGTH ? str.slice(0, MAX_BODY_LENGTH) + '...(truncated)' : str;
+        return summarizeBody(str); // strict
+      };
+
       const lines = logs.map((l: any) => {
         const reqStr = l.reqBody ? JSON.stringify(l.reqBody) : '';
-        const req = reqStr ? ` req=${raw ? reqStr : summarizeBody(reqStr)}` : '';
+        const req = reqStr ? ` req=${formatBody(reqStr)}` : '';
         const resStr = l.resBody ? JSON.stringify(l.resBody) : '';
-        const res = resStr ? ` res=${raw ? resStr : summarizeBody(resStr)}` : '';
+        const res = resStr ? ` res=${formatBody(resStr)}` : '';
         const err = l.error ? ` error=${l.error}` : '';
         const hdrs = l.headers ? ` headers=${JSON.stringify(raw ? l.headers : maskHeaders(l.headers))}` : '';
         return `[${new Date(l.ts).toISOString()}] [${l.type.toUpperCase()}] ${l.method} ${l.url} → ${l.status}${req}${res}${hdrs}${err}`;
@@ -134,7 +145,7 @@ run(async ({ page, args }) => {
 
       return {
         success: true,
-        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warnings: ['Raw mode: sensitive data may be written to disk unmasked'] } : {}) },
+        data: { dumped: logs.length, file: LOG_FILE, redactionLevel: level, ...(raw ? { warnings: ['Raw mode: sensitive data may be written to disk unmasked'] } : {}) },
       };
     }
 
