@@ -416,9 +416,7 @@ Rules:
 - `finally` always runs
 - Error info: `{{$error}}` (message), `{{$errorType}}` (classified type)
 
-## Params (planned)
-
-> Note: `--params` is not yet implemented. This section describes the planned syntax.
+## Params
 
 ### CLI
 

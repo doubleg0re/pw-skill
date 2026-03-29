@@ -12,6 +12,9 @@
 import { run, parseFlag, hasFlag } from './common.js';
 import { existsSync, writeFileSync, appendFileSync } from 'fs';
 import { resolve, extname } from 'path';
+import { resolveRedactionLevel } from './settings.js';
+
+const STRICT_CONTENT_LIMIT = 50_000; // ~50KB in strict mode
 
 run(async ({ page }) => {
   const cliArgs = process.argv.slice(2);
@@ -21,6 +24,10 @@ run(async ({ page }) => {
   const savePath = parseFlag(cliArgs, 'save');
   const doReplace = hasFlag(cliArgs, 'replace');
   const doAppend = hasFlag(cliArgs, 'append');
+  const redactionLevel = resolveRedactionLevel({
+    cliRaw: hasFlag(cliArgs, 'raw'),
+    cliLevel: parseFlag(cliArgs, 'redaction-level'),
+  });
 
   // Validate save flags
   if (doReplace && doAppend) {
@@ -100,12 +107,20 @@ run(async ({ page }) => {
     }
   }
 
+  // Apply content limit in strict mode (saves tokens for AI consumers)
+  let truncated = false;
+  if (redactionLevel === 'strict' && content.length > STRICT_CONTENT_LIMIT && !savePath) {
+    content = content.slice(0, STRICT_CONTENT_LIMIT) + '\n...(truncated at 50KB, use --raw for full output)';
+    truncated = true;
+  }
+
   return {
     success: true,
     data: {
       target,
       format,
       content,
+      ...(truncated ? { truncated: true } : {}),
       ...(filePath ? { path: filePath, mode } : {}),
     },
   };

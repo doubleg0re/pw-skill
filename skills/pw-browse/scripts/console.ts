@@ -1,8 +1,9 @@
 // ~/.claude/skills/pw-browse/scripts/console.ts
 // Inject console patching into the browser and dump collected logs to a file
-import { run, ensureStateDir, hasFlag } from './common.js';
+import { run, ensureStateDir, hasFlag, parseFlag } from './common.js';
 import { join, resolve } from 'path';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
+import { resolveRedactionLevel, type RedactionLevel } from './settings.js';
 
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const LOG_FILE = join(STATE_DIR, 'console.log');
@@ -90,8 +91,12 @@ export function filterLines(lines: string[], cliArgs: string[]): string[] {
 
 run(async ({ page, args }) => {
   const command = args[0] || 'dump'; // inject | dump | clear | tail
-  const raw = hasFlag(process.argv.slice(2), 'raw');
   const cliArgs = process.argv.slice(2);
+  const redactionLevel = resolveRedactionLevel({
+    cliRaw: hasFlag(cliArgs, 'raw'),
+    cliLevel: parseFlag(cliArgs, 'redaction-level'),
+  });
+  const raw = redactionLevel === 'raw';
 
   switch (command) {
     case 'inject': {
