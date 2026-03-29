@@ -1126,9 +1126,9 @@ describe('normalizeStep', () => {
     expect(normalizeStep(step)).toBe(step);
   });
 
-  it('handles shorthand with object args', () => {
+  it('passes object args as-is (named args, not wrapped)', () => {
     const result = normalizeStep({ dump: { selector: '#app', text: true } });
-    expect(result).toEqual({ action: 'dump', args: [{ selector: '#app', text: true }] });
+    expect(result).toEqual({ action: 'dump', args: { selector: '#app', text: true } });
   });
 
   it('handles extension action shorthand', () => {

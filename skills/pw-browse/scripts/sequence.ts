@@ -1047,9 +1047,18 @@ export function normalizeStep(step: any): any {
 
   if (nonCommentKeys.length === 1) {
     const actionName = nonCommentKeys[0];
-    let args = step[actionName];
-    // Wrap non-array value as single-element array
-    if (!Array.isArray(args)) args = [args];
+    const value = step[actionName];
+    // Array → use as positional args
+    // Plain object → use as named args (ActionArgs Record style)
+    // Primitive → wrap as single-element array
+    let args: any;
+    if (Array.isArray(value)) {
+      args = value;
+    } else if (value !== null && typeof value === 'object') {
+      args = value; // named object args — pass through as-is
+    } else {
+      args = [value]; // string, number, etc → positional
+    }
     return { action: actionName, args };
   }
 
