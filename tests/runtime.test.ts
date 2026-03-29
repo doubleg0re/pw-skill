@@ -57,7 +57,7 @@ describe('buildRuntime — emitEvent', () => {
     });
 
     runtime.emitEvent('tab:navigated', { url: 'http://test.com' });
-    expect(handler).toHaveBeenCalledWith({ url: 'http://test.com' });
+    expect(handler).toHaveBeenCalledWith({ url: 'http://test.com' }, expect.objectContaining({ session: expect.any(Object) }));
   });
 
   it('does not call non-matching handler', () => {
