@@ -1,0 +1,25 @@
+{
+  "name": "pw-persist-user-action",
+  "version": "0.1.0",
+  "description": "Persists user-action overlay state across navigation and tab changes",
+  "type": "extension",
+  "hooks": {
+    "load": {
+      "entry": "src/load-hook.ts"
+    }
+  },
+  "events": {
+    "tab:navigated": {
+      "entry": "src/on-navigated.ts"
+    },
+    "tab:closed": {
+      "entry": "src/on-closed.ts"
+    },
+    "user-action:started": {
+      "entry": "src/on-started.ts"
+    },
+    "user-action:completed": {
+      "entry": "src/on-completed.ts"
+    }
+  }
+}

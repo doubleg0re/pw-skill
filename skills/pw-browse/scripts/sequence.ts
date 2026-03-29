@@ -1009,6 +1009,35 @@ export function validateSteps(steps: Step[], prefix: string = '', extraKnownActi
   return errors;
 }
 
+// --- requiresRary validation (exported for testing) ---
+
+export function validateRequiresRary(
+  info: any,
+  cliRary: string[],
+  activeExtensions: Set<string>,
+): string | null {
+  // Format validation
+  if (info?.requiresRary !== undefined) {
+    if (!Array.isArray(info.requiresRary) || !info.requiresRary.every((r: any) => typeof r === 'string' && r.length > 0)) {
+      return 'info.requiresRary must be an array of non-empty strings.';
+    }
+  }
+
+  const required: string[] = [
+    ...(Array.isArray(info?.requiresRary) ? info.requiresRary : []),
+    ...cliRary,
+  ];
+
+  if (required.length === 0) return null;
+
+  const missing = required.filter(name => !activeExtensions.has(name));
+  if (missing.length > 0) {
+    return `Flow requires rary extension(s) not active: ${missing.map(n => `"${n}"`).join(', ')}. Activate with \`pw rary put <package>\`.`;
+  }
+
+  return null;
+}
+
 // --- Entry point (only when run directly, not when imported) ---
 
 const isDirectRun = process.argv[1]?.replace(/\\/g, '/').endsWith('/sequence.ts')
@@ -1046,6 +1075,16 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
     }
   } catch {
     return { success: false, error: 'Invalid JSON. Provide a JSON array or a path to a JSON file.' };
+  }
+
+  // Validate and check requiresRary
+  const raryFlag = process.argv.find(a => a.startsWith('--rary='));
+  const cliRary = raryFlag ? raryFlag.slice('--rary='.length).split(',').map(s => s.trim()).filter(Boolean) : [];
+  const { getActiveExtensions } = await import('./rary.js');
+  const activeNames = new Set(getActiveExtensions().map((e: any) => e.name));
+  const raryError = validateRequiresRary(info, cliRary, activeNames);
+  if (raryError) {
+    return { success: false, error: raryError };
   }
 
   // Build merged action map (built-in + rary extensions)
@@ -1088,9 +1127,31 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   const { dirname } = await import('path');
   const baseDir = existsSync(input) ? dirname(input.startsWith('/') || input.includes(':') ? input : (await import('path')).resolve(input)) : process.cwd();
 
-  // Build runtime context for extension actions
-  const { buildRuntime } = await import('./runtime.js');
-  const seqRuntime = buildRuntime({ session, page });
+  // Build runtime context with event handlers for extension actions
+  const { buildRuntime, loadEventHandlers } = await import('./runtime.js');
+  const { getActiveExtensions: getActiveExts, packageDir } = await import('./rary.js');
+  const { findTabByPageIndex, findTabByUrl } = await import('./tab-registry.js');
+
+  let eventHandlers: any[] = [];
+  try {
+    const loaded = await loadEventHandlers(
+      () => getActiveExts().map((e: any) => ({ name: e.name, manifest: e.manifest })),
+      packageDir,
+    );
+    eventHandlers = loaded.handlers;
+  } catch {}
+
+  // Resolve stable tabId for current page
+  const pageIndex = page.context().pages().indexOf(page);
+  const currentTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(page.url());
+  const tabId = currentTab?.tabId;
+
+  const seqRuntime = buildRuntime({
+    session,
+    page,
+    eventHandlers,
+    tab: tabId != null ? { id: tabId, url: page.url() } : undefined,
+  });
 
   const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap, runtime: seqRuntime });
 

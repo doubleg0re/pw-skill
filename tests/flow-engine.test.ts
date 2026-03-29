@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { VarStore, runSteps, evaluateCondition, validateSteps } from '../skills/pw-browse/scripts/sequence.js';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresRary } from '../skills/pw-browse/scripts/sequence.js';
 
 // Mock page object — only need methods that flow control actions use
 function mockPage(overrides: Record<string, any> = {}): any {
@@ -968,6 +968,66 @@ describe('validateSteps — wrapper', () => {
   it('empty step is invalid', () => {
     const errors = validateSteps([{} as any]);
     expect(errors[0]).toContain('no action');
+  });
+});
+
+// --- requiresRary ---
+
+describe('validateRequiresRary', () => {
+  it('returns null when no requirements', () => {
+    expect(validateRequiresRary({}, [], new Set())).toBeNull();
+    expect(validateRequiresRary(undefined, [], new Set())).toBeNull();
+  });
+
+  it('returns null when all requirements met', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const active = new Set(['pw-monitor', 'pw-other']);
+    expect(validateRequiresRary(info, [], active)).toBeNull();
+  });
+
+  it('returns error when extension missing', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const active = new Set(['pw-other']);
+    const err = validateRequiresRary(info, [], active);
+    expect(err).toContain('"pw-monitor"');
+    expect(err).toContain('not active');
+  });
+
+  it('combines info and cli requirements', () => {
+    const info = { requiresRary: ['pw-monitor'] };
+    const cliRary = ['pw-persist-user-action'];
+    const active = new Set(['pw-monitor']); // missing pw-persist-user-action
+    const err = validateRequiresRary(info, cliRary, active);
+    expect(err).toContain('"pw-persist-user-action"');
+  });
+
+  it('passes when cli requirement is active', () => {
+    const active = new Set(['pw-monitor']);
+    expect(validateRequiresRary({}, ['pw-monitor'], active)).toBeNull();
+  });
+
+  it('rejects invalid requiresRary format: not array', () => {
+    const err = validateRequiresRary({ requiresRary: 'pw-monitor' }, [], new Set());
+    expect(err).toContain('must be an array');
+  });
+
+  it('rejects invalid requiresRary format: empty string', () => {
+    const err = validateRequiresRary({ requiresRary: [''] }, [], new Set());
+    expect(err).toContain('must be an array of non-empty strings');
+  });
+
+  it('rejects invalid requiresRary format: non-string', () => {
+    const err = validateRequiresRary({ requiresRary: [123] }, [], new Set());
+    expect(err).toContain('must be an array');
+  });
+
+  it('reports all missing extensions', () => {
+    const info = { requiresRary: ['a', 'b', 'c'] };
+    const active = new Set(['b']);
+    const err = validateRequiresRary(info, [], active);
+    expect(err).toContain('"a"');
+    expect(err).toContain('"c"');
+    expect(err).not.toContain('"b"');
   });
 });
 
