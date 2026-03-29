@@ -242,6 +242,7 @@ export async function executeAction(
 export interface RunOptions {
   allowShell?: boolean;
   requestPermission?: boolean;
+  debugLog?: boolean;
 }
 
 export async function runSteps(
@@ -253,6 +254,13 @@ export async function runSteps(
   baseIndex: number = 0,
   options: RunOptions = {},
 ): Promise<{ success: boolean; failedAt?: number; goto?: string }> {
+  // Debug log helper
+  const debugLog = options.debugLog
+    ? (stepIdx: number, action: string, status: string, detail?: string) => {
+        process.stderr.write(`[${stepIdx}] ${action} ${status}${detail ? ' ' + detail : ''}\n`);
+      }
+    : undefined;
+
   // Build label → index map
   const labelMap = new Map<string, number>();
   for (let i = 0; i < steps.length; i++) {
@@ -669,7 +677,7 @@ export async function runSteps(
       }
 
       // --- General action ---
-      // args: pass as-is (array or object) to the executor
+      debugLog?.(stepIndex, step.action!, 'start');
       const { result } = await executeAction(page, step.action!, step.args || [], vars);
 
       // Set ephemeral registers
@@ -682,8 +690,10 @@ export async function runSteps(
       }
 
       results.push({ step: stepIndex, action: step.action!, success: true, ...(result !== undefined ? { data: result } : {}) });
+      debugLog?.(stepIndex, step.action!, 'ok');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      debugLog?.(stepIndex, step.action || 'unknown', `failed (${errorMsg.slice(0, 60)})`);
       // Set ephemeral error registers
       vars.set('$ret', null);
       vars.set('$err', errorMsg);
@@ -709,7 +719,7 @@ export async function runSteps(
 const KNOWN_ACTIONS = new Set([
   'navigate', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'upload', 'attr', 'submit', 'fetch', 'screenshot',
-  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set',
+  'evaluate', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump',
 ]);
 
 export function validateSteps(steps: Step[], prefix: string = ''): string[] {
@@ -861,6 +871,7 @@ run(async ({ page, args: cliArgs }) => {
 
   const allowShell = process.argv.includes('--allow-shell');
   const requestPermission = process.argv.includes('--request-permission');
+  const debugLog = process.argv.includes('--debug-log');
 
   // Heartbeat lock for long-running sequences
   const { acquireLock, releaseLock, refreshLock } = await import('./lock.js');
@@ -907,7 +918,7 @@ run(async ({ page, args: cliArgs }) => {
   const vars = new VarStore();
   const results: StepResult[] = [];
   const defs = new Map<string, DefEntry>();
-  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission });
+  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog });
 
   // Clean up heartbeat and lock
   clearInterval(heartbeat);

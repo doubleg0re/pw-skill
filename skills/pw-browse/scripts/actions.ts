@@ -411,6 +411,80 @@ export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ resul
 }
 
 /** Map of action names to their implementations */
+export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = Array.isArray(a) ? a[0] : a.selector;
+  const isText = Array.isArray(a) ? a.includes('text') : !!a.text;
+  const isBody = Array.isArray(a) ? a.includes('body') : !!a.body;
+  const savePath = Array.isArray(a) ? undefined : a.save;
+  const doReplace = Array.isArray(a) ? false : !!a.replace;
+  const doAppend = Array.isArray(a) ? false : !!a.append;
+
+  // Validate save flags
+  if (doReplace && doAppend) throw new Error('Cannot use replace and append together.');
+  if ((doReplace || doAppend) && !savePath) throw new Error('replace/append requires save.');
+
+  let target: string;
+  let format: 'html' | 'text';
+  let content: string;
+
+  if (selector) {
+    const count = await page.locator(selector).count();
+    if (count === 0) throw new Error(`No element matched selector: ${selector}`);
+
+    target = `selector:${selector}`;
+    if (isText) {
+      format = 'text';
+      content = (await page.locator(selector).first().textContent())?.trim() || '';
+    } else {
+      format = 'html';
+      content = await page.locator(selector).first().evaluate(el => el.outerHTML);
+    }
+  } else if (isText) {
+    target = isBody ? 'body' : 'document';
+    format = 'text';
+    content = await page.evaluate((body: boolean) =>
+      body ? (document.body?.textContent?.trim() || '') : (document.documentElement?.textContent?.trim() || ''),
+      isBody,
+    );
+  } else {
+    target = isBody ? 'body' : 'document';
+    format = 'html';
+    content = await page.evaluate((body: boolean) =>
+      body ? (document.body?.outerHTML || '') : (document.documentElement?.outerHTML || ''),
+      isBody,
+    );
+  }
+
+  // File save
+  let filePath: string | undefined;
+  let mode: 'write' | 'replace' | 'append' = 'write';
+
+  if (savePath) {
+    const { resolve, extname } = await import('path');
+    const { existsSync, writeFileSync, appendFileSync } = await import('fs');
+    filePath = resolve(String(savePath));
+    if (!extname(filePath)) filePath += format === 'text' ? '.txt' : '.html';
+
+    if (existsSync(filePath)) {
+      if (doReplace) mode = 'replace';
+      else if (doAppend) mode = 'append';
+      else throw new Error(`File already exists: ${filePath}\nUse replace or append to overwrite.`);
+    }
+
+    if (mode === 'append') appendFileSync(filePath, content);
+    else writeFileSync(filePath, content);
+  }
+
+  return {
+    result: {
+      target,
+      format,
+      content,
+      ...(filePath ? { path: filePath, mode } : {}),
+    },
+  };
+}
+
 export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{ result?: any }>> = {
   navigate: actionNavigate,
   click: actionClick,
@@ -428,4 +502,5 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{
   fetch: actionFetch,
   screenshot: actionScreenshot,
   evaluate: actionEvaluate,
+  dump: actionDump,
 };
