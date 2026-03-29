@@ -9,12 +9,15 @@ import {
 } from './session.js';
 import { existsSync, rmSync } from 'fs';
 import { analyze } from './analyze.js';
+import { releaseLock } from './lock.js';
 
 export interface CleanResult {
   cleaned: {
     dead: string[];
     stale: string[];
     orphaned: string[];
+    staleLocks: string[];
+    orphanLocks: string[];
   };
 }
 
@@ -58,12 +61,38 @@ export function cleanOrphans(cwd?: string): string[] {
   return cleaned;
 }
 
+export function cleanStaleLocks(cwd?: string): string[] {
+  const cleaned: string[] = [];
+  const diagnostics = analyze(cwd);
+  for (const item of diagnostics.staleLocks) {
+    if (item.path) {
+      releaseLock(item.path);
+      cleaned.push(item.path);
+    }
+  }
+  return cleaned;
+}
+
+export function cleanOrphanLocks(cwd?: string): string[] {
+  const cleaned: string[] = [];
+  const diagnostics = analyze(cwd);
+  for (const item of diagnostics.orphanLocks) {
+    if (item.path) {
+      releaseLock(item.path);
+      cleaned.push(item.path);
+    }
+  }
+  return cleaned;
+}
+
 export function cleanAll(cwd?: string): CleanResult {
   return {
     cleaned: {
       dead: cleanDead(),
       stale: cleanStale(cwd),
       orphaned: cleanOrphans(cwd),
+      staleLocks: cleanStaleLocks(cwd),
+      orphanLocks: cleanOrphanLocks(cwd),
     },
   };
 }

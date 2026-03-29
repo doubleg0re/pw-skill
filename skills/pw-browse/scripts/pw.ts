@@ -128,16 +128,18 @@ if (command === 'analyze') {
 // --- clean ---
 if (command === 'clean') {
   const target = restArgs.filter(a => !a.startsWith('--'))[0];
-  const { cleanDead, cleanStale, cleanOrphans, cleanAll } = await import('./clean.js');
+  const { cleanDead, cleanStale, cleanOrphans, cleanStaleLocks, cleanOrphanLocks, cleanAll } = await import('./clean.js');
 
   let result;
   switch (target) {
-    case 'dead':     result = { cleaned: { dead: cleanDead() } }; break;
-    case 'stale':    result = { cleaned: { stale: cleanStale() } }; break;
-    case 'orphans':  result = { cleaned: { orphaned: cleanOrphans() } }; break;
-    case 'all':      result = cleanAll(); break;
+    case 'dead':          result = { cleaned: { dead: cleanDead() } }; break;
+    case 'stale':         result = { cleaned: { stale: cleanStale() } }; break;
+    case 'orphans':       result = { cleaned: { orphaned: cleanOrphans() } }; break;
+    case 'stale-locks':   result = { cleaned: { staleLocks: cleanStaleLocks() } }; break;
+    case 'orphan-locks':  result = { cleaned: { orphanLocks: cleanOrphanLocks() } }; break;
+    case 'all':           result = cleanAll(); break;
     default:
-      console.log(JSON.stringify({ success: false, error: 'Usage: pw clean <dead|stale|orphans|all>. For broken packages, use `pw rary need-repair` + `pw rary kick`.' }));
+      console.log(JSON.stringify({ success: false, error: 'Usage: pw clean <dead|stale|orphans|stale-locks|orphan-locks|all>' }));
       process.exit(1);
   }
 
