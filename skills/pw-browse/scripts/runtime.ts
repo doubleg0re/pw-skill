@@ -60,6 +60,27 @@ const defaultLogger = {
   error: (msg: string) => process.stderr.write(`[pw:error] ${msg}\n`),
 };
 
+/**
+ * Create a logger prefixed with extension package name.
+ */
+export function prefixedLogger(baseLogger: typeof defaultLogger, packageName: string) {
+  return {
+    info: (msg: string) => baseLogger.info(`[${packageName}] ${msg}`),
+    warn: (msg: string) => baseLogger.warn(`[${packageName}] ${msg}`),
+    error: (msg: string) => baseLogger.error(`[${packageName}] ${msg}`),
+  };
+}
+
+/**
+ * Create a per-extension view of the runtime context with prefixed logger.
+ */
+export function createExtensionView(runtime: ExtensionRuntimeContext, packageName: string): ExtensionRuntimeContext {
+  return {
+    ...runtime,
+    logger: prefixedLogger(runtime.logger, packageName),
+  };
+}
+
 export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext & { _cleanups: (() => Promise<void> | void)[] } {
   const cleanups: (() => Promise<void> | void)[] = [];
   const handlers = opts.eventHandlers || [];

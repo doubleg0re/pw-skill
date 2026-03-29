@@ -8,7 +8,9 @@ const restArgs = args.filter(a => !a.startsWith('--')).slice(1);
 const headed = hasFlag(args, 'headed');
 
 async function main() {
-  const { browser, context } = await connectBrowser({ headless: !headed });
+  const { browser, context, session } = await connectBrowser({ headless: !headed });
+  const { buildRuntime } = await import('./runtime.js');
+  const runtime = buildRuntime({ session });
 
   switch (command) {
     case 'new': {
@@ -19,14 +21,12 @@ async function main() {
       }
       const pages = context.pages();
       const index = pages.indexOf(page);
+      const tabUrl = page.url();
+      const tabTitle = await page.title();
+      runtime.emitEvent('tab:created', { tabId: index, url: tabUrl, title: tabTitle });
       output({
         success: true,
-        data: {
-          index,
-          url: page.url(),
-          title: await page.title(),
-          totalTabs: pages.length,
-        },
+        data: { index, url: tabUrl, title: tabTitle, totalTabs: pages.length },
       });
       break;
     }
@@ -56,7 +56,9 @@ async function main() {
         output({ success: false, error: `Invalid index. ${pages.length} tabs open (0-${pages.length - 1})` });
         break;
       }
+      const closedUrl = pages[idx].url();
       await pages[idx].close();
+      runtime.emitEvent('tab:closed', { tabId: idx, url: closedUrl });
       output({ success: true, data: { closed: idx, remaining: context.pages().length } });
       break;
     }

@@ -222,10 +222,16 @@ export function createRaryStore(opts: RaryStoreOptions) {
         try {
           const hookUrl = pathToFileURL(hookPath).href;
           const hookModule = await import(hookUrl);
+          // Create per-extension runtime view with prefixed logger
+          let extContext = context;
+          if (context && typeof context === 'object' && context.logger) {
+            const { createExtensionView } = await import('./runtime.js');
+            extContext = createExtensionView(context, name);
+          }
           if (typeof hookModule.default === 'function') {
-            await hookModule.default(context);
+            await hookModule.default(extContext);
           } else if (typeof hookModule[hookName] === 'function') {
-            await hookModule[hookName](context);
+            await hookModule[hookName](extContext);
           }
           ran.push(name);
         } catch (err) {

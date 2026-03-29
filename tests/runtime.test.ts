@@ -123,3 +123,47 @@ describe('buildRuntime — registerCleanup', () => {
     expect(() => runtime.registerCleanup(async () => {})).not.toThrow();
   });
 });
+
+describe('prefixedLogger', () => {
+  it('prefixes messages with package name', async () => {
+    const { prefixedLogger } = await import('../skills/pw-browse/scripts/runtime.js');
+    const msgs: string[] = [];
+    const base = {
+      info: (m: string) => msgs.push(m),
+      warn: (m: string) => msgs.push(m),
+      error: (m: string) => msgs.push(m),
+    };
+    const logger = prefixedLogger(base, 'my-ext');
+    logger.info('hello');
+    logger.warn('caution');
+    expect(msgs[0]).toBe('[my-ext] hello');
+    expect(msgs[1]).toBe('[my-ext] caution');
+  });
+});
+
+describe('createExtensionView', () => {
+  it('wraps runtime with prefixed logger', async () => {
+    const { buildRuntime, createExtensionView } = await import('../skills/pw-browse/scripts/runtime.js');
+    const runtime = buildRuntime({ session: { id: 'x', name: 'test', port: 0, pid: 0, wsEndpoint: '', startedAt: '', video: null } as any });
+    const view = createExtensionView(runtime, 'my-pkg');
+    // View should have same emitEvent but different logger
+    expect(view.emitEvent).toBe(runtime.emitEvent);
+    expect(view.logger).not.toBe(runtime.logger);
+  });
+});
+
+describe('tab-registry', () => {
+  it('assigns stable IDs', async () => {
+    const { assignTabId, getTab, removeTab, clearRegistry } = await import('../skills/pw-browse/scripts/tab-registry.js');
+    clearRegistry();
+    const t1 = assignTabId('http://a.com', 'A');
+    const t2 = assignTabId('http://b.com', 'B');
+    expect(t1.tabId).toBe(1);
+    expect(t2.tabId).toBe(2);
+    expect(getTab(1)?.url).toBe('http://a.com');
+    removeTab(1);
+    expect(getTab(1)).toBeUndefined();
+    expect(getTab(2)?.url).toBe('http://b.com');
+    clearRegistry();
+  });
+});

@@ -807,6 +807,13 @@ export async function runSteps(
 
       results.push({ step: stepIndex, action: step.action!, success: true, ...(result !== undefined ? { data: result } : {}) });
       debugLog?.(stepIndex, step.action!, 'ok');
+
+      // Emit core tab events after relevant actions
+      if (options.runtime?.emitEvent) {
+        if (step.action === 'navigate') {
+          options.runtime.emitEvent('tab:navigated', { url: result?.url, title: result?.title });
+        }
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       debugLog?.(stepIndex, step.action || 'unknown', `failed (${errorMsg.slice(0, 60)})`);
