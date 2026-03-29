@@ -110,6 +110,20 @@ async function connect(): Promise<void> {
     process.stderr.write(`[monitor-sidecar] connected to ${browserWsUrl}\n`);
     // Enable target discovery
     send('Target.setDiscoverTargets', { discover: true });
+
+    // Poll active tab via CDP /json (first page target = active, best-effort)
+    setInterval(async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/json`);
+        const targets = (await res.json() as any[]).filter((t: any) => t.type === 'page');
+        if (targets.length === 0) return;
+        const topEntry = findByCdpId(targets[0].id);
+        if (topEntry && activeTabId !== topEntry.tabId) {
+          activeTabId = topEntry.tabId;
+          persistRegistry();
+        }
+      } catch {}
+    }, 2000);
   });
 
   ws.addEventListener('message', (event: MessageEvent) => {

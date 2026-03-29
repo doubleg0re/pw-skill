@@ -85,6 +85,27 @@ function isAlive(pid: number): boolean {
 }
 
 server.listen(port, () => {
+  // Write GUI PID for close hook cleanup
+  const guiPidPath = join(sessionDir, 'gui.pid');
+  writeFileSync(guiPidPath, String(process.pid));
+
   process.stderr.write(`[pw-monitor-gui] dashboard at http://localhost:${port}\n`);
   process.stderr.write(`[pw-monitor-gui] session: ${sessionName}\n`);
+
+  // Auto-exit when session is closed (session.json disappears or PID dies)
+  const sessionCheck = setInterval(() => {
+    const session = readJsonSafe(sessionJsonPath);
+    if (!session) {
+      process.stderr.write(`[pw-monitor-gui] session gone, shutting down\n`);
+      clearInterval(sessionCheck);
+      server.close();
+      process.exit(0);
+    }
+    if (session.pid && !isAlive(session.pid)) {
+      process.stderr.write(`[pw-monitor-gui] session process dead, shutting down\n`);
+      clearInterval(sessionCheck);
+      server.close();
+      process.exit(0);
+    }
+  }, 3000);
 });
