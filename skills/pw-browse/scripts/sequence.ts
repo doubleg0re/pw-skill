@@ -248,16 +248,16 @@ export async function executeAction(
   action: string,
   rawArgs: string[] | Record<string, any>,
   vars: VarStore,
-  runtimeActionMap?: Record<string, (page: any, args: any) => Promise<{ result?: any }>>,
+  runtimeActionMap?: Record<string, (page: any, args: any, runtime?: any) => Promise<{ result?: any }>>,
+  runtime?: any,
 ): Promise<{ result?: any }> {
   const a = vars.interpolateArgs(rawArgs);
   const map = runtimeActionMap || ACTION_MAP;
-  const fn = map[action] as (page: Page, a: any) => Promise<{ result?: any }>;
+  const fn = map[action] as (page: Page, a: any, runtime?: any) => Promise<{ result?: any }>;
   if (!fn) throw new Error(`Unknown action: ${action}`);
 
-  // Now 'a' can be either string[] or Record<string, any>
-  // Both are accepted by the refactored actions in actions.ts
-  return fn(page, a);
+  // Extension actions receive runtime as 3rd arg. Built-in actions ignore it.
+  return fn(page, a, runtime);
 }
 
 // --- Flow engine ---
@@ -269,8 +269,9 @@ export interface RunOptions {
   baseDir?: string;
   callDepth?: number;
   callStack?: string[];
-  actionMap?: Record<string, (page: any, args: any) => Promise<{ result?: any }>>;
-  inSubflow?: boolean; // true when inside a def type="flow" call
+  actionMap?: Record<string, (page: any, args: any, runtime?: any) => Promise<{ result?: any }>>;
+  runtime?: any; // ExtensionRuntimeContext for extension actions
+  inSubflow?: boolean;
 }
 
 export async function runSteps(
@@ -793,7 +794,7 @@ export async function runSteps(
 
       // --- General action ---
       debugLog?.(stepIndex, step.action!, 'start');
-      const { result } = await executeAction(page, step.action!, step.args || [], vars, options.actionMap);
+      const { result } = await executeAction(page, step.action!, step.args || [], vars, options.actionMap, options.runtime);
 
       // Set ephemeral registers
       vars.set('$ret', result);
@@ -994,7 +995,7 @@ export function validateSteps(steps: Step[], prefix: string = '', extraKnownActi
 
 // --- Entry point ---
 
-run(async ({ page, args: cliArgs }) => {
+run(async ({ page, args: cliArgs, session }) => {
   const input = cliArgs[0];
   if (!input) return { success: false, error: 'Usage: sequence.ts <json-string | json-file-path>' };
 
@@ -1068,7 +1069,11 @@ run(async ({ page, args: cliArgs }) => {
   const { dirname } = await import('path');
   const baseDir = existsSync(input) ? dirname(input.startsWith('/') || input.includes(':') ? input : (await import('path')).resolve(input)) : process.cwd();
 
-  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap });
+  // Build runtime context for extension actions
+  const { buildRuntime } = await import('./runtime.js');
+  const seqRuntime = buildRuntime({ session, page });
+
+  const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap, runtime: seqRuntime });
 
   // Clean up heartbeat and lock
   clearInterval(heartbeat);

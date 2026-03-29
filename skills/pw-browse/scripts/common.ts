@@ -525,7 +525,9 @@ export async function run(
     // --- Core: Run 'load' hooks for active extensions ---
     const { runHooks } = await import('./rary.js');
     try {
-      const hookResult = await runHooks('load', { browser, context, page, session });
+      const { buildRuntime } = await import('./runtime.js');
+      const extensionRuntime = buildRuntime({ session, browser, context, page });
+      const hookResult = await runHooks('load', extensionRuntime);
       hookErrors = hookResult.errors;
     } catch {}
 
