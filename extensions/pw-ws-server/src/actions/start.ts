@@ -20,6 +20,7 @@ export default async function(page: any, args: any, runtime?: any): Promise<{ re
   const metadataPath = join(dir, 'ws-server.json');
   const port = args?.port || args?.[0] || 47831;
   const host = args?.host || '127.0.0.1';
+  const protocol = args?.protocol || 'monitor';
   const replace = args?.replace || false;
 
   // Check existing server
@@ -41,7 +42,7 @@ export default async function(page: any, args: any, runtime?: any): Promise<{ re
   const serverScript = join(import.meta.dirname || __dirname, '..', 'server.ts');
   const child = spawn(
     process.execPath,
-    [...process.execArgv, serverScript, sessionName, `--port=${port}`, `--host=${host}`],
+    [...process.execArgv, serverScript, sessionName, `--port=${port}`, `--host=${host}`, `--protocol=${protocol}`],
     { detached: true, stdio: 'ignore', cwd: process.cwd() },
   );
   child.unref();
@@ -54,6 +55,7 @@ export default async function(page: any, args: any, runtime?: any): Promise<{ re
       started: true,
       pid: child.pid,
       url: `ws://${host}:${port}`,
+      protocol,
       session: sessionName,
     },
   };
