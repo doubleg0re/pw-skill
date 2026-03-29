@@ -19,6 +19,27 @@ if (args[0] === '--inline' || args[0] === '-i') {
 
 // :: chaining: forward to pwi if all segments are browser actions
 if (args.includes('::')) {
+  // Validate: extract action names from each segment, reject non-chainable commands
+  const CHAINABLE_ACTIONS = new Set([
+    'navigate', 'screenshot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
+    'fill', 'type', 'select', 'upload', 'download', 'submit', 'copy', 'paste',
+    'dump', 'attr', 'find', 'wait', 'fetch', 'evaluate',
+  ]);
+  const segments: string[] = [];
+  let current: string | null = null;
+  for (const a of args) {
+    if (a === '::') { current = null; continue; }
+    if (current === null && !a.startsWith('--')) { current = a; segments.push(a); }
+  }
+  const rejected = segments.filter(s => !CHAINABLE_ACTIONS.has(s));
+  if (rejected.length > 0) {
+    console.log(JSON.stringify({
+      success: false,
+      error: `pw chaining only supports browser actions. Not chainable: ${rejected.map(r => `"${r}"`).join(', ')}. Use separate pw commands instead.`,
+    }));
+    process.exit(1);
+  }
+
   const pwiScript = join(SCRIPTS_DIR, 'pwi.ts');
   const result = spawnSync(process.execPath, [...process.execArgv, pwiScript, ...args], {
     stdio: 'inherit',
