@@ -3,6 +3,7 @@
 import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
+import { homedir } from 'os';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
@@ -230,6 +231,35 @@ if (command === 'close') {
   const result = await closeSession(restArgs);
   console.log(JSON.stringify(result));
   process.exit(result.success ? 0 : 1);
+}
+
+// --- gui ---
+if (command === 'gui') {
+  // Resolve session for GUI
+  const { resolveSession } = await import('./session.js');
+  const sessionFlag = restArgs.find(a => a.startsWith('--session='))?.slice('--session='.length);
+  try {
+    const session = resolveSession(sessionFlag);
+    const { isInstalled } = await import('./rary.js');
+    if (!isInstalled('pw-monitor')) {
+      console.log(JSON.stringify({ success: false, error: 'pw-monitor extension required. Install with: pw rary get <repo> && pw rary put pw-monitor' }));
+      process.exit(1);
+    }
+    const guiScript = join(homedir(), '.playwright-state', 'toybox', 'pw-monitor', 'src', 'gui', 'server.ts');
+    if (!existsSync(guiScript)) {
+      console.log(JSON.stringify({ success: false, error: 'pw-monitor GUI not found. Update pw-monitor extension.' }));
+      process.exit(1);
+    }
+    const portArg = restArgs.find(a => a.startsWith('--port=')) || '--port=3100';
+    const result = spawnSync(process.execPath, [...process.execArgv, guiScript, session.name, portArg], {
+      stdio: 'inherit',
+      cwd: process.cwd(),
+    });
+    process.exit(result.status ?? 1);
+  } catch (err: any) {
+    console.log(JSON.stringify({ success: false, error: err.message }));
+    process.exit(1);
+  }
 }
 
 // --- Regular script commands ---
