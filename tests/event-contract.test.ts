@@ -14,11 +14,12 @@ import {
 // --- Event name contract ---
 
 describe('TAB_EVENTS contract', () => {
-  it('core defines created, closed, navigated, activated', () => {
+  it('core defines created, closed, navigated, activated, deactivated', () => {
     expect(TAB_EVENTS.CREATED).toBe('tab:created');
     expect(TAB_EVENTS.CLOSED).toBe('tab:closed');
     expect(TAB_EVENTS.NAVIGATED).toBe('tab:navigated');
     expect(TAB_EVENTS.ACTIVATED).toBe('tab:activated');
+    expect(TAB_EVENTS.DEACTIVATED).toBe('tab:deactivated');
   });
 
   it('pw-monitor mirrors core event names exactly', () => {
@@ -26,6 +27,7 @@ describe('TAB_EVENTS contract', () => {
     expect(MONITOR_TAB_EVENTS.CLOSED).toBe(TAB_EVENTS.CLOSED);
     expect(MONITOR_TAB_EVENTS.NAVIGATED).toBe(TAB_EVENTS.NAVIGATED);
     expect(MONITOR_TAB_EVENTS.ACTIVATED).toBe(TAB_EVENTS.ACTIVATED);
+    expect(MONITOR_TAB_EVENTS.DEACTIVATED).toBe(TAB_EVENTS.DEACTIVATED);
   });
 
   it('core and pw-monitor have the same event set', () => {
