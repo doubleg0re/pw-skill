@@ -125,19 +125,19 @@ describe('buildRuntime — registerCleanup', () => {
 });
 
 describe('prefixedLogger', () => {
-  it('prefixes messages with package name', async () => {
-    const { prefixedLogger } = await import('../skills/pw-browse/scripts/runtime.js');
-    const msgs: string[] = [];
-    const base = {
-      info: (m: string) => msgs.push(m),
-      warn: (m: string) => msgs.push(m),
-      error: (m: string) => msgs.push(m),
-    };
+  it('prefixes messages with package name in log buffer', async () => {
+    const { prefixedLogger, getLogBuffer, clearLogBuffer } = await import('../skills/pw-browse/scripts/runtime.js');
+    clearLogBuffer();
+    const base = { info: () => {}, warn: () => {}, error: () => {} };
     const logger = prefixedLogger(base, 'my-ext');
     logger.info('hello');
     logger.warn('caution');
-    expect(msgs[0]).toBe('[my-ext] hello');
-    expect(msgs[1]).toBe('[my-ext] caution');
+    const logs = getLogBuffer();
+    const hello = logs.find(l => l.message === 'hello');
+    const caution = logs.find(l => l.message === 'caution');
+    expect(hello?.source).toBe('my-ext');
+    expect(caution?.source).toBe('my-ext');
+    clearLogBuffer();
   });
 });
 
@@ -165,5 +165,39 @@ describe('tab-registry', () => {
     expect(getTab(1)).toBeUndefined();
     expect(getTab(2)?.url).toBe('http://b.com');
     clearRegistry();
+  });
+});
+
+describe('structured log buffer', () => {
+  it('captures log entries with source and timestamp', async () => {
+    const { getLogBuffer, clearLogBuffer } = await import('../skills/pw-browse/scripts/runtime.js');
+    clearLogBuffer();
+
+    const runtime = buildRuntime({ session: fakeSession() });
+    runtime.logger.info('test message');
+    runtime.logger.warn('warning msg');
+
+    const logs = getLogBuffer();
+    expect(logs.length).toBeGreaterThanOrEqual(2);
+    const last = logs[logs.length - 1];
+    expect(last.level).toBe('warn');
+    expect(last.message).toBe('warning msg');
+    expect(last.source).toBe('pw');
+    expect(last.timestamp).toBeTruthy();
+    clearLogBuffer();
+  });
+
+  it('prefixed logger records source as package name', async () => {
+    const { prefixedLogger, getLogBuffer, clearLogBuffer } = await import('../skills/pw-browse/scripts/runtime.js');
+    clearLogBuffer();
+
+    const base = { info: () => {}, warn: () => {}, error: () => {} };
+    const logger = prefixedLogger(base, 'my-ext');
+    logger.info('hello from ext');
+
+    const logs = getLogBuffer();
+    const entry = logs.find(l => l.message === 'hello from ext');
+    expect(entry?.source).toBe('my-ext');
+    clearLogBuffer();
   });
 });

@@ -54,20 +54,45 @@ export interface BuildRuntimeOptions {
   eventHandlers?: EventHandler[];
 }
 
+export interface LogEntry {
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  source: string;
+  timestamp: string;
+}
+
+const logBuffer: LogEntry[] = [];
+
+function createLog(level: LogEntry['level'], msg: string, source: string = 'pw') {
+  const entry: LogEntry = { level, message: msg, source, timestamp: new Date().toISOString() };
+  logBuffer.push(entry);
+  process.stderr.write(`[${source}:${level}] ${msg}\n`);
+}
+
 const defaultLogger = {
-  info: (msg: string) => process.stderr.write(`[pw:info] ${msg}\n`),
-  warn: (msg: string) => process.stderr.write(`[pw:warn] ${msg}\n`),
-  error: (msg: string) => process.stderr.write(`[pw:error] ${msg}\n`),
+  info: (msg: string) => createLog('info', msg),
+  warn: (msg: string) => createLog('warn', msg),
+  error: (msg: string) => createLog('error', msg),
 };
+
+/** Get all structured log entries (for file save or AI analysis) */
+export function getLogBuffer(): LogEntry[] {
+  return [...logBuffer];
+}
+
+/** Clear log buffer */
+export function clearLogBuffer(): void {
+  logBuffer.length = 0;
+}
 
 /**
  * Create a logger prefixed with extension package name.
  */
 export function prefixedLogger(baseLogger: typeof defaultLogger, packageName: string) {
   return {
-    info: (msg: string) => baseLogger.info(`[${packageName}] ${msg}`),
-    warn: (msg: string) => baseLogger.warn(`[${packageName}] ${msg}`),
-    error: (msg: string) => baseLogger.error(`[${packageName}] ${msg}`),
+    info: (msg: string) => createLog('info', msg, packageName),
+    warn: (msg: string) => createLog('warn', msg, packageName),
+    error: (msg: string) => createLog('error', msg, packageName),
   };
 }
 
@@ -87,6 +112,11 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
   const logger = defaultLogger;
 
   const emitEvent = (event: string, payload: any): void => {
+    // Core tab registry GC: auto-remove tab on tab:closed
+    if (event === 'tab:closed' && payload?.tabId != null) {
+      import('./tab-registry.js').then(({ removeTab }) => removeTab(payload.tabId)).catch(() => {});
+    }
+
     // Fire-and-forget: dispatch to matching handlers via Promise.allSettled
     const matching = handlers.filter(h => h.event === event);
     if (matching.length === 0) return;

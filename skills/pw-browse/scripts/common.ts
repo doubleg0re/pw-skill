@@ -483,6 +483,21 @@ export async function run(
   }) => Promise<Result>,
 ): Promise<void> {
   let hookErrors: string[] = [];
+  let extensionRuntime: any = null;
+
+  // SIGINT/SIGTERM guard: attempt cleanup on unexpected termination
+  const signalHandler = async () => {
+    if (extensionRuntime) {
+      try {
+        const { runCleanups } = await import('./runtime.js');
+        await runCleanups(extensionRuntime);
+      } catch {}
+    }
+    process.exit(1);
+  };
+  process.once('SIGINT', signalHandler);
+  process.once('SIGTERM', signalHandler);
+
   try {
     const cliArgs = parseArgs();
     const headed = hasFlag(cliArgs, 'headed');
@@ -532,7 +547,7 @@ export async function run(
       );
       hookErrors.push(...eventErrors);
 
-      const extensionRuntime = buildRuntime({ session, browser, context, page, eventHandlers });
+      extensionRuntime = buildRuntime({ session, browser, context, page, eventHandlers });
       const hookResult = await runHooks('load', extensionRuntime);
       hookErrors.push(...hookResult.errors);
     } catch {}
