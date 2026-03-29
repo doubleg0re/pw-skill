@@ -1088,9 +1088,31 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   const { dirname } = await import('path');
   const baseDir = existsSync(input) ? dirname(input.startsWith('/') || input.includes(':') ? input : (await import('path')).resolve(input)) : process.cwd();
 
-  // Build runtime context for extension actions
-  const { buildRuntime } = await import('./runtime.js');
-  const seqRuntime = buildRuntime({ session, page });
+  // Build runtime context with event handlers for extension actions
+  const { buildRuntime, loadEventHandlers } = await import('./runtime.js');
+  const { getActiveExtensions, packageDir } = await import('./rary.js');
+  const { findTabByPageIndex, findTabByUrl } = await import('./tab-registry.js');
+
+  let eventHandlers: any[] = [];
+  try {
+    const loaded = await loadEventHandlers(
+      () => getActiveExtensions().map((e: any) => ({ name: e.name, manifest: e.manifest })),
+      packageDir,
+    );
+    eventHandlers = loaded.handlers;
+  } catch {}
+
+  // Resolve stable tabId for current page
+  const pageIndex = page.context().pages().indexOf(page);
+  const currentTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(page.url());
+  const tabId = currentTab?.tabId;
+
+  const seqRuntime = buildRuntime({
+    session,
+    page,
+    eventHandlers,
+    tab: tabId != null ? { id: tabId, url: page.url() } : undefined,
+  });
 
   const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap, runtime: seqRuntime });
 

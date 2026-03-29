@@ -53,6 +53,7 @@ export interface BuildRuntimeOptions {
   context?: any;
   page?: any;
   eventHandlers?: EventHandler[];
+  tab?: { id?: number; url?: string; title?: string };
 }
 
 export interface LogEntry {
@@ -154,10 +155,10 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
     getBrowser: async () => opts.browser,
     getContext: async () => opts.context,
     getPage: async () => opts.page,
-    tab: opts.page ? {
+    tab: opts.tab ?? (opts.page ? {
       url: typeof opts.page.url === 'function' ? opts.page.url() : undefined,
       title: undefined, // lazy — call getPage().title() if needed
-    } : undefined,
+    } : undefined),
     emitEvent,
     registerCleanup: (fn) => { cleanups.push(fn); },
     logger,

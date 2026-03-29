@@ -547,7 +547,15 @@ export async function run(
       );
       hookErrors.push(...eventErrors);
 
-      extensionRuntime = buildRuntime({ session, browser, context, page, eventHandlers });
+      // Resolve stable tabId for current page
+      const { findTabByPageIndex, findTabByUrl } = await import('./tab-registry.js');
+      const pIdx = context.pages().indexOf(page);
+      const curTab = (pIdx >= 0 ? findTabByPageIndex(pIdx) : undefined) || findTabByUrl(page.url());
+
+      extensionRuntime = buildRuntime({
+        session, browser, context, page, eventHandlers,
+        tab: curTab ? { id: curTab.tabId, url: curTab.url, title: curTab.title } : undefined,
+      });
       const hookResult = await runHooks('load', extensionRuntime);
       hookErrors.push(...hookResult.errors);
     } catch {}
