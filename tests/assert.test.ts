@@ -114,6 +114,6 @@ describe('evaluateAssertion', () => {
       '#btn', true, undefined, undefined,
     );
     expect(result.passed).toBe(false);
-    expect(result.actual).toBeUndefined();
+    expect(result.actual).toBe('[attribute not found]');
   });
 });

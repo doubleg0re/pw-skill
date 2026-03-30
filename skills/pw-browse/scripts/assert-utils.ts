@@ -76,7 +76,7 @@ export function evaluateAssertion(
       target,
       passed: actualAttrValue === expected,
       expected,
-      actual: actualAttrValue,
+      actual: actualAttrValue ?? '[attribute not found]',
     };
   }
 
