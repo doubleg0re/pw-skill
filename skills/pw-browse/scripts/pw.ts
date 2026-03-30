@@ -265,7 +265,7 @@ Browser actions:
 
 Debugging:
   console [inject|dump|clear|tail]           Console log capture
-  network [inject|dump|clear|tail|find]      Network request capture
+  network [inject|dump|clear|tail|find]      Network capture (find: --body --json --body-limit=N)
   trace [start|stop|view|status]             Record and view traces
   video [list|path|rename|clear]             Manage recorded videos
   tab [new|list|close] [args...]             Manage browser tabs
