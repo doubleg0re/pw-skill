@@ -10,7 +10,7 @@ const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS = [
   'navigate', 'nav', 'refresh', 'reload', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
   'fill', 'type', 'select', 'sel', 'upload', 'submit',
-  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval',
+  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert',
 ] as const;
 const CHAINABLE_ACTION_SET = new Set(CHAINABLE_ACTIONS);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
@@ -257,6 +257,7 @@ Browser actions:
   find <selector> [--detail=tag|class|full]  Query DOM elements
   wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
   fetch <METHOD> <url> [body-json]           HTTP request with auth
+  assert <selector> --exists|--text=...|--contains=...|--attr=...  Assert element state
   eval|evaluate <js-expression>              Run JavaScript in page
   seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
   screenshots                               Default: current cwd/.playwright-state/screenshots
@@ -264,7 +265,7 @@ Browser actions:
 
 Debugging:
   console [inject|dump|clear|tail]           Console log capture
-  network [inject|dump|clear|tail|find]      Network request capture
+  network [inject|dump|clear|tail|find]      Network capture (find: --body --json --body-limit=N)
   trace [start|stop|view|status]             Record and view traces
   video [list|path|rename|clear]             Manage recorded videos
   tab [new|list|close] [args...]             Manage browser tabs
@@ -394,6 +395,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   fetch:       { script: 'fetch.ts',       desc: 'HTTP request (with auth)' },
   evaluate:    { script: 'evaluate.ts',    desc: 'Run JavaScript' },
   eval:        { script: 'evaluate.ts',    desc: 'Run JavaScript' },
+  assert:      { script: 'assert.ts',      desc: 'Assert element state' },
   sequence:    { script: 'sequence.ts',    desc: 'Run action sequence' },
   console:     { script: 'console.ts',     desc: 'Console logs' },
   network:     { script: 'network.ts',     desc: 'Network requests' },

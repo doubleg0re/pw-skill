@@ -823,6 +823,12 @@ export async function runSteps(
           options.runtime.emitEvent(TAB_EVENTS.NAVIGATED, buildTabEvent(TAB_EVENTS.NAVIGATED, options.runtime.session.name, navTab));
         }
       }
+
+      // Advance documentEpoch after navigation/reload actions
+      if (['navigate', 'nav', 'refresh', 'reload'].includes(step.action!) && options.runtime?.session?.name) {
+        const { advanceDocumentEpoch } = await import('./session.js');
+        advanceDocumentEpoch(options.runtime.session.name);
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       debugLog?.(stepIndex, step.action || 'unknown', `failed (${errorMsg.slice(0, 60)})`);
@@ -851,7 +857,7 @@ export async function runSteps(
 const KNOWN_ACTIONS = new Set([
   'navigate', 'nav', 'refresh', 'reload', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'sel', 'upload', 'attr', 'submit', 'fetch', 'screenshot', 'shot',
-  'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'return',
+  'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'return', 'assert',
 ]);
 
 export function validateSteps(steps: Step[], prefix: string = '', extraKnownActions?: Set<string>): string[] {

@@ -1,6 +1,11 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
 import type { Page } from 'playwright';
 import { screenshotPath } from './common.js';
+import { headTruncate } from './dump-utils.js';
+import { evaluateAssertion, type AssertionType } from './assert-utils.js';
+import { createElementRegistry, resolveElementKey } from './element-registry.js';
+import { localStateDir, getSession, getDocumentEpoch } from './session.js';
+import { findTabByPageIndex, findTabByUrl } from './tab-registry.js';
 
 /** Flexible argument type for actions */
 export type ActionArgs = string[] | Record<string, any>;
@@ -9,6 +14,60 @@ export type ActionArgs = string[] | Record<string, any>;
 function getArg(a: ActionArgs, name: string, index: number): any {
   if (Array.isArray(a)) return a[index];
   return a[name] ?? a[index]; // fallback to index if name not found
+}
+
+/**
+ * Resolve --key to a locator selector, or fall back to normal selector from getArg.
+ * Returns { selector, elementKey? } — elementKey is set when --key was used successfully.
+ */
+async function resolveKeyOrSelector(
+  page: Page,
+  a: ActionArgs,
+  selectorIndex: number,
+  runtime?: any,
+): Promise<{ selector: string; elementKey?: string }> {
+  const key = !Array.isArray(a) ? a.key : undefined;
+  if (!key) {
+    return { selector: getArg(a, 'selector', selectorIndex) };
+  }
+
+  // Determine session info: prefer runtime, fall back to file-based lookup
+  let sessionId: string;
+  let sessionName: string;
+  if (runtime?.session) {
+    sessionId = runtime.session.id;
+    sessionName = runtime.session.name;
+  } else {
+    // CLI mode: read bound session from file
+    const { getBoundSession } = await import('./session.js');
+    const boundName = getBoundSession();
+    if (!boundName) throw Object.assign(new Error('No active session for --key resolution'), { errorCode: 'stale_key' });
+    const session = getSession(boundName);
+    if (!session) throw Object.assign(new Error(`Session "${boundName}" not found`), { errorCode: 'stale_key' });
+    sessionId = session.id;
+    sessionName = session.name;
+  }
+
+  const tabId = (() => {
+    if (runtime?.tab?.id !== undefined) return runtime.tab.id;
+    const context = page.context();
+    const pageIndex = context.pages().indexOf(page);
+    const curTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(page.url());
+    return curTab?.tabId ?? 0;
+  })();
+
+  const documentEpoch = getDocumentEpoch(sessionName);
+  const registry = createElementRegistry(localStateDir());
+  const result = await resolveElementKey(page, key, sessionId, tabId, documentEpoch, registry);
+
+  if (!result.success) {
+    const err = new Error(result.error);
+    (err as any).errorCode = result.errorCode;
+    (err as any).data = result.data;
+    throw err;
+  }
+
+  return { selector: result.locator!, elementKey: key };
 }
 
 export async function actionNavigate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
@@ -22,9 +81,12 @@ export async function actionRefresh(page: Page, _a?: ActionArgs): Promise<{ resu
   return { result: { url: page.url(), title: await page.title(), reloaded: true } };
 }
 
-export async function actionClick(page: Page, a: ActionArgs): Promise<{ result?: any }> {
-  const selector = getArg(a, 'selector', 0);
-  if (/^\d+,\d+$/.test(selector)) {
+export async function actionClick(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+  const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
+  if (elementKey) {
+    // Resolved from elementKey — always use locator (may contain >> nth=N)
+    await page.locator(selector).first().click();
+  } else if (/^\d+,\d+$/.test(selector)) {
     const [x, y] = selector.split(',').map(Number);
     await page.mouse.click(x, y);
   } else if (selector.startsWith('#') || selector.startsWith('.') || selector.startsWith('[')) {
@@ -32,18 +94,18 @@ export async function actionClick(page: Page, a: ActionArgs): Promise<{ result?:
   } else {
     await page.getByText(selector, { exact: false }).first().click();
   }
-  return {};
+  return elementKey ? { result: { elementKey } } : {};
 }
 
-export async function actionDblclick(page: Page, a: ActionArgs): Promise<{ result?: any }> {
-  const selector = getArg(a, 'selector', 0);
+export async function actionDblclick(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+  const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   if (/^\d+,\d+$/.test(selector)) {
     const [x, y] = selector.split(',').map(Number);
     await page.mouse.dblclick(x, y);
   } else {
     await page.locator(selector).first().dblclick();
   }
-  return {};
+  return elementKey ? { result: { elementKey } } : {};
 }
 
 export async function actionDrag(page: Page, a: ActionArgs): Promise<{ result?: any }> {
@@ -63,12 +125,12 @@ export async function actionDrag(page: Page, a: ActionArgs): Promise<{ result?: 
   return {};
 }
 
-export async function actionFill(page: Page, a: ActionArgs): Promise<{ result?: any }> {
-  const selector = getArg(a, 'selector', 0);
+export async function actionFill(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+  const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   const value = getArg(a, 'value', 1);
   await page.locator(selector).first().click();
   await page.locator(selector).first().fill(String(value));
-  return {};
+  return elementKey ? { result: { elementKey } } : {};
 }
 
 export async function actionType(page: Page, a: ActionArgs): Promise<{ result?: any }> {
@@ -340,15 +402,15 @@ export async function actionWait(page: Page, a: ActionArgs, runtime?: any): Prom
   return {};
 }
 
-export async function actionHover(page: Page, a: ActionArgs): Promise<{ result?: any }> {
-  const selector = getArg(a, 'selector', 0);
+export async function actionHover(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+  const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   if (/^\d+,\d+$/.test(selector)) {
     const [x, y] = selector.split(',').map(Number);
     await page.mouse.move(x, y);
   } else {
     await page.locator(selector).first().hover();
   }
-  return {};
+  return elementKey ? { result: { elementKey } } : {};
 }
 
 export async function actionScroll(page: Page, a: ActionArgs): Promise<{ result?: any }> {
@@ -395,8 +457,8 @@ export async function actionUpload(page: Page, a: ActionArgs): Promise<{ result?
   return {};
 }
 
-export async function actionAttr(page: Page, a: ActionArgs): Promise<{ result?: any }> {
-  const selector = getArg(a, 'selector', 0);
+export async function actionAttr(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+  const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   const name = getArg(a, 'name', 1);
   const value = getArg(a, 'value', 2);
 
@@ -406,14 +468,14 @@ export async function actionAttr(page: Page, a: ActionArgs): Promise<{ result?: 
       else if (name === 'value') (el as HTMLInputElement).value = value;
       else el.setAttribute(name, value);
     }, { name, value: String(value) });
-    return {};
+    return elementKey ? { result: { elementKey } } : {};
   }
   const val = await page.locator(selector).first().evaluate((el, name) => {
     if (name === 'textContent') return el.textContent?.trim();
     if (name === 'value') return (el as HTMLInputElement).value;
     return el.getAttribute(name);
   }, name);
-  return { result: val };
+  return { result: elementKey ? { value: val, elementKey } : val };
 }
 
 export async function actionSubmit(page: Page, a: ActionArgs): Promise<{ result?: any }> {
@@ -459,7 +521,17 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
 
 export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
   const name = getArg(a, 'name', 1) || getArg(a, 'filename', 1);
-  const target = getArg(a, 'selector', 0) || getArg(a, 'target', 0);
+  const key = !Array.isArray(a) ? a.key : undefined;
+  let target = getArg(a, 'selector', 0) || getArg(a, 'target', 0);
+  let elementKey: string | undefined;
+
+  // Resolve --key for element screenshot
+  if (key && !target) {
+    const resolved = await resolveKeyOrSelector(page, a, 0, runtime);
+    target = resolved.selector;
+    elementKey = resolved.elementKey;
+  }
+
   const path = screenshotPath(name, runtime?.session);
 
   if (target === 'full') {
@@ -472,13 +544,99 @@ export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: any)
   } else {
     await page.screenshot({ path });
   }
-  return { result: { screenshot: path } };
+  return { result: { screenshot: path, ...(elementKey ? { elementKey } : {}) } };
 }
 
 export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const expression = getArg(a, 'expression', 0) || getArg(a, 'js', 0);
   const evalResult = await page.evaluate(expression);
   return { result: evalResult };
+}
+
+const ASSERT_POLL_INTERVAL = 100;
+
+export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  if (!selector) throw new Error('Missing selector for assert action');
+
+  const isExists = Array.isArray(a) ? a.includes('exists') : !!a.exists;
+  const textVal = Array.isArray(a) ? undefined : a.text;
+  const containsVal = Array.isArray(a) ? undefined : a.contains;
+  const attrName = Array.isArray(a) ? undefined : a.attr;
+  const attrValue = Array.isArray(a) ? undefined : a.value;
+  const waitMs = Number(Array.isArray(a) ? undefined : a.wait) || 0;
+
+  let type: AssertionType;
+  let expected: string | undefined;
+
+  if (isExists) {
+    type = 'exists';
+  } else if (textVal !== undefined) {
+    type = 'text';
+    expected = String(textVal);
+  } else if (containsVal !== undefined) {
+    type = 'contains';
+    expected = String(containsVal);
+  } else if (attrName !== undefined) {
+    type = 'attr';
+    expected = attrValue !== undefined ? String(attrValue) : undefined;
+  } else {
+    throw new Error('Missing assertion type for assert action. Use exists, text, contains, or attr.');
+  }
+
+  async function evaluate() {
+    const elementExists = await page.locator(selector).count().then(c => c > 0);
+
+    let actualText: string | undefined;
+    let actualAttrValue: string | undefined;
+
+    if (elementExists && (type === 'text' || type === 'contains')) {
+      actualText = await page.locator(selector).first().evaluate(
+        (el) => (el as HTMLElement).innerText,
+      );
+    }
+
+    if (elementExists && type === 'attr' && attrName) {
+      actualAttrValue = await page.locator(selector).first().evaluate(
+        (el, name) => {
+          if (name === 'textContent') return el.textContent?.trim();
+          if (name === 'innerText') return (el as HTMLElement).innerText?.trim();
+          if (name === 'value') return (el as HTMLInputElement).value;
+          return el.getAttribute(name);
+        },
+        String(attrName),
+      ).then(v => v ?? undefined);
+    }
+
+    return evaluateAssertion({ type, expected }, selector, elementExists, actualText, actualAttrValue);
+  }
+
+  if (!waitMs) {
+    const assertionResult = await evaluate();
+    return { result: assertionResult };
+  }
+
+  const start = Date.now();
+  let attempts = 0;
+  let lastResult = await evaluate();
+  attempts++;
+
+  while (!lastResult.passed && (Date.now() - start) < waitMs) {
+    await new Promise(r => setTimeout(r, ASSERT_POLL_INTERVAL));
+    lastResult = await evaluate();
+    attempts++;
+  }
+
+  const elapsedMs = Date.now() - start;
+
+  return {
+    result: {
+      ...lastResult,
+      waitMs,
+      elapsedMs,
+      attempts,
+    },
+  };
 }
 
 /** Map of action names to their implementations */
@@ -489,6 +647,12 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
   const savePath = Array.isArray(a) ? undefined : a.save;
   const doReplace = Array.isArray(a) ? false : !!a.replace;
   const doAppend = Array.isArray(a) ? false : !!a.append;
+  const headN = Array.isArray(a) ? undefined : (a.head !== undefined ? Number(a.head) : undefined);
+
+  // Validate --head flag
+  if (headN !== undefined && (isNaN(headN) || headN < 0)) {
+    throw new Error('head must be a non-negative integer.');
+  }
 
   // Validate save flags
   if (doReplace && doAppend) throw new Error('Cannot use replace and append together.');
@@ -546,17 +710,33 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
     else writeFileSync(filePath, content);
   }
 
+  // Apply head truncation (only to returned content, not saved files)
+  let truncated = false;
+  let head: number | undefined;
+  let originalLength: number | undefined;
+
+  if (headN !== undefined) {
+    const result = headTruncate(content, headN);
+    content = result.content;
+    truncated = result.truncated;
+    head = result.head;
+    originalLength = result.originalLength;
+  }
+
   return {
     result: {
       target,
       format,
       content,
+      ...(truncated ? { truncated: true } : {}),
+      ...(head !== undefined ? { head } : {}),
+      ...(originalLength !== undefined ? { originalLength } : {}),
       ...(filePath ? { path: filePath, mode } : {}),
     },
   };
 }
 
-export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{ result?: any }>> = {
+export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: any) => Promise<{ result?: any }>> = {
   navigate: actionNavigate,
   nav: actionNavigate,
   refresh: actionRefresh,
@@ -580,4 +760,5 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{
   evaluate: actionEvaluate,
   eval: actionEvaluate,
   dump: actionDump,
+  assert: actionAssert,
 };

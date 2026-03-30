@@ -13,6 +13,7 @@ import { run, parseFlag, hasFlag } from './common.js';
 import { existsSync, writeFileSync, appendFileSync } from 'fs';
 import { resolve, extname } from 'path';
 import { resolveRedactionLevel } from './settings.js';
+import { headTruncate } from './dump-utils.js';
 
 const STRICT_CONTENT_LIMIT = 50_000; // ~50KB in strict mode
 
@@ -24,10 +25,17 @@ run(async ({ page }) => {
   const savePath = parseFlag(cliArgs, 'save');
   const doReplace = hasFlag(cliArgs, 'replace');
   const doAppend = hasFlag(cliArgs, 'append');
+  const headRaw = parseFlag(cliArgs, 'head');
+  const headN = headRaw !== undefined ? Number(headRaw) : undefined;
   const redactionLevel = resolveRedactionLevel({
     cliRaw: hasFlag(cliArgs, 'raw'),
     cliLevel: parseFlag(cliArgs, 'redaction-level'),
   });
+
+  // Validate --head flag
+  if (headN !== undefined && (isNaN(headN) || headN < 0)) {
+    return { success: false, error: '--head must be a non-negative integer.' };
+  }
 
   // Validate save flags
   if (doReplace && doAppend) {
@@ -107,9 +115,21 @@ run(async ({ page }) => {
     }
   }
 
-  // Apply content limit in strict mode (saves tokens for AI consumers)
+  // Apply --head truncation (only to stdout, not saved file)
   let truncated = false;
-  if (redactionLevel === 'strict' && content.length > STRICT_CONTENT_LIMIT && !savePath) {
+  let head: number | undefined;
+  let originalLength: number | undefined;
+
+  if (headN !== undefined) {
+    const result = headTruncate(content, headN);
+    content = result.content;
+    truncated = result.truncated;
+    head = result.head;
+    originalLength = result.originalLength;
+  }
+
+  // Apply content limit in strict mode as fallback (saves tokens for AI consumers)
+  if (!truncated && redactionLevel === 'strict' && content.length > STRICT_CONTENT_LIMIT && !savePath) {
     content = content.slice(0, STRICT_CONTENT_LIMIT) + '\n...(truncated at 50KB, use --raw for full output)';
     truncated = true;
   }
@@ -121,6 +141,8 @@ run(async ({ page }) => {
       format,
       content,
       ...(truncated ? { truncated: true } : {}),
+      ...(head !== undefined ? { head } : {}),
+      ...(originalLength !== undefined ? { originalLength } : {}),
       ...(filePath ? { path: filePath, mode } : {}),
     },
   };

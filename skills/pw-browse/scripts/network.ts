@@ -6,6 +6,7 @@ import { writeFileSync, readFileSync, existsSync } from 'fs';
 
 const STATE_DIR = resolve(process.cwd(), '.playwright-state');
 const LOG_FILE = join(STATE_DIR, 'network.log');
+const NDJSON_FILE = join(STATE_DIR, 'network.ndjson');
 
 // Whitelist: only these headers are shown by default. Everything else → [REDACTED].
 const SAFE_HEADERS = new Set([
@@ -141,6 +142,21 @@ run(async ({ page, args }) => {
       }).join('\n');
 
       if (lines) writeFileSync(LOG_FILE, lines + '\n', { flag: 'a' });
+
+      const { writeNdjsonEntry } = await import('./network-utils.js');
+      for (const l of logs) {
+        writeNdjsonEntry(NDJSON_FILE, {
+          timestamp: new Date(l.ts).toISOString(),
+          type: l.type,
+          method: l.method,
+          url: l.url,
+          status: l.status,
+          requestBody: l.reqBody ? (typeof l.reqBody === 'string' ? l.reqBody : JSON.stringify(l.reqBody)) : undefined,
+          responseBody: l.resBody ? (typeof l.resBody === 'string' ? l.resBody : JSON.stringify(l.resBody)) : undefined,
+          redactionLevel: level,
+        });
+      }
+
       await page.evaluate('window.__PW_NETWORK = []');
 
       return {
@@ -152,6 +168,7 @@ run(async ({ page, args }) => {
     case 'clear': {
       await page.evaluate('window.__PW_NETWORK = []');
       if (existsSync(LOG_FILE)) writeFileSync(LOG_FILE, '');
+      if (existsSync(NDJSON_FILE)) writeFileSync(NDJSON_FILE, '');
       return { success: true, data: { message: 'Network logs cleared' } };
     }
 
@@ -164,9 +181,29 @@ run(async ({ page, args }) => {
     }
 
     case 'find': {
-      // Filter by URL pattern using args[1]
       const pattern = args[1];
-      if (!pattern) return { success: false, error: 'Usage: network.ts find <url-pattern>' };
+      if (!pattern) return { success: false, error: 'Usage: network.ts find <url-pattern> [--body] [--json] [--body-limit=N]' };
+
+      const wantBody = hasFlag(process.argv.slice(2), 'body');
+      const wantJson = hasFlag(process.argv.slice(2), 'json');
+      const bodyLimitStr = pf(process.argv.slice(2), 'body-limit');
+      const bodyLimit = bodyLimitStr ? (parseInt(bodyLimitStr) || 5000) : 5000;
+
+      if (wantBody || wantJson) {
+        const { readNdjsonEntries } = await import('./network-utils.js');
+        const entries = readNdjsonEntries(NDJSON_FILE, pattern, bodyLimit);
+        return {
+          success: true,
+          data: {
+            total: entries.length,
+            entries: entries.slice(-20),
+            bodyLimit,
+            ...(raw ? { warnings: ['Raw mode: bodies may contain sensitive data'] } : {}),
+          },
+        };
+      }
+
+      // Default: plain text search (existing behavior unchanged)
       if (!existsSync(LOG_FILE)) return { success: true, data: { lines: [] } };
       const content = readFileSync(LOG_FILE, 'utf-8');
       const matched = content.trim().split('\n').filter(l => l.includes(pattern));
