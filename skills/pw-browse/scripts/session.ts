@@ -6,7 +6,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { randomBytes } from 'crypto';
 import { atomicWriteJSON } from './file-utils.js';
-import { acquireLock, releaseLock } from './lock.js';
+import { acquireLockOrThrow, releaseLock } from './lock.js';
 
 // --- Session Types ---
 
@@ -121,7 +121,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
       };
 
       const lockPath = join(dir, '.lock');
-      acquireLock(lockPath, 'createSession');
+      acquireLockOrThrow(lockPath, 'createSession');
       try {
         atomicWriteJSON(join(dir, 'session.json'), session);
       } finally {
@@ -145,7 +145,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
       if (!session) return;
       const updated = { ...session, ...updates };
       const lockPath = join(sessionDir(name), '.lock');
-      acquireLock(lockPath, 'updateSession');
+      acquireLockOrThrow(lockPath, 'updateSession');
       try {
         atomicWriteJSON(join(sessionDir(name), 'session.json'), updated);
       } finally {

@@ -1,5 +1,5 @@
 // lock.ts — File-based locking for cross-process coordination
-import { existsSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { atomicWriteJSON, readJSONSafe } from './file-utils.js';
 import { isProcessAlive, getProcessStartTime } from './session.js';
@@ -23,31 +23,14 @@ export interface LockCheckResult {
 }
 
 /**
- * Attempt to acquire a lock file.
+ * Attempt to acquire a lock file atomically.
+ * Uses O_EXCL (wx flag) for atomic create — no TOCTOU race.
  * Returns true if acquired, false if already held by another active process.
- * Automatically cleans stale locks.
+ * Automatically cleans stale locks before retrying.
  */
 export function acquireLock(lockPath: string, operation?: string): boolean {
   const dir = dirname(lockPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-  // Check existing lock
-  const existing = checkLock(lockPath);
-
-  if (existing.status === 'active') {
-    // Someone else holds it
-    return false;
-  }
-
-  if (existing.status === 'uncertain') {
-    // Can't be sure — don't force
-    return false;
-  }
-
-  // Free, stale, or orphan — safe to take
-  if (existing.status === 'stale' || existing.status === 'orphan') {
-    releaseLock(lockPath); // clean up first
-  }
 
   const now = new Date().toISOString();
   const lock: LockInfo = {
@@ -57,29 +40,68 @@ export function acquireLock(lockPath: string, operation?: string): boolean {
     updatedAt: now,
     ...(operation ? { operation } : {}),
   };
+  const content = JSON.stringify(lock);
 
-  atomicWriteJSON(lockPath, lock);
-  return true;
+  // Try atomic exclusive create
+  try {
+    writeFileSync(lockPath, content, { flag: 'wx' });
+    return true;
+  } catch {
+    // Lock file exists — check if stale
+  }
+
+  const existing = checkLock(lockPath);
+
+  if (existing.status === 'active' || existing.status === 'uncertain') {
+    return false;
+  }
+
+  // Stale or orphan — clean up and retry once
+  try { unlinkSync(lockPath); } catch {}
+  try {
+    writeFileSync(lockPath, content, { flag: 'wx' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Release a lock file.
+ * Release a lock file (only if owned by this process).
  */
 export function releaseLock(lockPath: string): void {
   try {
-    if (existsSync(lockPath)) unlinkSync(lockPath);
+    if (!existsSync(lockPath)) return;
+    const lock = readJSONSafe<LockInfo>(lockPath);
+    // Only release if we own the lock (or lock is unreadable)
+    if (!lock || lock.pid === process.pid) {
+      unlinkSync(lockPath);
+    }
   } catch {}
 }
 
 /**
+ * Acquire lock or throw. Use in critical sections where proceeding without
+ * the lock would cause data corruption.
+ */
+export function acquireLockOrThrow(lockPath: string, operation?: string): void {
+  if (!acquireLock(lockPath, operation)) {
+    const existing = checkLock(lockPath);
+    throw new Error(`Failed to acquire lock for "${operation || 'unknown'}": held by pid ${existing.lock?.pid} (${existing.status})`);
+  }
+}
+
+/**
  * Refresh lock heartbeat (update updatedAt).
+ * Uses direct writeFileSync instead of atomicWriteJSON to avoid
+ * unlink→rename gap that could let another process steal the lock.
  */
 export function refreshLock(lockPath: string): boolean {
   const lock = readJSONSafe<LockInfo>(lockPath);
   if (!lock || lock.pid !== process.pid) return false;
 
   lock.updatedAt = new Date().toISOString();
-  atomicWriteJSON(lockPath, lock);
+  writeFileSync(lockPath, JSON.stringify(lock));
   return true;
 }
 

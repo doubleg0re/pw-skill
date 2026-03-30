@@ -8,7 +8,7 @@
 import { run, parseFlag, hasFlag } from './common.js';
 import { evaluateAssertion, type AssertionType } from './assert-utils.js';
 
-const POLL_INTERVAL = 100;
+import { ASSERT_POLL_INTERVAL_MS as POLL_INTERVAL } from './constants.js';
 
 run(async ({ page }) => {
   const cliArgs = process.argv.slice(2);
@@ -100,15 +100,30 @@ run(async ({ page }) => {
     return { success: data.passed, data };
   }
 
-  // Poll with retry
+  // Poll with retry — evaluation errors are caught and retried
   const start = Date.now();
   let attempts = 0;
-  let lastResult = await evaluate();
-  attempts++;
+  let lastResult: any;
+  let lastError: string | undefined;
+
+  try {
+    lastResult = await evaluate();
+    attempts++;
+  } catch (err: any) {
+    lastResult = { passed: false };
+    lastError = err.message;
+    attempts++;
+  }
 
   while (!lastResult.passed && (Date.now() - start) < waitMs) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL));
-    lastResult = await evaluate();
+    try {
+      lastResult = await evaluate();
+      lastError = undefined;
+    } catch (err: any) {
+      lastResult = { passed: false };
+      lastError = err.message;
+    }
     attempts++;
   }
 
@@ -121,6 +136,7 @@ run(async ({ page }) => {
       waitMs,
       elapsedMs,
       attempts,
+      ...(lastError ? { evaluationError: lastError } : {}),
     },
   };
 });

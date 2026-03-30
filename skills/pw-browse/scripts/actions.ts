@@ -1,6 +1,29 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
 import type { Page } from 'playwright';
 import { screenshotPath } from './common.js';
+
+/** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
+export interface ActionRuntime {
+  session?: {
+    name: string;
+    id?: string;
+    pid?: number;
+    cdpEndpoint?: string;
+  };
+  tab?: {
+    id?: number;
+    url?: string;
+    title?: string;
+  };
+  emitEvent?: (event: string, payload: any) => void;
+  logger?: {
+    info(msg: string): void;
+    warn(msg: string): void;
+    error(msg: string): void;
+  };
+  getPage?: () => Promise<any>;
+  registerCleanup?: (fn: () => Promise<void> | void) => void;
+}
 import { headTruncate } from './dump-utils.js';
 import { evaluateAssertion, type AssertionType } from './assert-utils.js';
 import { createElementRegistry, resolveElementKey } from './element-registry.js';
@@ -25,7 +48,7 @@ async function resolveKeyOrSelector(
   page: Page,
   a: ActionArgs,
   selectorIndex: number,
-  runtime?: any,
+  runtime?: ActionRuntime,
 ): Promise<{ selector: string; elementKey?: string }> {
   const key = !Array.isArray(a) ? a.key : undefined;
   if (!key) {
@@ -82,7 +105,7 @@ export async function actionRefresh(page: Page, _a?: ActionArgs): Promise<{ resu
   return { result: { url: page.url(), title: await page.title(), reloaded: true } };
 }
 
-export async function actionClick(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+export async function actionClick(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   if (elementKey) {
     // Resolved from elementKey — always use locator (may contain >> nth=N)
@@ -98,7 +121,7 @@ export async function actionClick(page: Page, a: ActionArgs, runtime?: any): Pro
   return elementKey ? { result: { elementKey } } : {};
 }
 
-export async function actionDblclick(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+export async function actionDblclick(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   if (/^\d+,\d+$/.test(selector)) {
     const [x, y] = selector.split(',').map(Number);
@@ -126,7 +149,7 @@ export async function actionDrag(page: Page, a: ActionArgs): Promise<{ result?: 
   return {};
 }
 
-export async function actionFill(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+export async function actionFill(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   const value = getArg(a, 'value', 1);
   await page.locator(selector).first().click();
@@ -141,7 +164,7 @@ export async function actionType(page: Page, a: ActionArgs): Promise<{ result?: 
   return {};
 }
 
-export async function actionWait(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+export async function actionWait(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const target = getArg(a, 'target', 0);
   const attr = getArg(a, 'attr', 1);
   const value = getArg(a, 'value', 2);
@@ -403,7 +426,7 @@ export async function actionWait(page: Page, a: ActionArgs, runtime?: any): Prom
   return {};
 }
 
-export async function actionHover(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+export async function actionHover(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   if (/^\d+,\d+$/.test(selector)) {
     const [x, y] = selector.split(',').map(Number);
@@ -458,7 +481,7 @@ export async function actionUpload(page: Page, a: ActionArgs): Promise<{ result?
   return {};
 }
 
-export async function actionAttr(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+export async function actionAttr(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   const name = getArg(a, 'name', 1);
   const value = getArg(a, 'value', 2);
@@ -528,7 +551,7 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
   return { result: fetchResult };
 }
 
-export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
+export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const name = getArg(a, 'name', 1) || getArg(a, 'filename', 1);
   const key = !Array.isArray(a) ? a.key : undefined;
   let target = getArg(a, 'selector', 0) || getArg(a, 'target', 0);
@@ -562,7 +585,7 @@ export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ resul
   return { result: evalResult };
 }
 
-const ASSERT_POLL_INTERVAL = 100;
+import { ASSERT_POLL_INTERVAL_MS as ASSERT_POLL_INTERVAL } from './constants.js';
 
 export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const selector = getArg(a, 'selector', 0);
@@ -766,7 +789,7 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
   };
 }
 
-export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: any) => Promise<{ result?: any }>> = {
+export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: ActionRuntime) => Promise<{ result?: any }>> = {
   navigate: actionNavigate,
   nav: actionNavigate,
   refresh: actionRefresh,

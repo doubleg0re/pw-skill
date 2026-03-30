@@ -80,9 +80,17 @@ function atomicWriteJSON(filePath: string, data: unknown): void {
 async function connect(): Promise<void> {
   restoreRegistry();
 
+  // Startup timeout — covers /json/version fetch + WebSocket connect
+  const startupTimeout = setTimeout(() => {
+    process.stderr.write('[monitor-sidecar] startup timeout (10s), exiting\n');
+    persistRegistry();
+    process.exit(1);
+  }, 10000);
+
   // Get browser WebSocket URL from CDP endpoint
   const port = cdpEndpoint.match(/:(\d+)\//)?.[1];
   if (!port) {
+    clearTimeout(startupTimeout);
     process.stderr.write(`Cannot extract port from CDP endpoint: ${cdpEndpoint}\n`);
     process.exit(1);
   }
@@ -95,6 +103,7 @@ async function connect(): Promise<void> {
     browserWsUrl = info.webSocketDebuggerUrl;
     if (!browserWsUrl) throw new Error('No webSocketDebuggerUrl in /json/version');
   } catch (err: any) {
+    clearTimeout(startupTimeout);
     process.stderr.write(`Failed to get browser WS URL: ${err.message}\n`);
     process.exit(1);
   }
@@ -107,22 +116,32 @@ async function connect(): Promise<void> {
   }
 
   ws.addEventListener('open', () => {
+    clearTimeout(startupTimeout);
     process.stderr.write(`[monitor-sidecar] connected to ${browserWsUrl}\n`);
     // Enable target discovery
     send('Target.setDiscoverTargets', { discover: true });
 
     // Poll active tab via CDP /json (first page target = active, best-effort)
+    // Overlap guard: skip if previous poll still in-flight
+    let polling = false;
     setInterval(async () => {
+      if (polling) return;
+      polling = true;
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/json`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`http://127.0.0.1:${port}/json`, { signal: controller.signal });
+        clearTimeout(timeout);
         const targets = (await res.json() as any[]).filter((t: any) => t.type === 'page');
-        if (targets.length === 0) return;
-        const topEntry = findByCdpId(targets[0].id);
-        if (topEntry && activeTabId !== topEntry.tabId) {
-          activeTabId = topEntry.tabId;
-          persistRegistry();
+        if (targets.length > 0) {
+          const topEntry = findByCdpId(targets[0].id);
+          if (topEntry && activeTabId !== topEntry.tabId) {
+            activeTabId = topEntry.tabId;
+            persistRegistry();
+          }
         }
       } catch {}
+      polling = false;
     }, 500);
   });
 

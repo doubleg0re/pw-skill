@@ -41,16 +41,27 @@ export function savePending(sessionName: string, pending: PendingAction[]): void
 }
 
 export function addPending(sessionName: string, action: PendingAction): void {
-  const list = loadPending(sessionName);
-  // Replace existing for same tabId (only one pending per tab)
-  const filtered = list.filter(p => p.tabId !== action.tabId);
-  filtered.push(action);
-  savePending(sessionName, filtered);
+  const lockPath = join(dirname(statePath(sessionName)), '.pending-actions.lock');
+  simpleLock(lockPath);
+  try {
+    const list = loadPending(sessionName);
+    const filtered = list.filter(p => p.tabId !== action.tabId);
+    filtered.push(action);
+    savePending(sessionName, filtered);
+  } finally {
+    simpleUnlock(lockPath);
+  }
 }
 
 export function removePending(sessionName: string, tabId: number): void {
-  const list = loadPending(sessionName);
-  savePending(sessionName, list.filter(p => p.tabId !== tabId));
+  const lockPath = join(dirname(statePath(sessionName)), '.pending-actions.lock');
+  simpleLock(lockPath);
+  try {
+    const list = loadPending(sessionName);
+    savePending(sessionName, list.filter(p => p.tabId !== tabId));
+  } finally {
+    simpleUnlock(lockPath);
+  }
 }
 
 export function getPending(sessionName: string, tabId: number): PendingAction | undefined {
@@ -59,6 +70,42 @@ export function getPending(sessionName: string, tabId: number): PendingAction | 
 
 export function clearAll(sessionName: string): void {
   savePending(sessionName, []);
+}
+
+// Simple file lock (self-contained, no core dependency)
+function simpleLock(lockPath: string): void {
+  const maxRetries = 20;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      writeFileSync(lockPath, String(process.pid), { flag: 'wx' });
+      return;
+    } catch {
+      // Lock exists — check if owner is still alive
+      try {
+        const ownerPid = parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
+        if (ownerPid && ownerPid !== process.pid) {
+          try { process.kill(ownerPid, 0); } catch {
+            // Owner dead — stale lock, safe to take
+            try { unlinkSync(lockPath); } catch {}
+            continue;
+          }
+        }
+      } catch {}
+      const sleep = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end); };
+      sleep(50);
+    }
+  }
+  throw new Error(`Failed to acquire lock: ${lockPath}`);
+}
+
+function simpleUnlock(lockPath: string): void {
+  try {
+    // Only release if we own the lock
+    const ownerPid = parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
+    if (!ownerPid || ownerPid === process.pid) {
+      unlinkSync(lockPath);
+    }
+  } catch {}
 }
 
 function atomicWriteJSON(filePath: string, data: unknown): void {

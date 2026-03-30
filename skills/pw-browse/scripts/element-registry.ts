@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 import { join } from 'path';
 import type { Page } from 'playwright';
 import { atomicWriteJSON, readJSONSafe } from './file-utils.js';
+import { acquireLockOrThrow, releaseLock } from './lock.js';
 
 // --- Stable attribute names collected for fingerprinting ---
 
@@ -53,7 +54,7 @@ export interface ElementRegistry {
 // --- Key generation ---
 
 export function generateElementKey(): string {
-  return randomBytes(4).toString('hex');
+  return randomBytes(8).toString('hex'); // 16 hex chars — reduces collision risk for long-lived sessions
 }
 
 // --- Stable attribute extraction ---
@@ -106,7 +107,12 @@ export function verifyFingerprint(
 // --- CSS ID escaping (Node.js has no CSS.escape) ---
 
 function escapeCssId(id: string): string {
-  return id.replace(/([^\w-])/g, '\\$1');
+  // CSS IDs starting with a digit need escaping: "1foo" → "\31 foo"
+  let escaped = id.replace(/([^\w-])/g, '\\$1');
+  if (/^\d/.test(escaped)) {
+    escaped = `\\3${escaped[0]} ${escaped.slice(1)}`;
+  }
+  return escaped;
 }
 
 function escapeCssAttrValue(value: string): string {
@@ -130,6 +136,7 @@ export function buildFallbackSelector(fp: ElementFingerprint): string | null {
 
 export function createElementRegistry(stateDir: string): ElementRegistry {
   const filePath = join(stateDir, 'element-registry.json');
+  const lockPath = join(stateDir, '.element-registry.lock');
 
   function loadAll(): Record<string, ElementFingerprint> {
     return readJSONSafe(filePath) || {};
@@ -141,9 +148,14 @@ export function createElementRegistry(stateDir: string): ElementRegistry {
 
   return {
     store(fp: ElementFingerprint): void {
-      const data = loadAll();
-      data[fp.key] = fp;
-      saveAll(data);
+      acquireLockOrThrow(lockPath, 'element-registry');
+      try {
+        const data = loadAll();
+        data[fp.key] = fp;
+        saveAll(data);
+      } finally {
+        releaseLock(lockPath);
+      }
     },
 
     get(key: string): ElementFingerprint | undefined {
@@ -162,7 +174,8 @@ export function createElementRegistry(stateDir: string): ElementRegistry {
     },
 
     clear(): void {
-      saveAll({});
+      acquireLockOrThrow(lockPath, 'element-registry');
+      try { saveAll({}); } finally { releaseLock(lockPath); }
     },
   };
 }
