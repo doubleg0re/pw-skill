@@ -1,15 +1,17 @@
 // ~/.claude/skills/pw-browse/scripts/dblclick.ts
-import { run, screenshotPath } from './common.js';
+import { run, screenshotPath, parseFlag } from './common.js';
 import { actionDblclick } from './actions.js';
 
 run(async ({ page, args, session }) => {
+  const key = parseFlag(process.argv.slice(2), 'key');
   const target = args[0];
-  if (!target) return { success: false, error: 'Target required. Usage: dblclick.ts <target> [--mode=selector|text|coord]' };
+  if (!target && !key) return { success: false, error: 'Target required. Usage: dblclick.ts <target> [--key=<elementKey>]' };
 
-  await actionDblclick(page, [target]);
+  const actionArgs = key ? { key } : [target];
+  const result = await actionDblclick(page, actionArgs, { session });
 
   const path = screenshotPath(undefined, session);
   await page.screenshot({ path });
 
-  return { success: true, screenshot: path, data: { target } };
+  return { success: true, screenshot: path, data: { target: target || `key:${key}`, ...result?.result } };
 });
