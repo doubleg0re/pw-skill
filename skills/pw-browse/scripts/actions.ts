@@ -4,6 +4,7 @@ import { screenshotPath } from './common.js';
 import { headTruncate } from './dump-utils.js';
 import { evaluateAssertion, type AssertionType } from './assert-utils.js';
 import { createElementRegistry, resolveElementKey } from './element-registry.js';
+import { normalizeAuthHeader, resolveFetchCredentials } from './fetch-utils.js';
 import { localStateDir, getSession, getDocumentEpoch } from './session.js';
 import { findTabByPageIndex, findTabByUrl } from './tab-registry.js';
 
@@ -490,6 +491,8 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
   const method = String(getArg(a, 'method', 0) || 'GET').toUpperCase();
   const rawUrl = getArg(a, 'url', 1);
   const fetchBody = getArg(a, 'body', 2);
+  const auth = normalizeAuthHeader(getArg(a, 'auth', 3));
+  const credentials = resolveFetchCredentials(getArg(a, 'credentials', 4));
 
   // Resolve relative URLs against the current page origin
   const fetchUrl = rawUrl.startsWith('http')
@@ -501,9 +504,15 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
       }, rawUrl);
 
   const fetchResult = await page.evaluate(
-    async ({ method, url, body }) => {
-      const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
-      if (body && method !== 'GET') opts.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
+    async ({ method, url, body, authHeader, credentialsMode }) => {
+      const opts: RequestInit = { method, credentials: credentialsMode };
+      const headers: Record<string, string> = {};
+      if (authHeader) headers.Authorization = authHeader;
+      if (body !== undefined && body !== null && method !== 'GET' && method !== 'HEAD') {
+        headers['Content-Type'] = 'application/json';
+        opts.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
+      }
+      if (Object.keys(headers).length > 0) opts.headers = headers;
       const res = await fetch(url, opts);
       const contentType = res.headers.get('content-type') || '';
       let data: any;
@@ -514,7 +523,7 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
       }
       return { status: res.status, statusText: res.statusText, data };
     },
-    { method, url: fetchUrl, body: fetchBody },
+    { method, url: fetchUrl, body: fetchBody, authHeader: auth, credentialsMode: credentials },
   );
   return { result: fetchResult };
 }

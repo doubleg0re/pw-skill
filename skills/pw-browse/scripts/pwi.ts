@@ -11,6 +11,7 @@
 //   pwi navigate url :: click "#login" :: screenshot
 import { chromium } from 'playwright';
 import { ACTION_MAP } from './actions.js';
+import { buildInlineStepArgs } from './chain-utils.js';
 
 // --- Arg parser ---
 
@@ -46,25 +47,6 @@ function parseInlineSteps(argv: string[]): { steps: InlineStep[] } {
   return {
     steps: segments.map(seg => ({ action: seg[0], args: seg.slice(1) })),
   };
-}
-
-function buildActionArgs(args: string[]): Record<string, any> {
-  const result: Record<string, any> = {};
-  let positionalIndex = 0;
-  for (const arg of args) {
-    if (arg.startsWith('--')) {
-      const eqIndex = arg.indexOf('=');
-      if (eqIndex > 0) {
-        result[arg.slice(2, eqIndex)] = arg.slice(eqIndex + 1);
-      } else {
-        result[arg.slice(2)] = true;
-      }
-    } else {
-      result[positionalIndex] = arg;
-      positionalIndex++;
-    }
-  }
-  return result;
 }
 
 const EXCLUDED_ACTIONS = new Set([
@@ -107,11 +89,13 @@ async function main() {
 
   try {
     const results: any[] = [];
+    let lastResult: any = null;
 
     for (const step of steps) {
-      const actionArgs = buildActionArgs(step.args);
+      const actionArgs = buildInlineStepArgs(step.args, { $ret: lastResult });
       const result = await ACTION_MAP[step.action](page, actionArgs);
-      results.push({ action: step.action, success: true, data: result?.result ?? result });
+      lastResult = result?.result ?? result;
+      results.push({ action: step.action, success: true, data: lastResult });
     }
 
     let screenshotPath: string | undefined;

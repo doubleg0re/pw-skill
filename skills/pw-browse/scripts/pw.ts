@@ -4,6 +4,7 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
+import { buildChainStepArgs } from './chain-utils.js';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
@@ -39,6 +40,7 @@ const AGENT_SKILLS: Record<string, { title: string; summary: string; when: strin
       'Inline `::` chaining works in both `pwi` and `pw` for browser actions only',
       `Chainable actions: ${CHAINABLE_ACTIONS_TEXT}`,
       'Short aliases: nav=navigate, shot=screenshot, sel=select, eval=evaluate',
+      "Quote '$ret' in the shell when passing the previous step result into a later step",
       'Custom extension actions and commands like launch, close, rary, and analyze are not chainable',
       'Session-based `pw` commands pair naturally with `pw agent skill --launch`',
     ],
@@ -183,8 +185,10 @@ Examples:
 Chaining (::):
   pwi nav <url> :: refresh :: shot
   pw nav <url> :: fill <selector> <text> :: refresh
+  pw eval 'getToken()' :: fetch GET /api/members --auth='$ret'
   supported                               ${CHAINABLE_ACTIONS_TEXT}
   note                                    Chaining is browser-actions-only and separate from seq JSON/file syntax
+  note                                    Quote '$ret' or '$ret.path' in the shell to reference the previous step result
 `.trim();
 }
 
@@ -209,9 +213,11 @@ For agents:
 Chaining:
   pwi a :: b :: c                         One-shot inline chain
   pw a :: b :: c                          Session-based inline chain
+  pw eval 'getToken()' :: fetch GET /api/members --auth='$ret'
   supported                               ${CHAINABLE_ACTIONS_TEXT}
   aliases                                 nav=navigate, shot=screenshot, sel=select, eval=evaluate, reload=refresh
   note                                    No custom actions; launch/close/rary/analyze not chainable
+  note                                    Quote '$ret' or '$ret.path' in the shell to use the previous step result
   seq syntax                              Run pw help seq
 
 Session management:
@@ -256,7 +262,7 @@ Browser actions:
   attr <selector> <name> [--set=value]       Read/write DOM attribute
   find <selector> [--detail=tag|class|full]  Query DOM elements
   wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
-  fetch <METHOD> <url> [body-json]           HTTP request with auth
+  fetch <METHOD> <url> [body-json] [--auth=T] [--credentials=include|same-origin|omit] HTTP request with auth
   assert <selector> [--exists|--visible|--hidden|--count=N|--text=T|--contains=T|--attr=A --value=V] [--wait=ms] Assert element state
   eval|evaluate <js-expression>              Run JavaScript in page
   seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
@@ -324,27 +330,8 @@ if (args.includes('::')) {
     process.exit(1);
   }
 
-  // Convert per-step args: --flag=value → object, positional → indexed
-  function buildStepArgs(args: string[]): any {
-    const hasFlags = args.some(a => a.startsWith('--'));
-    if (!hasFlags) return args; // pure positional → array
-    const result: Record<string, any> = {};
-    let idx = 0;
-    for (const a of args) {
-      if (a.startsWith('--')) {
-        const eqIndex = a.indexOf('=');
-        if (eqIndex > 0) result[a.slice(2, eqIndex)] = a.slice(eqIndex + 1);
-        else result[a.slice(2)] = true;
-      } else {
-        result[idx] = a;
-        idx++;
-      }
-    }
-    return result;
-  }
-
   // Build inline sequence JSON and run through sequence.ts (full runtime)
-  const seqSteps = JSON.stringify(segments.map(s => ({ action: s.action, args: buildStepArgs(s.args) })));
+  const seqSteps = JSON.stringify(segments.map(s => ({ action: s.action, args: buildChainStepArgs(s.args) })));
   const seqScript = join(SCRIPTS_DIR, 'sequence.ts');
   const result = spawnSync(process.execPath, [...process.execArgv, seqScript, seqSteps, ...globalFlags], {
     stdio: 'inherit',

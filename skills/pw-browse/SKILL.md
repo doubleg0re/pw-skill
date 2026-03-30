@@ -44,9 +44,11 @@ Short aliases are available in the CLI runtime: `nav`=`navigate`, `shot`=`screen
 ```bash
 npx tsx {script_path}/pwi.ts nav url :: click "#login" :: shot
 npx tsx {script_path}/pw.ts nav https://example.com :: refresh :: wait 1000
+npx tsx {script_path}/pw.ts eval 'getToken()' :: fetch GET /api/members --auth='$ret'
 ```
 
 Chaining is restricted to browser actions only. Session, admin, and package commands are not chainable.
+When you need the previous step result in a later chained step, quote `'$ret'` or `'$ret.path'` in the shell.
 
 Screenshots default to `./.playwright-state/screenshots` under the current working directory. For persistent sessions, `pw launch --screenshot-path=dir` pins screenshot output to a stable directory.
 
@@ -189,8 +191,12 @@ npx tsx {script_path}/wait.ts <ms|selector> [--attr=name --value=expected] [--ti
 ### fetch.ts — HTTP request with browser auth
 ```bash
 npx tsx {script_path}/fetch.ts <METHOD> <url> [body-json]
+npx tsx {script_path}/fetch.ts <METHOD> <url> [body-json] [--auth=TOKEN] [--credentials=include|same-origin|omit]
 ```
 - Executes HTTP requests from the browser context (inherits cookies/session)
+- Prefer `fetch.ts` over `evaluate.ts` for authenticated API calls
+- Credentials default to `include`
+- `--auth=TOKEN` sends `Authorization: Bearer TOKEN`
 - Methods: GET, POST, PUT, DELETE, PATCH
 
 ### evaluate.ts — Execute JavaScript
