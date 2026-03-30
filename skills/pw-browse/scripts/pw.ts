@@ -150,11 +150,11 @@ Diagnostics:
   clean <dead|stale|orphans|all>             Safe cleanup (broken pkgs → pw rary kick)
 
 Package management (Larry's toybox):
-  rary get <repo|path>                      Fetch a toy into the toybox
+  rary get|yoink <repo|path>                Fetch a toy into the toybox
   rary toybox                               List installed packages
   rary peek <package>                       Inspect a package
   rary put <package>                        Activate an extension
-  rary yoink <package>                      Deactivate an extension
+  rary ignore|snub <package>                Deactivate an extension
   rary rolling <package>                    Run first-time setup
   rary destroy|kick <package>               Remove a package
   rary need-repair                          Check for broken packages

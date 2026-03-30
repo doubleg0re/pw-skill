@@ -229,6 +229,8 @@ describe('rary commands (injected store)', () => {
     const result = await cmds().router(['help']);
     expect(result.success).toBe(true);
     expect(result.data.message).toContain('Larry the Cat');
+    expect(result.data.message).not.toContain('pet');
+    expect(result.data.message).not.toContain('status');
   });
 
   it('unknown command returns error', async () => {
@@ -238,7 +240,7 @@ describe('rary commands (injected store)', () => {
 
   it('all commands require arguments', async () => {
     const c = cmds();
-    for (const cmd of ['get', 'peek', 'destroy', 'rolling', 'put', 'yoink']) {
+    for (const cmd of ['get', 'yoink', 'peek', 'destroy', 'rolling', 'put', 'ignore', 'snub']) {
       const result = await c.router([cmd]);
       expect(result.success).toBe(false);
       expect(result.error).toContain('Usage');
@@ -295,12 +297,23 @@ describe('rary commands (injected store)', () => {
     expect(result.error).toContain('not an extension');
   });
 
-  it('yoink deactivates extension', () => {
+  it('ignore deactivates extension', () => {
     seedPackage('ext', { name: 'ext', version: '1.0.0', type: 'extension' });
     store.activateExtension('ext');
-    const result = cmds().yoink(['ext']);
+    const result = cmds().ignore(['ext']);
     expect(result.success).toBe(true);
     expect(store.isExtensionActive('ext')).toBe(false);
+    expect(result.data.flavor).toBeUndefined();
+  });
+
+  it('snub remains as alias for ignore', async () => {
+    seedPackage('ext', { name: 'ext', version: '1.0.0', type: 'extension' });
+    store.activateExtension('ext');
+    const result = await cmds().router(['snub', 'ext']);
+    expect(result.success).toBe(true);
+    expect(store.isExtensionActive('ext')).toBe(false);
+    expect(result.data.flavor).toBeTruthy();
+    expect(Array.isArray(result.data.flavor)).toBe(true);
   });
 
   it('destroy removes package and deactivates', () => {
@@ -318,6 +331,8 @@ describe('rary commands (injected store)', () => {
     const result = await cmds().router(['kick', 'kicked']);
     expect(result.success).toBe(true);
     expect(store.isInstalled('kicked')).toBe(false);
+    expect(result.data.flavor).toBeTruthy();
+    expect(Array.isArray(result.data.flavor)).toBe(true);
   });
 
   it('need-repair detects ghost extension', () => {
@@ -333,6 +348,21 @@ describe('rary commands (injected store)', () => {
     expect(result.data.issues).toHaveLength(0);
   });
 
+  it('pet is a hidden easter egg command', async () => {
+    const result = await cmds().router(['pet']);
+    expect(result.success).toBe(true);
+    expect(result.data.message).toBe('Larry is purring.');
+    expect(Array.isArray(result.data.flavor)).toBe(true);
+  });
+
+  it('status is a hidden easter egg command', async () => {
+    const result = await cmds().router(['status']);
+    expect(result.success).toBe(true);
+    expect(result.data.message).toBe('Larry status report.');
+    expect(['watching_human', 'curled_up_sleeping', 'belly_up_sleeping', 'loaf', 'typing_name']).toContain(result.data.pose);
+    expect(Array.isArray(result.data.flavor)).toBe(true);
+  });
+
   it('get with local path installs package', async () => {
     // Create a source package outside toybox
     const sourceDir = join(TEST_DIR, 'source-pkg');
@@ -342,5 +372,18 @@ describe('rary commands (injected store)', () => {
     const result = await cmds().get([sourceDir]);
     expect(result.success).toBe(true);
     expect(store.isInstalled('source-pkg')).toBe(true);
+    expect(result.data.flavor).toBeUndefined();
+  });
+
+  it('yoink remains as alias for get', async () => {
+    const sourceDir = join(TEST_DIR, 'source-pkg-alias');
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, 'larry.json'), JSON.stringify({ name: 'source-pkg-alias', version: '1.0.0' }));
+
+    const result = await cmds().router(['yoink', sourceDir]);
+    expect(result.success).toBe(true);
+    expect(store.isInstalled('source-pkg-alias')).toBe(true);
+    expect(result.data.flavor).toBeTruthy();
+    expect(Array.isArray(result.data.flavor)).toBe(true);
   });
 });

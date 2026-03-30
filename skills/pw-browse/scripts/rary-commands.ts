@@ -16,12 +16,126 @@ interface Result {
   warnings?: string[];
 }
 
+type FlavorLines = string[];
+type FlavorKind = 'yoink' | 'snub' | 'kick' | 'pet';
+type LarryStatusPose = 'watching_human' | 'curled_up_sleeping' | 'belly_up_sleeping' | 'loaf' | 'typing_name';
+
+const FLAVOR_PRESETS: Record<FlavorKind, (name: string) => FlavorLines[]> = {
+  yoink: (name) => [
+    [
+      `Larry is eyeing "${name}".`,
+      `Larry yoinked it into the toybox. Meow.`,
+    ],
+    [
+      `Larry lifted his butt and gave "${name}" the classic wiggle.`,
+      `Then he pounced and yoinked it straight into the toybox.`,
+    ],
+    [
+      `Larry padded over to "${name}".`,
+      `Now "${name}" is tucked into the toybox.`,
+    ],
+    [
+      `Larry spotted "${name}" from across the room.`,
+      `A quick yoink later, it is in the toybox.`,
+    ],
+  ],
+  snub: (name) => [
+    [
+      `Larry lost interest in "${name}".`,
+      `It is being ignored for now.`,
+    ],
+    [
+      `Larry gave "${name}" a long blink and looked away.`,
+      `That toy is ignored until further notice.`,
+    ],
+    [
+      `Larry decided "${name}" is beneath notice today.`,
+      `It is now ignored.`,
+    ],
+  ],
+  kick: (name) => [
+    [
+      `Larry batted "${name}" out of the toybox.`,
+      `It is gone for good.`,
+    ],
+    [
+      `Larry kicked "${name}" clean out of bounds.`,
+      `The toybox is lighter now.`,
+    ],
+    [
+      `Larry sent "${name}" flying past the toybox wall.`,
+      `That one will not be coming back.`,
+    ],
+  ],
+  pet: () => [
+    [
+      `Larry leans into your hand.`,
+      `A low purr fills the live-rary.`,
+    ],
+    [
+      `Larry accepts the petting with professional dignity.`,
+      `The purring is immediate.`,
+    ],
+    [
+      `Larry gives you a slow blink.`,
+      `Then comes the steady purr.`,
+    ],
+  ],
+};
+
+function pickFlavor(kind: FlavorKind, name: string): FlavorLines {
+  const presets = FLAVOR_PRESETS[kind](name);
+  return presets[Math.floor(Math.random() * presets.length)]!;
+}
+
+const STATUS_PRESETS: Array<{ pose: LarryStatusPose; flavor: FlavorLines }> = [
+  {
+    pose: 'watching_human',
+    flavor: [
+      'Larry is staring directly at his human.',
+      'This appears deliberate.',
+    ],
+  },
+  {
+    pose: 'curled_up_sleeping',
+    flavor: [
+      'Larry is curled into a neat circle.',
+      'He is fully asleep and unavailable for package management.',
+    ],
+  },
+  {
+    pose: 'belly_up_sleeping',
+    flavor: [
+      'Larry is asleep with his belly on display.',
+      'Operational security is currently very low.',
+    ],
+  },
+  {
+    pose: 'loaf',
+    flavor: [
+      'Larry is in full loaf mode.',
+      'Paws are tucked. Systems are nominal.',
+    ],
+  },
+  {
+    pose: 'typing_name',
+    flavor: [
+      'Larry is typing his name.',
+      '"R, A, R, Y" ... Rary.',
+    ],
+  },
+];
+
+function pickStatus(): { pose: LarryStatusPose; flavor: FlavorLines } {
+  return STATUS_PRESETS[Math.floor(Math.random() * STATUS_PRESETS.length)]!;
+}
+
 // --- Factory: create commands bound to a store ---
 
 export function createRaryCommands(store: RaryStore) {
 
   // --- get <repo> ---
-  async function get(args: string[]): Promise<Result> {
+  async function get(args: string[], flavorKind?: FlavorKind): Promise<Result> {
     const repo = args[0];
     if (!repo) return { success: false, error: 'Usage: pw rary get <repo|path>' };
 
@@ -72,6 +186,7 @@ export function createRaryCommands(store: RaryStore) {
         package: repoName,
         manifest: manifest ? { name: manifest.name, version: manifest.version, type: manifest.type, description: manifest.description } : null,
         hint: manifest?.rolling ? `Run \`pw rary rolling ${repoName}\` for first-time setup.` : undefined,
+        ...(flavorKind ? { flavor: pickFlavor(flavorKind, repoName) } : {}),
       },
     };
   }
@@ -126,7 +241,7 @@ export function createRaryCommands(store: RaryStore) {
   }
 
   // --- destroy / kick ---
-  function destroy(args: string[]): Result {
+  function destroy(args: string[], flavorKind?: FlavorKind): Result {
     const name = args[0];
     if (!name) return { success: false, error: 'Usage: pw rary destroy <package>' };
 
@@ -143,6 +258,7 @@ export function createRaryCommands(store: RaryStore) {
         message: `Toy "${name}" has been removed from the toybox.`,
         package: name,
         wasActive,
+        ...(flavorKind ? { flavor: pickFlavor(flavorKind, name) } : {}),
       },
     };
   }
@@ -211,10 +327,10 @@ export function createRaryCommands(store: RaryStore) {
     };
   }
 
-  // --- yoink ---
-  function yoink(args: string[]): Result {
+  // --- ignore ---
+  function ignore(args: string[], flavorKind?: FlavorKind): Result {
     const name = args[0];
-    if (!name) return { success: false, error: 'Usage: pw rary yoink <package>' };
+    if (!name) return { success: false, error: 'Usage: pw rary ignore <package>' };
 
     if (!store.isExtensionActive(name)) {
       return { success: false, error: `Extension "${name}" is not active.` };
@@ -224,7 +340,11 @@ export function createRaryCommands(store: RaryStore) {
 
     return {
       success: true,
-      data: { message: `Extension "${name}" deactivated. Toy's back in the box.`, package: name },
+      data: {
+        message: `Extension "${name}" deactivated. Toy's back in the box.`,
+        package: name,
+        ...(flavorKind ? { flavor: pickFlavor(flavorKind, name) } : {}),
+      },
     };
   }
 
@@ -243,6 +363,30 @@ export function createRaryCommands(store: RaryStore) {
     };
   }
 
+  // Easter egg commands are for curious operators and AI tooling only.
+  // Keep them out of help/docs; they do not affect package integrity.
+  function pet(): Result {
+    return {
+      success: true,
+      data: {
+        message: 'Larry is purring.',
+        flavor: pickFlavor('pet', 'Larry'),
+      },
+    };
+  }
+
+  function status(): Result {
+    const current = pickStatus();
+    return {
+      success: true,
+      data: {
+        message: 'Larry status report.',
+        pose: current.pose,
+        flavor: current.flavor,
+      },
+    };
+  }
+
   // --- Router ---
   async function router(args: string[]): Promise<Result> {
     const subcommand = args[0];
@@ -250,30 +394,34 @@ export function createRaryCommands(store: RaryStore) {
 
     switch (subcommand) {
       case 'get':          return get(rest);
+      case 'yoink':        return get(rest, 'yoink');
       case 'toybox':       return toybox();
       case 'peek':         return peek(rest);
       case 'destroy':      return destroy(rest);
-      case 'kick':         return destroy(rest);
+      case 'kick':         return destroy(rest, 'kick');
       case 'rolling':      return rolling(rest);
       case 'put':          return put(rest);
-      case 'yoink':        return yoink(rest);
+      case 'ignore':       return ignore(rest);
+      case 'snub':         return ignore(rest, 'snub');
       case 'need-repair':  return needRepair();
+      case 'pet':          return pet();
+      case 'status':       return status();
 
       case undefined:
       case 'help':
         return {
           success: true,
           data: {
-            message: `Larry the Cat — Package & Extension Manager
+            message: `Larry the Cat — Larry's Live-rary (Package & Extension Manager)
 
 Usage: pw rary <command> [args...]
 
 Commands:
-  get <repo|path>      Fetch a toy into the toybox
+  get <repo|path>      Fetch a toy into the toybox (alias: yoink)
   toybox               List installed packages
   peek <package>       Inspect a package
   put <package>        Activate an extension
-  yoink <package>      Deactivate an extension (keep installed)
+  ignore <package>     Deactivate an extension (alias: snub)
   rolling <package>    Run first-time setup
   destroy <package>    Remove a package
   kick <package>       Remove a package (alias for destroy)
@@ -287,7 +435,7 @@ Commands:
     }
   }
 
-  return { get, toybox, peek, destroy, rolling, put, yoink, needRepair, router };
+  return { get, yoink: get, toybox, peek, destroy, rolling, put, ignore, snub: ignore, needRepair, router };
 }
 
 // --- Default instance (production) ---
@@ -306,6 +454,8 @@ export const raryPeek = defaultCommands.peek;
 export const raryDestroy = defaultCommands.destroy;
 export const raryRolling = defaultCommands.rolling;
 export const raryPut = defaultCommands.put;
-export const raryYoink = defaultCommands.yoink;
+export const raryYoink = defaultCommands.get;
+export const raryIgnore = defaultCommands.ignore;
+export const rarySnub = defaultCommands.ignore;
 export const raryNeedRepair = defaultCommands.needRepair;
 export const raryRouter = defaultCommands.router;

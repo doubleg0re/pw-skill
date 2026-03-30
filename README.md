@@ -92,13 +92,15 @@ pw-skill uses a lightweight extension system called `rary`. Extensions can add e
 ```bash
 # Install and activate an extension
 pw rary get <repo-or-path>
+pw rary yoink <repo-or-path>  # Alias for get
 pw rary put <package-name>
 
 # List installed extensions
 pw rary toybox
 
 # Deactivate
-pw rary yoink <package-name>
+pw rary ignore <package-name>
+pw rary snub <package-name>   # Alias for ignore
 ```
 
 ### Built-in Extensions
@@ -593,6 +595,7 @@ Larry the Cat's package and extension ecosystem. Install, inspect, activate, and
 ```bash
 # Install a package
 pw rary get doubleg0re/pw-persistws
+pw rary yoink doubleg0re/pw-persistws   # Alias for get
 pw rary get ./local-package
 
 # Inspect
@@ -601,7 +604,8 @@ pw rary peek <package>    # Show package details
 
 # Activate/deactivate extensions
 pw rary put <package>     # Activate extension (runs hooks on launch/close)
-pw rary yoink <package>   # Deactivate without removing
+pw rary ignore <package>  # Deactivate without removing
+pw rary snub <package>    # Alias for ignore
 
 # Setup and maintenance
 pw rary rolling <package> # Run first-time setup
