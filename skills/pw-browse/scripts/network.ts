@@ -187,7 +187,7 @@ run(async ({ page, args }) => {
       const wantBody = hasFlag(process.argv.slice(2), 'body');
       const wantJson = hasFlag(process.argv.slice(2), 'json');
       const bodyLimitStr = pf(process.argv.slice(2), 'body-limit');
-      const bodyLimit = bodyLimitStr ? parseInt(bodyLimitStr) : 5000;
+      const bodyLimit = bodyLimitStr ? (parseInt(bodyLimitStr) || 5000) : 5000;
 
       if (wantBody || wantJson) {
         const { readNdjsonEntries } = await import('./network-utils.js');
