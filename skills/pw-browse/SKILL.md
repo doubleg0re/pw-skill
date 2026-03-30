@@ -39,9 +39,11 @@ npx tsx ~/.claude/skills/pw-browse/scripts/{name}.ts [args...]
 
 **Inline chaining**: both `pwi` and `pw` support `::` chaining for browser actions. This is the compact CLI form of the `pw seq|sequence` runtime.
 
+Short aliases are available in the CLI runtime: `nav`=`navigate`, `shot`=`screenshot`, `sel`=`select`, `eval`=`evaluate`, `reload`=`refresh`.
+
 ```bash
-npx tsx {script_path}/pwi.ts navigate url :: click "#login" :: screenshot
-npx tsx {script_path}/pw.ts navigate https://example.com :: click "#login" :: wait 1000
+npx tsx {script_path}/pwi.ts nav url :: click "#login" :: shot
+npx tsx {script_path}/pw.ts nav https://example.com :: refresh :: wait 1000
 ```
 
 Chaining is restricted to browser actions only. Session, admin, and package commands are not chainable.
@@ -214,7 +216,9 @@ All actions accept `args` as either an **array** or an **object**:
 ```
 
 #### Basic actions
-All browser actions are supported: navigate, click, dblclick, drag, fill, type, hover, scroll, upload, copy, find, attr, select, wait, submit, fetch, screenshot, evaluate
+All browser actions are supported: navigate, refresh, click, dblclick, drag, fill, type, hover, scroll, upload, copy, find, attr, select, wait, submit, fetch, screenshot, evaluate
+
+Short aliases also work in the CLI runtime and sequence engine: `nav`, `reload`, `sel`, `shot`, `eval`.
 
 ```json
 [

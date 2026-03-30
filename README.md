@@ -78,20 +78,21 @@ If you just want to do something quickly, use `pwi`.
 
 - `pwi` is the lightest entry point: launch, do the action, exit.
 - Good for quick inspection, one-off clicks, screenshots, and tiny experiments.
+- Handy aliases: `nav`=`navigate`, `shot`=`screenshot`, `sel`=`select`, `eval`=`evaluate`.
 
 ```bash
-pwi navigate https://example.com --screenshot
+pwi nav https://example.com --screenshot
 pwi dump --selector="h1" --text
 ```
 
-If you want lightweight browser automation, use `pw sequence`.
+If you want lightweight browser automation, use `pw seq|sequence`.
 
-- `pw sequence` is the next step up: structured multi-step runs with variables, branching, loops, and reusable flow files.
+- `pw seq|sequence` is the next step up: structured multi-step runs with variables, branching, loops, and reusable flow files.
 - Good when one-shot commands stop being enough, but you do not want to build extensions yet.
 
 ```bash
-pw sequence ./login-flow.json
-pw sequence '[{"action":"navigate","args":["https://example.com"]},{"action":"click","args":["#login"]}]'
+pw seq ./login-flow.json
+pw seq '[{"nav":"https://example.com"},{"action":"click","args":["#login"]}]'
 ```
 
 If you want advanced runtime behavior, use `rary`.
@@ -295,7 +296,8 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 
 | Command | Description |
 |---|---|
-| `pw navigate <url> [--screenshot]` | Go to URL |
+| `pw nav\|navigate <url> [--screenshot]` | Go to URL |
+| `pw refresh\|reload [--screenshot]` | Reload current page |
 
 ### Interaction
 
@@ -308,7 +310,7 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | `pw scroll <up\|down\|top\|bottom\|selector\|px>` | Scroll page |
 | `pw fill <selector> <text>` | Click + fill input |
 | `pw type <text> [--delay=ms]` | Type on keyboard |
-| `pw select <selector> [--value\|--label\|--index]` | Select dropdown option |
+| `pw sel\|select <selector> [--value\|--label\|--index]` | Select dropdown option |
 | `pw upload <selector> <file...>` | Upload file(s) |
 | `pw submit [selector] [--wait=/url]` | Submit form (Enter or selector) |
 | `pw submit --url=/api/x --method=POST --body='{}'` | Direct HTTP form submission |
@@ -323,15 +325,15 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 
 | Command | Description |
 |---|---|
-| `pw screenshot` | Capture viewport |
-| `pw screenshot --full` | Capture full page |
-| `pw screenshot <selector>` | Capture element |
-| `pw screenshot <x,y,w,h>` | Capture coordinate region |
-| `pw screenshot --name=login` | Custom screenshot filename |
+| `pw shot\|screenshot` | Capture viewport |
+| `pw shot\|screenshot --full` | Capture full page |
+| `pw shot\|screenshot <selector>` | Capture element |
+| `pw shot\|screenshot <x,y,w,h>` | Capture coordinate region |
+| `pw shot\|screenshot --name=login` | Custom screenshot filename |
 | `pw copy <selector> [--format=text\|html\|outer\|image]` | Copy text/HTML/image from element. `--format=image` copies element to clipboard as PNG + saves file. `--save-only` to skip clipboard. |
 | `pw find <selector> [--detail=tag\|class\|full]` | Query DOM elements |
 | `pw attr <selector> <name> [--set=value]` | Read/write DOM attribute |
-| `pw evaluate <js-expression>` | Execute JavaScript in page |
+| `pw eval\|evaluate <js-expression>` | Execute JavaScript in page |
 | `pw wait <ms\|HH:MM\|/url\|selector>` | Wait for condition |
 | `pw wait <selector> --attr=textContent --value=Done` | Wait for attribute value |
 

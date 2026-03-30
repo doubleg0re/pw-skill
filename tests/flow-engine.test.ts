@@ -5,6 +5,7 @@ import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresR
 function mockPage(overrides: Record<string, any> = {}): any {
   return {
     goto: vi.fn(),
+    reload: vi.fn(),
     title: vi.fn().mockResolvedValue('Test Page'),
     screenshot: vi.fn(),
     evaluate: vi.fn(),
@@ -372,6 +373,45 @@ describe('Flow Engine — out (variable capture)', () => {
     const logs = results.filter(r => r.action === 'log');
     expect(logs[0].data).toBe('My Page');
   });
+
+  it('captures refresh result with out', async () => {
+    const page = mockPage({
+      reload: vi.fn(),
+      url: vi.fn().mockReturnValue('http://localhost:3000/members'),
+      title: vi.fn().mockResolvedValue('Members'),
+    });
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    await runSteps(page, [
+      { action: 'refresh', out: 'pageState' },
+      { action: 'log', ref: 'pageState.reloaded' },
+    ], vars, results, emptyDefs());
+
+    expect(page.reload).toHaveBeenCalled();
+    expect(vars.get('pageState.url')).toBe('http://localhost:3000/members');
+    expect(vars.get('pageState.reloaded')).toBe(true);
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toBe(true);
+  });
+
+  it('captures eval alias result with out', async () => {
+    const page = mockPage({
+      evaluate: vi.fn().mockResolvedValue(2),
+    });
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    await runSteps(page, [
+      { action: 'eval', args: ['1 + 1'], out: 'sum' },
+      { action: 'log', ref: 'sum' },
+    ], vars, results, emptyDefs());
+
+    expect(page.evaluate).toHaveBeenCalledWith('1 + 1');
+    expect(vars.get('sum')).toBe(2);
+    const logs = results.filter(r => r.action === 'log');
+    expect(logs[0].data).toBe(2);
+  });
 });
 
 describe('Flow Engine — combined', () => {
@@ -529,6 +569,15 @@ describe('validateSteps', () => {
       { action: 'navigate', args: ['http://localhost'] },
       { action: 'click', args: ['#btn'] },
       { label: 'end' },
+    ])).toEqual([]);
+  });
+
+  it('accepts built-in action aliases', () => {
+    expect(validateSteps([
+      { action: 'nav', args: ['http://localhost'] },
+      { action: 'sel', args: ['#role', 'admin'] },
+      { action: 'shot' },
+      { action: 'eval', args: ['1 + 1'] },
     ])).toEqual([]);
   });
 
@@ -1104,6 +1153,11 @@ describe('normalizeStep', () => {
   it('converts shorthand with array args', () => {
     const result = normalizeStep({ navigate: ['https://example.com'] });
     expect(result).toEqual({ action: 'navigate', args: ['https://example.com'] });
+  });
+
+  it('converts shorthand aliases', () => {
+    const result = normalizeStep({ nav: 'https://example.com' });
+    expect(result).toEqual({ action: 'nav', args: ['https://example.com'] });
   });
 
   it('wraps non-array value as single-element array', () => {

@@ -17,6 +17,11 @@ export async function actionNavigate(page: Page, a: ActionArgs): Promise<{ resul
   return { result: { url, title: await page.title() } };
 }
 
+export async function actionRefresh(page: Page, _a?: ActionArgs): Promise<{ result?: any }> {
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+  return { result: { url: page.url(), title: await page.title(), reloaded: true } };
+}
+
 export async function actionClick(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const selector = getArg(a, 'selector', 0);
   if (/^\d+,\d+$/.test(selector)) {
@@ -540,6 +545,9 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
 
 export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{ result?: any }>> = {
   navigate: actionNavigate,
+  nav: actionNavigate,
+  refresh: actionRefresh,
+  reload: actionRefresh,
   click: actionClick,
   dblclick: actionDblclick,
   drag: actionDrag,
@@ -549,11 +557,14 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{
   hover: actionHover,
   scroll: actionScroll,
   select: actionSelect,
+  sel: actionSelect,
   upload: actionUpload,
   attr: actionAttr,
   submit: actionSubmit,
   fetch: actionFetch,
   screenshot: actionScreenshot,
+  shot: actionScreenshot,
   evaluate: actionEvaluate,
+  eval: actionEvaluate,
   dump: actionDump,
 };

@@ -8,9 +8,9 @@ import { homedir } from 'os';
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS = [
-  'navigate', 'screenshot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
-  'fill', 'type', 'select', 'upload', 'submit',
-  'dump', 'attr', 'wait', 'fetch', 'evaluate',
+  'navigate', 'nav', 'refresh', 'reload', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
+  'fill', 'type', 'select', 'sel', 'upload', 'submit',
+  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval',
 ] as const;
 const CHAINABLE_ACTION_SET = new Set(CHAINABLE_ACTIONS);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
@@ -25,18 +25,20 @@ const AGENT_SKILLS: Record<string, { title: string; summary: string; when: strin
       'You want to inspect or validate a UI quickly',
     ],
     cli: [
-      'pwi navigate <url> [--screenshot]',
-      'pwi navigate <url> :: click <target> :: screenshot',
-      'pw navigate <url> [--session=N]',
-      'pw navigate <url> :: click <target> :: wait 1000',
+      'pwi nav|navigate <url> [--screenshot]',
+      'pwi nav <url> :: refresh :: shot',
+      'pw nav|navigate <url> [--session=N]',
+      'pw nav <url> :: refresh :: wait 1000',
+      'pw refresh [--session=N]',
       'pw click <target> [--session=N]',
       'pw fill <selector> <text> [--session=N]',
-      'pw screenshot [selector] [--full] [--session=N]',
+      'pw shot|screenshot [selector] [--full] [--session=N]',
     ],
     notes: [
       '`pwi` is the lightest entry point for one-shot work',
       'Inline `::` chaining works in both `pwi` and `pw` for browser actions only',
       `Chainable actions: ${CHAINABLE_ACTIONS_TEXT}`,
+      'Short aliases: nav=navigate, shot=screenshot, sel=select, eval=evaluate',
       'Custom extension actions and commands like launch, close, rary, and analyze are not chainable',
       'Session-based `pw` commands pair naturally with `pw agent skill --launch`',
     ],
@@ -164,18 +166,19 @@ Args:
   usually needs args                      navigate, click, fill, evaluate, shell, and most browser actions
 
 Flow steps:
-  browser actions                         Use regular browser actions like navigate, screenshot, click, fill, dump, wait, fetch, and evaluate
+  browser actions                         Use regular browser actions like navigate, refresh, screenshot, click, fill, dump, wait, fetch, and evaluate
+  aliases                                 nav=navigate, shot=screenshot, sel=select, eval=evaluate, reload=refresh
   flow control                            log, condition, each, loop, def, call, goto, try, set, return
   restricted                              shell requires --allow-shell and explicit args
 
 Examples:
   pw seq '[{"action":"navigate","args":["https://example.com"]},{"action":"screenshot"}]'
-  pw seq '[{"navigate":"https://example.com"},{"fill":["#email","me@example.com"]}]'
+  pw seq '[{"nav":"https://example.com"},{"fill":["#email","me@example.com"]},{"shot":"full"}]'
   pw seq ./scripts/playwright/login-flow.json --session=my-session
 
 Chaining (::):
-  pwi navigate <url> :: click <target> :: screenshot
-  pw navigate <url> :: fill <selector> <text> :: wait 1000
+  pwi nav <url> :: refresh :: shot
+  pw nav <url> :: fill <selector> <text> :: refresh
   supported                               ${CHAINABLE_ACTIONS_TEXT}
   note                                    Chaining is browser-actions-only and separate from seq JSON/file syntax
 `.trim();
@@ -203,6 +206,7 @@ Chaining:
   pwi a :: b :: c                         One-shot inline chain
   pw a :: b :: c                          Session-based inline chain
   supported                               ${CHAINABLE_ACTIONS_TEXT}
+  aliases                                 nav=navigate, shot=screenshot, sel=select, eval=evaluate, reload=refresh
   note                                    No custom actions; launch/close/rary/analyze not chainable
   seq syntax                              Run pw help seq
 
@@ -227,8 +231,9 @@ Package management (Larry's toybox):
   rary need-repair                          Check for broken packages
 
 Browser actions:
-  navigate <url> [--screenshot]              Go to URL
-  screenshot [selector] [--full]             Capture page or element
+  nav|navigate <url> [--screenshot]          Go to URL
+  refresh|reload [--screenshot]              Reload current page
+  shot|screenshot [selector] [--full]        Capture page or element
   click <target> [--mode=selector|text|coord] Click element
   dblclick <target> [--mode=...]             Double-click element
   hover <target> [--mode=...]                Hover over element
@@ -236,7 +241,7 @@ Browser actions:
   scroll <up|down|top|bottom|selector>       Scroll page
   fill <selector> <text>                     Fill input field
   type <text> [--delay=ms]                   Type on keyboard
-  select <selector> [--value|--label|--index] Select dropdown option
+  sel|select <selector> [--value|--label|--index] Select dropdown option
   upload <selector> <file-path...>           Upload file
   download <target> [--async] [--dir=path]   Download file
   download [status|list]                     Check downloads
@@ -248,7 +253,7 @@ Browser actions:
   find <selector> [--detail=tag|class|full]  Query DOM elements
   wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
   fetch <METHOD> <url> [body-json]           HTTP request with auth
-  evaluate <js-expression>                   Run JavaScript in page
+  eval|evaluate <js-expression>              Run JavaScript in page
   seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
 
 Debugging:
@@ -357,7 +362,11 @@ function hasFlag(name: string): boolean {
 
 const COMMANDS: Record<string, { script: string; desc: string }> = {
   navigate:    { script: 'navigate.ts',    desc: 'Go to URL' },
+  nav:         { script: 'navigate.ts',    desc: 'Go to URL' },
+  refresh:     { script: 'refresh.ts',     desc: 'Reload current page' },
+  reload:      { script: 'refresh.ts',     desc: 'Reload current page' },
   screenshot:  { script: 'screenshot.ts',  desc: 'Capture page' },
+  shot:        { script: 'screenshot.ts',  desc: 'Capture page' },
   click:       { script: 'click.ts',       desc: 'Click element' },
   dblclick:    { script: 'dblclick.ts',    desc: 'Double-click element' },
   hover:       { script: 'hover.ts',       desc: 'Hover over element' },
@@ -366,6 +375,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   fill:        { script: 'fill.ts',        desc: 'Fill input field' },
   type:        { script: 'type.ts',        desc: 'Type on keyboard' },
   select:      { script: 'select.ts',      desc: 'Select dropdown option' },
+  sel:         { script: 'select.ts',      desc: 'Select dropdown option' },
   upload:      { script: 'upload.ts',      desc: 'Upload file' },
   download:    { script: 'download.ts',    desc: 'Download file' },
   submit:      { script: 'submit.ts',      desc: 'Submit form' },
@@ -377,6 +387,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   wait:        { script: 'wait.ts',        desc: 'Wait for condition' },
   fetch:       { script: 'fetch.ts',       desc: 'HTTP request (with auth)' },
   evaluate:    { script: 'evaluate.ts',    desc: 'Run JavaScript' },
+  eval:        { script: 'evaluate.ts',    desc: 'Run JavaScript' },
   sequence:    { script: 'sequence.ts',    desc: 'Run action sequence' },
   console:     { script: 'console.ts',     desc: 'Console logs' },
   network:     { script: 'network.ts',     desc: 'Network requests' },
