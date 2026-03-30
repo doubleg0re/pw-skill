@@ -83,7 +83,10 @@ export async function actionRefresh(page: Page, _a?: ActionArgs): Promise<{ resu
 
 export async function actionClick(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
-  if (/^\d+,\d+$/.test(selector)) {
+  if (elementKey) {
+    // Resolved from elementKey — always use locator (may contain >> nth=N)
+    await page.locator(selector).first().click();
+  } else if (/^\d+,\d+$/.test(selector)) {
     const [x, y] = selector.split(',').map(Number);
     await page.mouse.click(x, y);
   } else if (selector.startsWith('#') || selector.startsWith('.') || selector.startsWith('[')) {
