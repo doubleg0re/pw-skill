@@ -595,7 +595,12 @@ export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?
 
     if (elementExists && type === 'attr' && attrName) {
       actualAttrValue = await page.locator(selector).first().evaluate(
-        (el, name) => el.getAttribute(name),
+        (el, name) => {
+          if (name === 'textContent') return el.textContent?.trim();
+          if (name === 'innerText') return (el as HTMLElement).innerText?.trim();
+          if (name === 'value') return (el as HTMLInputElement).value;
+          return el.getAttribute(name);
+        },
         String(attrName),
       ).then(v => v ?? undefined);
     }
