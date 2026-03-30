@@ -14,5 +14,13 @@ run(async ({ page, args, session }) => {
   const path = screenshotPath(undefined, session);
   await page.screenshot({ path });
 
-  return { success: true, screenshot: path, data: { selector: selector || `key:${key}`, text, ...result?.result } };
+  return {
+    success: true,
+    screenshot: path,
+    data: {
+      ...(key ? { selector: `key:${key}`, elementKey: key } : { selector }),
+      value: text,
+      ...result?.result,
+    },
+  };
 });
