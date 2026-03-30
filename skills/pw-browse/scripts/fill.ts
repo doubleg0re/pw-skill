@@ -18,7 +18,7 @@ run(async ({ page, args, session }) => {
     success: true,
     screenshot: path,
     data: {
-      ...(key ? { selector: `key:${key}`, elementKey: key } : { selector }),
+      target: key ? undefined : selector,
       value: text,
       ...result?.result,
     },
