@@ -21,6 +21,7 @@ export interface SessionInfo {
   video: string | null;
   lastUrl?: string;
   screenshotDir?: string;
+  documentEpoch?: number;
 }
 
 export interface SessionStoreOptions {
@@ -285,4 +286,16 @@ export const hasProfile = defaultStore.hasProfile.bind(defaultStore);
 export const globalSessionDir = defaultStore.globalSessionDir.bind(defaultStore);
 export function localStateDir(cwd?: string): string {
   return cwd ? join(cwd, '.playwright-state') : defaultStore.localDir;
+}
+
+export function advanceDocumentEpoch(sessionName: string): number {
+  const session = defaultStore.getSession(sessionName);
+  const next = (session?.documentEpoch ?? 0) + 1;
+  defaultStore.updateSession(sessionName, { documentEpoch: next });
+  return next;
+}
+
+export function getDocumentEpoch(sessionName: string): number {
+  const session = defaultStore.getSession(sessionName);
+  return session?.documentEpoch ?? 0;
 }
