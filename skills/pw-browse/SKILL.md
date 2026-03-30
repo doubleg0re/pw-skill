@@ -37,6 +37,15 @@ npx tsx ~/.claude/skills/pw-browse/scripts/{name}.ts [args...]
 
 `pw` commands connect to a persistent browser session via CDP. `pwi` launches a temporary browser and closes it after execution.
 
+**Inline chaining**: both `pwi` and `pw` support `::` chaining for browser actions. This is the compact CLI form of the `pw seq|sequence` runtime.
+
+```bash
+npx tsx {script_path}/pwi.ts navigate url :: click "#login" :: screenshot
+npx tsx {script_path}/pw.ts navigate https://example.com :: click "#login" :: wait 1000
+```
+
+Chaining is restricted to browser actions only. Session, admin, and package commands are not chainable.
+
 **Session resolution order** (for `pw` commands):
 1. `--session=name` (explicit)
 2. Bound session via `pw use`
@@ -192,6 +201,7 @@ npx tsx {script_path}/sequence.ts flow.json --rary=pw-monitor
 ```
 Runs an action sequence with full flow control. Stops on failure with an error screenshot.
 
+- CLI syntax summary: `pw help seq`
 - `--params`: Inject external parameters into flow variables (JSON string or file path)
 - `--rary=name1,name2`: Require specific rary extensions for this run
 - Flows can also declare `info.requiresRary` in wrapper format

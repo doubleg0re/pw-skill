@@ -7,6 +7,13 @@ import { homedir } from 'os';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
+const CHAINABLE_ACTIONS = [
+  'navigate', 'screenshot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
+  'fill', 'type', 'select', 'upload', 'submit',
+  'dump', 'attr', 'wait', 'fetch', 'evaluate',
+] as const;
+const CHAINABLE_ACTION_SET = new Set(CHAINABLE_ACTIONS);
+const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
 
 const AGENT_SKILLS: Record<string, { title: string; summary: string; when: string[]; cli: string[]; notes?: string[] }> = {
   browse: {
@@ -19,13 +26,18 @@ const AGENT_SKILLS: Record<string, { title: string; summary: string; when: strin
     ],
     cli: [
       'pwi navigate <url> [--screenshot]',
+      'pwi navigate <url> :: click <target> :: screenshot',
       'pw navigate <url> [--session=N]',
+      'pw navigate <url> :: click <target> :: wait 1000',
       'pw click <target> [--session=N]',
       'pw fill <selector> <text> [--session=N]',
       'pw screenshot [selector] [--full] [--session=N]',
     ],
     notes: [
       '`pwi` is the lightest entry point for one-shot work',
+      'Inline `::` chaining works in both `pwi` and `pw` for browser actions only',
+      `Chainable actions: ${CHAINABLE_ACTIONS_TEXT}`,
+      'Custom extension actions and commands like launch, close, rary, and analyze are not chainable',
       'Session-based `pw` commands pair naturally with `pw agent skill --launch`',
     ],
   },
@@ -129,6 +141,132 @@ function renderAllAgentSkills(): string {
   ].join('\n\n');
 }
 
+function renderSequenceHelp(): string {
+  return `
+pw seq|sequence — JSON/action flow runner
+
+Usage:
+  pw seq '<json-array>'
+  pw sequence '<json-array>'
+  pw seq ./scripts/playwright/login-flow.json
+  pw seq ./scripts/playwright/login-flow.json --params ./params.json
+
+Step forms:
+  explicit                                {"action":"navigate","args":["https://example.com"]}
+  shorthand                               {"navigate":"https://example.com"}
+  shorthand                               {"fill":["#email","me@example.com"]}
+  note                                    Shorthand must be a single-key action object
+  note                                    Do not mix shorthand with metadata like out, label, or comment
+
+Args:
+  optional in syntax                      Only some steps are meaningful without args
+  safe without args                       screenshot, log, comment-only steps, label-only steps
+  usually needs args                      navigate, click, fill, evaluate, shell, and most browser actions
+
+Flow steps:
+  browser actions                         Use regular browser actions like navigate, screenshot, click, fill, dump, wait, fetch, and evaluate
+  flow control                            log, condition, each, loop, def, call, goto, try, set, return
+  restricted                              shell requires --allow-shell and explicit args
+
+Examples:
+  pw seq '[{"action":"navigate","args":["https://example.com"]},{"action":"screenshot"}]'
+  pw seq '[{"navigate":"https://example.com"},{"fill":["#email","me@example.com"]}]'
+  pw seq ./scripts/playwright/login-flow.json --session=my-session
+
+Chaining (::):
+  pwi navigate <url> :: click <target> :: screenshot
+  pw navigate <url> :: fill <selector> <text> :: wait 1000
+  supported                               ${CHAINABLE_ACTIONS_TEXT}
+  note                                    Chaining is browser-actions-only and separate from seq JSON/file syntax
+`.trim();
+}
+
+function renderMainHelp(): string {
+  return `
+pw — Playwright CLI Skill
+
+Usage: pw <command> [args...]
+       pw help [seq|sequence]
+
+Start here:
+  pwi                                     Simplest path; one-shot browser work
+  seq|sequence                            Lightweight multi-step automation
+  rary                                    Advanced runtime: extensions, hooks, sidecars
+
+For agents:
+  agent skill --browse                    Compact CLI summary for pw-browse
+  agent skill --launch                    Compact CLI summary for pw-launch
+  agent skill --test                      Compact CLI summary for pw-test
+  agent skill --close                     Compact CLI summary for pw-close
+
+Chaining:
+  pwi a :: b :: c                         One-shot inline chain
+  pw a :: b :: c                          Session-based inline chain
+  supported                               ${CHAINABLE_ACTIONS_TEXT}
+  note                                    No custom actions; launch/close/rary/analyze not chainable
+  seq syntax                              Run pw help seq
+
+Session management:
+  launch [url] [--name=N] [--resume=N]     Launch browser session
+  use <name>                                Bind session to project
+  sessions                                  List all sessions
+  close [--session=N] [--all]               Close session(s)
+
+Diagnostics:
+  analyze                                   Diagnose sessions, bindings, artifacts
+  clean <dead|stale|orphans|all>             Safe cleanup (broken pkgs → pw rary kick)
+
+Package management (Larry's toybox):
+  rary get|yoink <repo|path>                Fetch a toy into the toybox
+  rary toybox                               List installed packages
+  rary peek <package>                       Inspect a package
+  rary put <package>                        Activate an extension
+  rary ignore|snub <package>                Deactivate an extension
+  rary rolling <package>                    Run first-time setup
+  rary destroy|kick <package>               Remove a package
+  rary need-repair                          Check for broken packages
+
+Browser actions:
+  navigate <url> [--screenshot]              Go to URL
+  screenshot [selector] [--full]             Capture page or element
+  click <target> [--mode=selector|text|coord] Click element
+  dblclick <target> [--mode=...]             Double-click element
+  hover <target> [--mode=...]                Hover over element
+  drag <source> <target> [--mode=...]        Drag and drop
+  scroll <up|down|top|bottom|selector>       Scroll page
+  fill <selector> <text>                     Fill input field
+  type <text> [--delay=ms]                   Type on keyboard
+  select <selector> [--value|--label|--index] Select dropdown option
+  upload <selector> <file-path...>           Upload file
+  download <target> [--async] [--dir=path]   Download file
+  download [status|list]                     Check downloads
+  submit [form-selector] [--wait=/url]       Submit form
+  copy <selector> [--format=text|html|outer|image] Copy text/HTML/image
+  paste [selector] [--text=T] [--image=path]   Paste text or image
+  dump [--body] [--selector=S] [--text]       Dump raw DOM/HTML/text
+  attr <selector> <name> [--set=value]       Read/write DOM attribute
+  find <selector> [--detail=tag|class|full]  Query DOM elements
+  wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
+  fetch <METHOD> <url> [body-json]           HTTP request with auth
+  evaluate <js-expression>                   Run JavaScript in page
+  seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
+
+Debugging:
+  console [inject|dump|clear|tail]           Console log capture
+  network [inject|dump|clear|tail|find]      Network request capture
+  trace [start|stop|view|status]             Record and view traces
+  video [list|path|rename|clear]             Manage recorded videos
+  tab [new|list|close] [args...]             Manage browser tabs
+
+Global flags:
+  --session=N    Target specific session (name or ID)
+  --tab=N        Target specific tab (default: 0)
+  --headed       Show browser window
+  --viewport=WxH Viewport size (default: 1920x1080)
+  --video[=name] Enable video recording
+`.trim();
+}
+
 // --inline mode: delegate to pwi
 if (args[0] === '--inline' || args[0] === '-i') {
   const pwiScript = join(SCRIPTS_DIR, 'pwi.ts');
@@ -141,12 +279,6 @@ if (args[0] === '--inline' || args[0] === '-i') {
 
 // :: chaining: build sequence JSON and run through full runtime (session-based)
 if (args.includes('::')) {
-  // Actions that can be chained (must exist in ACTION_MAP or be extension actions)
-  const CHAINABLE_ACTIONS = new Set([
-    'navigate', 'screenshot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
-    'fill', 'type', 'select', 'upload', 'submit',
-    'dump', 'attr', 'wait', 'fetch', 'evaluate',
-  ]);
   // Global flags that apply to the whole execution, not individual steps
   const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'video', 'no-restore']);
   function isGlobalFlag(a: string): boolean {
@@ -171,11 +303,11 @@ if (args.includes('::')) {
   }
   if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
 
-  const rejected = segments.filter(s => !CHAINABLE_ACTIONS.has(s.action)).map(s => s.action);
+  const rejected = segments.filter(s => !CHAINABLE_ACTION_SET.has(s.action as any)).map(s => s.action);
   if (rejected.length > 0) {
     console.log(JSON.stringify({
       success: false,
-      error: `pw chaining only supports browser actions. Not chainable: ${rejected.map(r => `"${r}"`).join(', ')}. Use separate pw commands instead.`,
+      error: `pw chaining only supports built-in browser actions. Not chainable: ${rejected.map(r => `"${r}"`).join(', ')}. Supported: ${CHAINABLE_ACTIONS_TEXT}. Custom extension actions and commands like launch, close, rary, and analyze must use separate pw commands or \`pw sequence\`.`,
     }));
     process.exit(1);
   }
@@ -209,7 +341,8 @@ if (args.includes('::')) {
   process.exit(result.status ?? 1);
 }
 
-const command = args[0];
+const rawCommand = args[0];
+const command = rawCommand === 'seq' ? 'sequence' : rawCommand;
 const restArgs = args.slice(1);
 
 // Parse --flag=value from restArgs
@@ -255,81 +388,18 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
 
 // Help
 if (!command || command === 'help' || command === '--help') {
-  console.log(`
-pw — Playwright CLI Skill
+  const helpTopic = restArgs[0];
+  if (helpTopic === 'seq' || helpTopic === 'sequence') {
+    console.log(renderSequenceHelp());
+    process.exit(0);
+  }
 
-Usage: pw <command> [args...]
+  console.log(renderMainHelp());
+  process.exit(0);
+}
 
-Start here:
-  pwi                                     Simplest path; one-shot browser work
-  sequence                                Lightweight multi-step automation
-  rary                                    Advanced runtime: extensions, hooks, sidecars
-
-For agents:
-  agent skill --browse                    Compact CLI summary for pw-browse
-  agent skill --launch                    Compact CLI summary for pw-launch
-  agent skill --test                      Compact CLI summary for pw-test
-  agent skill --close                     Compact CLI summary for pw-close
-
-Session management:
-  launch [url] [--name=N] [--resume=N]     Launch browser session
-  use <name>                                Bind session to project
-  sessions                                  List all sessions
-  close [--session=N] [--all]               Close session(s)
-
-Diagnostics:
-  analyze                                   Diagnose sessions, bindings, artifacts
-  clean <dead|stale|orphans|all>             Safe cleanup (broken pkgs → pw rary kick)
-
-Package management (Larry's toybox):
-  rary get|yoink <repo|path>                Fetch a toy into the toybox
-  rary toybox                               List installed packages
-  rary peek <package>                       Inspect a package
-  rary put <package>                        Activate an extension
-  rary ignore|snub <package>                Deactivate an extension
-  rary rolling <package>                    Run first-time setup
-  rary destroy|kick <package>               Remove a package
-  rary need-repair                          Check for broken packages
-
-Browser actions:
-  navigate <url> [--screenshot]              Go to URL
-  screenshot [selector] [--full]             Capture page or element
-  click <target> [--mode=selector|text|coord] Click element
-  dblclick <target> [--mode=...]             Double-click element
-  hover <target> [--mode=...]                Hover over element
-  drag <source> <target> [--mode=...]        Drag and drop
-  scroll <up|down|top|bottom|selector>       Scroll page
-  fill <selector> <text>                     Fill input field
-  type <text> [--delay=ms]                   Type on keyboard
-  select <selector> [--value|--label|--index] Select dropdown option
-  upload <selector> <file-path...>           Upload file
-  download <target> [--async] [--dir=path]   Download file
-  download [status|list]                     Check downloads
-  submit [form-selector] [--wait=/url]       Submit form
-  copy <selector> [--format=text|html|outer|image] Copy text/HTML/image
-  paste [selector] [--text=T] [--image=path]   Paste text or image
-  dump [--body] [--selector=S] [--text]       Dump raw DOM/HTML/text
-  attr <selector> <name> [--set=value]       Read/write DOM attribute
-  find <selector> [--detail=tag|class|full]  Query DOM elements
-  wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
-  fetch <METHOD> <url> [body-json]           HTTP request with auth
-  evaluate <js-expression>                   Run JavaScript in page
-  sequence <json|file>                       Run action sequence
-
-Debugging:
-  console [inject|dump|clear|tail]           Console log capture
-  network [inject|dump|clear|tail|find]      Network request capture
-  trace [start|stop|view|status]             Record and view traces
-  video [list|path|rename|clear]             Manage recorded videos
-  tab [new|list|close] [args...]             Manage browser tabs
-
-Global flags:
-  --session=N    Target specific session (name or ID)
-  --tab=N        Target specific tab (default: 0)
-  --headed       Show browser window
-  --viewport=WxH Viewport size (default: 1920x1080)
-  --video[=name] Enable video recording
-`.trim());
+if (command === 'sequence' && ['help', '--help', '-h'].includes(restArgs[0] || '')) {
+  console.log(renderSequenceHelp());
   process.exit(0);
 }
 
