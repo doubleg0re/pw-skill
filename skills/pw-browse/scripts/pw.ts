@@ -257,7 +257,7 @@ Browser actions:
   find <selector> [--detail=tag|class|full]  Query DOM elements
   wait <ms|HH:MM|url|selector> [--attr --value] Wait for condition
   fetch <METHOD> <url> [body-json]           HTTP request with auth
-  assert <selector> --exists|--text=...|--contains=...|--attr=...  Assert element state
+  assert <selector> [--exists|--visible|--hidden|--count=N|--text=T|--contains=T|--attr=A --value=V] [--wait=ms] Assert element state
   eval|evaluate <js-expression>              Run JavaScript in page
   seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
   screenshots                               Default: current cwd/.playwright-state/screenshots

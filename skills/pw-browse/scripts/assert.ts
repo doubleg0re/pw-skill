@@ -21,10 +21,13 @@ run(async ({ page }) => {
 
   // Determine assertion type
   const isExists = hasFlag(cliArgs, 'exists');
+  const isVisible = hasFlag(cliArgs, 'visible');
+  const isHidden = hasFlag(cliArgs, 'hidden');
   const textVal = parseFlag(cliArgs, 'text');
   const containsVal = parseFlag(cliArgs, 'contains');
   const attrName = parseFlag(cliArgs, 'attr');
   const attrValue = parseFlag(cliArgs, 'value');
+  const countVal = parseFlag(cliArgs, 'count');
   const waitRaw = parseFlag(cliArgs, 'wait');
   const waitMs = waitRaw !== undefined ? Number(waitRaw) : 0;
 
@@ -33,6 +36,13 @@ run(async ({ page }) => {
 
   if (isExists) {
     type = 'exists';
+  } else if (isVisible) {
+    type = 'visible';
+  } else if (isHidden) {
+    type = 'hidden';
+  } else if (countVal !== undefined) {
+    type = 'count';
+    expected = countVal;
   } else if (textVal !== undefined) {
     type = 'text';
     expected = textVal;
@@ -43,23 +53,26 @@ run(async ({ page }) => {
     type = 'attr';
     expected = attrValue;
   } else {
-    return { success: false, error: 'Missing assertion flag. Use --exists, --text=..., --contains=..., or --attr=... --value=...' };
+    return { success: false, error: 'Missing assertion flag. Use --exists, --visible, --hidden, --count=N, --text=..., --contains=..., or --attr=... --value=...' };
   }
 
   async function evaluate() {
-    const elementExists = await page.locator(selector!).count().then(c => c > 0);
+    const loc = page.locator(selector!);
+    const actualCount = await loc.count();
+    const elementExists = actualCount > 0;
 
     let actualText: string | undefined;
     let actualAttrValue: string | undefined;
+    let elemVisible: boolean | undefined;
 
     if (elementExists && (type === 'text' || type === 'contains')) {
-      actualText = await page.locator(selector!).first().evaluate(
+      actualText = await loc.first().evaluate(
         (el) => (el as HTMLElement).innerText,
       );
     }
 
     if (elementExists && type === 'attr' && attrName) {
-      actualAttrValue = await page.locator(selector!).first().evaluate(
+      actualAttrValue = await loc.first().evaluate(
         (el, name) => {
           if (name === 'textContent') return el.textContent?.trim();
           if (name === 'innerText') return (el as HTMLElement).innerText?.trim();
@@ -70,7 +83,11 @@ run(async ({ page }) => {
       ).then(v => v ?? undefined);
     }
 
-    return evaluateAssertion({ type, expected }, selector!, elementExists, actualText, actualAttrValue);
+    if (type === 'visible' || type === 'hidden') {
+      elemVisible = elementExists ? await loc.first().isVisible() : false;
+    }
+
+    return evaluateAssertion({ type, expected }, selector!, elementExists, actualText, actualAttrValue, { isVisible: elemVisible, actualCount });
   }
 
   // Immediate evaluation (no wait)

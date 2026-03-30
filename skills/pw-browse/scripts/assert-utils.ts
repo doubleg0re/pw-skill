@@ -1,6 +1,6 @@
 // assert-utils.ts — Pure utility functions for assertion evaluation
 
-export type AssertionType = 'exists' | 'text' | 'contains' | 'attr';
+export type AssertionType = 'exists' | 'text' | 'contains' | 'attr' | 'visible' | 'hidden' | 'count';
 
 export interface AssertionResult {
   assertion: AssertionType;
@@ -29,11 +29,32 @@ export function evaluateAssertion(
   elementExists: boolean,
   actualText?: string,
   actualAttrValue?: string,
+  extra?: { isVisible?: boolean; actualCount?: number },
 ): AssertionResult {
   const { type, expected } = input;
 
   if (type === 'exists') {
     return { assertion: 'exists', target, passed: elementExists };
+  }
+
+  if (type === 'visible') {
+    return { assertion: 'visible', target, passed: !!extra?.isVisible };
+  }
+
+  if (type === 'hidden') {
+    return { assertion: 'hidden', target, passed: !extra?.isVisible };
+  }
+
+  if (type === 'count') {
+    const expectedCount = Number(expected);
+    const actualCount = extra?.actualCount ?? 0;
+    return {
+      assertion: 'count',
+      target,
+      passed: actualCount === expectedCount,
+      expected: String(expectedCount),
+      actual: String(actualCount),
+    };
   }
 
   if (!elementExists) {

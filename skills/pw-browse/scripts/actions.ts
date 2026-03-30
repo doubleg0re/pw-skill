@@ -560,6 +560,9 @@ export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?
   if (!selector) throw new Error('Missing selector for assert action');
 
   const isExists = Array.isArray(a) ? a.includes('exists') : !!a.exists;
+  const isVisible = Array.isArray(a) ? a.includes('visible') : !!a.visible;
+  const isHidden = Array.isArray(a) ? a.includes('hidden') : !!a.hidden;
+  const countVal = Array.isArray(a) ? undefined : a.count;
   const textVal = Array.isArray(a) ? undefined : a.text;
   const containsVal = Array.isArray(a) ? undefined : a.contains;
   const attrName = Array.isArray(a) ? undefined : a.attr;
@@ -571,6 +574,13 @@ export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?
 
   if (isExists) {
     type = 'exists';
+  } else if (isVisible) {
+    type = 'visible';
+  } else if (isHidden) {
+    type = 'hidden';
+  } else if (countVal !== undefined) {
+    type = 'count';
+    expected = String(countVal);
   } else if (textVal !== undefined) {
     type = 'text';
     expected = String(textVal);
@@ -581,23 +591,26 @@ export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?
     type = 'attr';
     expected = attrValue !== undefined ? String(attrValue) : undefined;
   } else {
-    throw new Error('Missing assertion type for assert action. Use exists, text, contains, or attr.');
+    throw new Error('Missing assertion type for assert action. Use exists, visible, hidden, count, text, contains, or attr.');
   }
 
   async function evaluate() {
-    const elementExists = await page.locator(selector).count().then(c => c > 0);
+    const loc = page.locator(selector);
+    const actualCount = await loc.count();
+    const elementExists = actualCount > 0;
 
     let actualText: string | undefined;
     let actualAttrValue: string | undefined;
+    let elemVisible: boolean | undefined;
 
     if (elementExists && (type === 'text' || type === 'contains')) {
-      actualText = await page.locator(selector).first().evaluate(
+      actualText = await loc.first().evaluate(
         (el) => (el as HTMLElement).innerText,
       );
     }
 
     if (elementExists && type === 'attr' && attrName) {
-      actualAttrValue = await page.locator(selector).first().evaluate(
+      actualAttrValue = await loc.first().evaluate(
         (el, name) => {
           if (name === 'textContent') return el.textContent?.trim();
           if (name === 'innerText') return (el as HTMLElement).innerText?.trim();
@@ -608,7 +621,11 @@ export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?
       ).then(v => v ?? undefined);
     }
 
-    return evaluateAssertion({ type, expected }, selector, elementExists, actualText, actualAttrValue);
+    if (type === 'visible' || type === 'hidden') {
+      elemVisible = elementExists ? await loc.first().isVisible() : false;
+    }
+
+    return evaluateAssertion({ type, expected }, selector, elementExists, actualText, actualAttrValue, { isVisible: elemVisible, actualCount });
   }
 
   if (!waitMs) {

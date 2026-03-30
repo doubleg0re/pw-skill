@@ -116,4 +116,54 @@ describe('evaluateAssertion', () => {
     expect(result.passed).toBe(false);
     expect(result.actual).toBe('[attribute not found]');
   });
+
+  it('visible passes when element is visible', () => {
+    const result = evaluateAssertion({ type: 'visible' }, '#btn', true, undefined, undefined, { isVisible: true });
+    expect(result.passed).toBe(true);
+    expect(result.assertion).toBe('visible');
+  });
+
+  it('visible fails when element is hidden', () => {
+    const result = evaluateAssertion({ type: 'visible' }, '#btn', true, undefined, undefined, { isVisible: false });
+    expect(result.passed).toBe(false);
+  });
+
+  it('visible fails when element does not exist', () => {
+    const result = evaluateAssertion({ type: 'visible' }, '#btn', false, undefined, undefined, { isVisible: false });
+    expect(result.passed).toBe(false);
+  });
+
+  it('hidden passes when element is not visible', () => {
+    const result = evaluateAssertion({ type: 'hidden' }, '#btn', true, undefined, undefined, { isVisible: false });
+    expect(result.passed).toBe(true);
+  });
+
+  it('hidden passes when element does not exist', () => {
+    const result = evaluateAssertion({ type: 'hidden' }, '#btn', false, undefined, undefined, { isVisible: false });
+    expect(result.passed).toBe(true);
+  });
+
+  it('hidden fails when element is visible', () => {
+    const result = evaluateAssertion({ type: 'hidden' }, '#btn', true, undefined, undefined, { isVisible: true });
+    expect(result.passed).toBe(false);
+  });
+
+  it('count passes on exact match', () => {
+    const result = evaluateAssertion({ type: 'count', expected: '3' }, '.item', true, undefined, undefined, { actualCount: 3 });
+    expect(result.passed).toBe(true);
+    expect(result.expected).toBe('3');
+    expect(result.actual).toBe('3');
+  });
+
+  it('count fails on mismatch', () => {
+    const result = evaluateAssertion({ type: 'count', expected: '3' }, '.item', true, undefined, undefined, { actualCount: 5 });
+    expect(result.passed).toBe(false);
+    expect(result.expected).toBe('3');
+    expect(result.actual).toBe('5');
+  });
+
+  it('count works with zero elements', () => {
+    const result = evaluateAssertion({ type: 'count', expected: '0' }, '.item', false, undefined, undefined, { actualCount: 0 });
+    expect(result.passed).toBe(true);
+  });
 });
