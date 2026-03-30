@@ -587,7 +587,7 @@ Chaining is restricted to browser actions only. Session, admin, and package comm
 
 ## Extensions
 
-pw-skill uses the `rary` extension system. Extensions can add event handlers, hooks, and custom sequence actions.
+pw-skill uses the `rary` extension system. Extensions can add event handlers, hooks, and custom sequence actions. Custom action names must include a hyphen, for example `persist-user-action`.
 
 ### Available extensions
 

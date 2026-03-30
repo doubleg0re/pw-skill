@@ -62,6 +62,10 @@ export interface RaryStoreOptions {
   extensionsFile: string;
 }
 
+function hasActionNamespace(actionName: string): boolean {
+  return actionName.includes('-');
+}
+
 // --- Store factory ---
 
 function ensureDir(dir: string): void {
@@ -186,6 +190,9 @@ export function createRaryStore(opts: RaryStoreOptions) {
         // Check action entries
         if (manifest.actions) {
           for (const [actionName, actionDef] of Object.entries(manifest.actions)) {
+            if (!hasActionNamespace(actionName)) {
+              issues.push({ package: name, issue: `Action name must include "-" to distinguish extension actions: ${actionName}` });
+            }
             if (actionDef?.entry && !existsSync(join(pkgDir(name), actionDef.entry)))
               issues.push({ package: name, issue: `Action entry not found: ${actionName} → ${actionDef.entry}` });
           }
@@ -261,6 +268,10 @@ export function createRaryStore(opts: RaryStoreOptions) {
         if (!manifest?.actions) continue;
 
         for (const [actionName, actionDef] of Object.entries(manifest.actions)) {
+          if (!hasActionNamespace(actionName)) {
+            errors.push(`${name}: action "${actionName}" must include "-" to distinguish extension actions from built-ins`);
+            continue;
+          }
           // Collision check
           if (actions[actionName]) {
             errors.push(`Extension action "${actionName}" is defined by multiple active packages`);

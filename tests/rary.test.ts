@@ -213,6 +213,63 @@ describe('RaryStore — checkRepair', () => {
     const issues = store.checkRepair();
     expect(issues.some(i => i.issue.includes('setup.js'))).toBe(true);
   });
+
+  it('detects extension action names without hyphen', () => {
+    seedPackage('bad-actions', {
+      name: 'bad-actions',
+      version: '1.0.0',
+      type: 'extension',
+      actions: {
+        refreshThing: { entry: 'actions/refresh-thing.js' },
+      },
+    }, {
+      'actions/refresh-thing.js': 'export default async () => ({ result: { ok: true } });',
+    });
+
+    const issues = store.checkRepair();
+    expect(issues.some(i => i.issue.includes('must include "-"') && i.issue.includes('refreshThing'))).toBe(true);
+  });
+});
+
+describe('RaryStore — loadExtensionActions', () => {
+  beforeEach(setup);
+  afterEach(cleanup);
+
+  it('loads hyphenated extension actions', async () => {
+    seedPackage('good-actions', {
+      name: 'good-actions',
+      version: '1.0.0',
+      type: 'extension',
+      actions: {
+        'persist-user-action': { entry: 'actions/persist-user-action.js' },
+      },
+    }, {
+      'actions/persist-user-action.js': 'export default async () => ({ result: { ok: true } });',
+    });
+    store.activateExtension('good-actions');
+
+    const loaded = await store.loadExtensionActions();
+    expect(Object.keys(loaded.actions)).toContain('persist-user-action');
+    expect(loaded.errors).toEqual([]);
+  });
+
+  it('rejects extension actions without hyphen', async () => {
+    seedPackage('bad-actions', {
+      name: 'bad-actions',
+      version: '1.0.0',
+      type: 'extension',
+      actions: {
+        persistUserAction: { entry: 'actions/persist-user-action.js' },
+      },
+    }, {
+      'actions/persist-user-action.js': 'export default async () => ({ result: { ok: true } });',
+    });
+    store.activateExtension('bad-actions');
+
+    const loaded = await store.loadExtensionActions();
+    expect(Object.keys(loaded.actions)).not.toContain('persistUserAction');
+    expect(loaded.errors.some(e => e.includes('must include "-"') && e.includes('persistUserAction'))).toBe(true);
+  });
 });
 
 // --- Command router (injected store — no global filesystem side effects) ---
