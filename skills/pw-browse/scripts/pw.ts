@@ -8,6 +8,127 @@ import { homedir } from 'os';
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 
+const AGENT_SKILLS: Record<string, { title: string; summary: string; when: string[]; cli: string[]; notes?: string[] }> = {
+  browse: {
+    title: 'pw-browse',
+    summary: 'Playwright browser control for screenshots, clicks, input, navigation, and page inspection.',
+    when: [
+      'You need browser interaction right now',
+      'You want screenshots, clicks, fills, dumps, or navigation',
+      'You want to inspect or validate a UI quickly',
+    ],
+    cli: [
+      'pwi navigate <url> [--screenshot]',
+      'pw navigate <url> [--session=N]',
+      'pw click <target> [--session=N]',
+      'pw fill <selector> <text> [--session=N]',
+      'pw screenshot [selector] [--full] [--session=N]',
+    ],
+    notes: [
+      '`pwi` is the lightest entry point for one-shot work',
+      'Session-based `pw` commands pair naturally with `pw agent skill --launch`',
+    ],
+  },
+  launch: {
+    title: 'pw-launch',
+    summary: 'Launch or resume a named Playwright session and bind it to the current project.',
+    when: [
+      'You need a persistent browser session',
+      'You want resumable state, saved profile, or named sessions',
+      'A browse or test flow needs a browser but none is running',
+    ],
+    cli: [
+      'pw launch [url] [--name=N] [--resume=N]',
+      'pw launch [url] --headed [--video[=name]]',
+      'pw use <name>',
+      'pw sessions',
+    ],
+  },
+  test: {
+    title: 'pw-test',
+    summary: 'Write and run Playwright E2E tests, then report pass/fail results.',
+    when: [
+      'You need an E2E spec written or updated',
+      'You want to run or validate Playwright tests',
+      'You want page behavior checked beyond ad hoc browser actions',
+    ],
+    cli: [
+      'npx playwright test tests/e2e/<file>.spec.ts',
+      'npx playwright test tests/e2e/<file>.spec.ts --headed',
+      'pw agent skill --launch',
+      'pw agent skill --close',
+    ],
+    notes: [
+      'Typical flow: confirm scope, write the spec, run it, then close or keep the session',
+    ],
+  },
+  close: {
+    title: 'pw-close',
+    summary: 'Terminate Playwright sessions and clean up session metadata.',
+    when: [
+      'You are done with the browser session',
+      'You want to close a specific named session',
+      'You want to shut down all active sessions',
+    ],
+    cli: [
+      'pw close',
+      'pw close --session=N',
+      'pw close --all',
+    ],
+    notes: [
+      'Profiles are preserved for `pw launch --resume=N` unless you explicitly delete local state',
+    ],
+  },
+};
+
+function renderAgentSkillIndex(): string {
+  return `
+pw agent skill — compact CLI summaries for pw-skill agent docs
+
+Usage:
+  pw agent skill --all
+  pw agent skill --browse
+  pw agent skill --launch
+  pw agent skill --test
+  pw agent skill --close
+
+Available:
+  --all      Show all skill summaries
+  --browse   Browser control
+  --launch   Start or resume sessions
+  --test     Playwright E2E testing
+  --close    Session shutdown and cleanup
+`.trim();
+}
+
+function renderAgentSkill(name: string): string {
+  const skill = AGENT_SKILLS[name];
+  if (!skill) return renderAgentSkillIndex();
+
+  const lines = [
+    `${skill.title} — ${skill.summary}`,
+    '',
+    'Use when:',
+    ...skill.when.map(line => `  - ${line}`),
+    '',
+    'CLI entrypoints:',
+    ...skill.cli.map(line => `  - ${line}`),
+  ];
+
+  if (skill.notes?.length) {
+    lines.push('', 'Notes:', ...skill.notes.map(line => `  - ${line}`));
+  }
+
+  return lines.join('\n');
+}
+
+function renderAllAgentSkills(): string {
+  return [
+    renderAgentSkillIndex(),
+    ...Object.keys(AGENT_SKILLS).map(name => renderAgentSkill(name)),
+  ].join('\n\n');
+}
+
 // --inline mode: delegate to pwi
 if (args[0] === '--inline' || args[0] === '-i') {
   const pwiScript = join(SCRIPTS_DIR, 'pwi.ts');
@@ -139,6 +260,17 @@ pw — Playwright CLI Skill
 
 Usage: pw <command> [args...]
 
+Start here:
+  pwi                                     Simplest path; one-shot browser work
+  sequence                                Lightweight multi-step automation
+  rary                                    Advanced runtime: extensions, hooks, sidecars
+
+For agents:
+  agent skill --browse                    Compact CLI summary for pw-browse
+  agent skill --launch                    Compact CLI summary for pw-launch
+  agent skill --test                      Compact CLI summary for pw-test
+  agent skill --close                     Compact CLI summary for pw-close
+
 Session management:
   launch [url] [--name=N] [--resume=N]     Launch browser session
   use <name>                                Bind session to project
@@ -198,6 +330,34 @@ Global flags:
   --viewport=WxH Viewport size (default: 1920x1080)
   --video[=name] Enable video recording
 `.trim());
+  process.exit(0);
+}
+
+// --- agent ---
+if (command === 'agent') {
+  const subcommand = restArgs[0];
+  if (subcommand !== 'skill') {
+    console.error('Usage: pw agent skill [--all|--browse|--launch|--test|--close]');
+    process.exit(1);
+  }
+
+  const skillFlag = restArgs.find(a => a.startsWith('--'))?.replace(/^--/, '');
+  if (!skillFlag) {
+    console.log(renderAgentSkillIndex());
+    process.exit(0);
+  }
+
+  if (skillFlag === 'all') {
+    console.log(renderAllAgentSkills());
+    process.exit(0);
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(AGENT_SKILLS, skillFlag)) {
+    console.error(`Unknown agent skill: ${skillFlag}\n\n${renderAgentSkillIndex()}`);
+    process.exit(1);
+  }
+
+  console.log(renderAgentSkill(skillFlag));
   process.exit(0);
 }
 

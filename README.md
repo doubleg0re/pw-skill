@@ -31,6 +31,18 @@ npm run setup
 npm install -g pw-skill
 ```
 
+This installs the CLI only. It does not register the Claude Code skills by itself.
+
+If you still want the skill-oriented guidance from the terminal, use:
+
+```bash
+pw agent skill --all
+pw agent skill --browse
+pw agent skill --launch
+pw agent skill --test
+pw agent skill --close
+```
+
 ### Manual
 
 ```bash
@@ -59,6 +71,52 @@ pw console dump
 # Close when done
 pw close --session=dev
 ```
+
+## Choose Your Lane
+
+If you just want to do something quickly, use `pwi`.
+
+- `pwi` is the lightest entry point: launch, do the action, exit.
+- Good for quick inspection, one-off clicks, screenshots, and tiny experiments.
+
+```bash
+pwi navigate https://example.com --screenshot
+pwi dump --selector="h1" --text
+```
+
+If you want lightweight browser automation, use `pw sequence`.
+
+- `pw sequence` is the next step up: structured multi-step runs with variables, branching, loops, and reusable flow files.
+- Good when one-shot commands stop being enough, but you do not want to build extensions yet.
+
+```bash
+pw sequence ./login-flow.json
+pw sequence '[{"action":"navigate","args":["https://example.com"]},{"action":"click","args":["#login"]}]'
+```
+
+If you want advanced runtime behavior, use `rary`.
+
+- `rary` is for extensions, hooks, event handlers, sidecars, and custom sequence actions.
+- Use it when you want to grow beyond the built-in runtime and attach new capabilities to `pw`.
+
+```bash
+pw rary get <repo-or-path>
+pw rary put <package-name>
+```
+
+## For Agents
+
+If `pw-skill` is installed as a CLI but not registered as a Claude Code skill, the terminal can still print compact skill summaries:
+
+```bash
+pw agent skill --all
+pw agent skill --browse
+pw agent skill --launch
+pw agent skill --test
+pw agent skill --close
+```
+
+These are compact CLI-facing summaries of the `pw-browse`, `pw-launch`, `pw-test`, and `pw-close` skill docs.
 
 ## One-shot Mode (`pwi`)
 
