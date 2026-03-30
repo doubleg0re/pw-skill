@@ -492,6 +492,11 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
   const doAppend = Array.isArray(a) ? false : !!a.append;
   const headN = Array.isArray(a) ? undefined : (a.head !== undefined ? Number(a.head) : undefined);
 
+  // Validate --head flag
+  if (headN !== undefined && (isNaN(headN) || headN < 0)) {
+    throw new Error('head must be a non-negative integer.');
+  }
+
   // Validate save flags
   if (doReplace && doAppend) throw new Error('Cannot use replace and append together.');
   if ((doReplace || doAppend) && !savePath) throw new Error('replace/append requires save.');

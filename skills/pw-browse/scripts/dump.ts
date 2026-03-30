@@ -32,6 +32,11 @@ run(async ({ page }) => {
     cliLevel: parseFlag(cliArgs, 'redaction-level'),
   });
 
+  // Validate --head flag
+  if (headN !== undefined && (isNaN(headN) || headN < 0)) {
+    return { success: false, error: '--head must be a non-negative integer.' };
+  }
+
   // Validate save flags
   if (doReplace && doAppend) {
     return { success: false, error: 'Cannot use --replace and --append together.' };
