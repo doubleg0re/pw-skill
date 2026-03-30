@@ -93,13 +93,15 @@ export function acquireLockOrThrow(lockPath: string, operation?: string): void {
 
 /**
  * Refresh lock heartbeat (update updatedAt).
+ * Uses direct writeFileSync instead of atomicWriteJSON to avoid
+ * unlink→rename gap that could let another process steal the lock.
  */
 export function refreshLock(lockPath: string): boolean {
   const lock = readJSONSafe<LockInfo>(lockPath);
   if (!lock || lock.pid !== process.pid) return false;
 
   lock.updatedAt = new Date().toISOString();
-  atomicWriteJSON(lockPath, lock);
+  writeFileSync(lockPath, JSON.stringify(lock));
   return true;
 }
 

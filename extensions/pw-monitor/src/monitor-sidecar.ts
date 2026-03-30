@@ -122,17 +122,26 @@ async function connect(): Promise<void> {
     send('Target.setDiscoverTargets', { discover: true });
 
     // Poll active tab via CDP /json (first page target = active, best-effort)
+    // Overlap guard: skip if previous poll still in-flight
+    let polling = false;
     setInterval(async () => {
+      if (polling) return;
+      polling = true;
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/json`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`http://127.0.0.1:${port}/json`, { signal: controller.signal });
+        clearTimeout(timeout);
         const targets = (await res.json() as any[]).filter((t: any) => t.type === 'page');
-        if (targets.length === 0) return;
-        const topEntry = findByCdpId(targets[0].id);
-        if (topEntry && activeTabId !== topEntry.tabId) {
-          activeTabId = topEntry.tabId;
-          persistRegistry();
+        if (targets.length > 0) {
+          const topEntry = findByCdpId(targets[0].id);
+          if (topEntry && activeTabId !== topEntry.tabId) {
+            activeTabId = topEntry.tabId;
+            persistRegistry();
+          }
         }
       } catch {}
+      polling = false;
     }, 500);
   });
 
