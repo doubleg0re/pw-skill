@@ -115,7 +115,7 @@ run(async ({ page }) => {
   let head: number | undefined;
   let originalLength: number | undefined;
 
-  if (!savePath && headN !== undefined) {
+  if (headN !== undefined) {
     const result = headTruncate(content, headN);
     content = result.content;
     truncated = result.truncated;

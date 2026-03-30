@@ -553,7 +553,7 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
   let head: number | undefined;
   let originalLength: number | undefined;
 
-  if (!savePath && headN !== undefined) {
+  if (headN !== undefined) {
     const result = headTruncate(content, headN);
     content = result.content;
     truncated = result.truncated;
