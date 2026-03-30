@@ -540,4 +540,11 @@ describe('rary get — subdir install', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('already installed');
   });
+
+  it('rejects unknown builtin: name', async () => {
+    const result = await cmds().get(['builtin:nonexistent']);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unknown builtin');
+    expect(result.error).toContain('pw-monitor');
+  });
 });

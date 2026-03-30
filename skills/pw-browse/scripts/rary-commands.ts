@@ -135,12 +135,29 @@ function pickStatus(): { pose: LarryStatusPose; flavor: FlavorLines } {
 export function createRaryCommands(store: RaryStore) {
 
   // --- get <repo> ---
+  // Built-in extension aliases → resolve to official pw-extensions repo
+  const BUILTIN_EXTENSIONS: Record<string, string> = {
+    'pw-monitor': 'doubleg0re/pw-extensions//pw-monitor',
+    'pw-user-action': 'doubleg0re/pw-extensions//pw-user-action',
+    'pw-ws-server': 'doubleg0re/pw-extensions//pw-ws-server',
+  };
+
   async function get(args: string[], flavorKind?: FlavorKind): Promise<Result> {
-    const input = args[0];
-    if (!input) return { success: false, error: 'Usage: pw rary get <repo|path> [--source] [--build]\n  Subdir syntax: owner/repo//subdir or ./path//subdir' };
+    let input = args[0];
+    if (!input) return { success: false, error: 'Usage: pw rary get <repo|path|builtin:name> [--source] [--build]\n  Subdir: owner/repo//subdir\n  Builtin: builtin:pw-monitor' };
 
     const isSource = args.includes('--source');
     const isBuild = args.includes('--build');
+
+    // Resolve builtin: prefix
+    if (input.startsWith('builtin:')) {
+      const name = input.slice('builtin:'.length);
+      const resolved = BUILTIN_EXTENSIONS[name];
+      if (!resolved) {
+        return { success: false, error: `Unknown builtin extension: "${name}". Available: ${Object.keys(BUILTIN_EXTENSIONS).join(', ')}` };
+      }
+      input = resolved;
+    }
 
     if (!existsSync(store.toyboxDir)) mkdirSync(store.toyboxDir, { recursive: true });
 
