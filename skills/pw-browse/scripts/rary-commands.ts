@@ -242,15 +242,31 @@ export function createRaryCommands(store: RaryStore) {
 
     // Copy package to toybox
     const targetDir = store.packageDir(pkgName);
-    const copyResult = process.platform === 'win32'
-      ? spawnSync('xcopy', [sourceDir, targetDir, '/E', '/I', '/Q'], { stdio: 'ignore' })
-      : spawnSync('cp', ['-r', sourceDir, targetDir], { stdio: 'ignore' });
+
+    if (isSource) {
+      // --source: copy everything
+      const copyResult = process.platform === 'win32'
+        ? spawnSync('xcopy', [sourceDir, targetDir, '/E', '/I', '/Q'], { stdio: 'ignore' })
+        : spawnSync('cp', ['-r', sourceDir, targetDir], { stdio: 'ignore' });
+      if (copyResult.status !== 0) {
+        if (tempDir) cleanupTemp(tempDir);
+        return { success: false, error: `Failed to copy package to toybox (exit code ${copyResult.status})` };
+      }
+    } else {
+      // Default: copy runtime files only (exclude src/, tests/)
+      mkdirSync(targetDir, { recursive: true });
+      const { readdirSync, statSync, cpSync } = await import('fs');
+      const EXCLUDE_DIRS = new Set(['src', 'tests', 'test', '.git']);
+      for (const entry of readdirSync(sourceDir)) {
+        const srcPath = join(sourceDir, entry);
+        const destPath = join(targetDir, entry);
+        if (EXCLUDE_DIRS.has(entry) && statSync(srcPath).isDirectory()) continue;
+        cpSync(srcPath, destPath, { recursive: true });
+      }
+    }
 
     if (tempDir) cleanupTemp(tempDir);
 
-    if (copyResult.status !== 0) {
-      return { success: false, error: `Failed to copy package to toybox (exit code ${copyResult.status})` };
-    }
     if (!existsSync(targetDir)) {
       return { success: false, error: `Copy appeared to succeed but target directory not found: ${targetDir}` };
     }
@@ -263,11 +279,12 @@ export function createRaryCommands(store: RaryStore) {
       spawnSync('npm', ['install', '--production'], { cwd: targetDir, stdio: 'ignore' });
     }
 
-    // --build: trigger rolling/setup if available
+    // --build: actually execute rolling/setup path
     let buildResult: string | undefined;
     if (isBuild) {
-      if (manifest?.rolling) {
-        buildResult = `Run \`pw rary rolling ${pkgName}\` to complete setup.`;
+      if (manifest?.rolling?.entry) {
+        const rollingResult = await rolling([pkgName]);
+        buildResult = rollingResult.success ? 'Build/setup completed via rolling.' : `Rolling failed: ${rollingResult.error}`;
       } else if (existsSync(pkgJson)) {
         const buildRun = spawnSync('npm', ['run', 'build', '--if-present'], { cwd: targetDir, stdio: 'ignore' });
         buildResult = buildRun.status === 0 ? 'Build completed.' : 'Build script not found or failed.';
