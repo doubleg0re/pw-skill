@@ -1,8 +1,14 @@
 {
   "name": "pw-persist-user-action",
-  "version": "0.1.0",
-  "description": "Persists user-action overlay state across navigation and tab changes",
+  "version": "0.2.0",
+  "description": "User-action overlay — navigation-resilient, persistent state, extension-owned",
   "type": "extension",
+  "actions": {
+    "pw-user-action": {
+      "entry": "src/action-user-action.ts",
+      "description": "Show overlay with action buttons, survive navigation, return clicked action"
+    }
+  },
   "hooks": {
     "load": {
       "entry": "src/load-hook.ts"
