@@ -146,8 +146,8 @@ export function createRaryCommands(store: RaryStore) {
     let input = args[0];
     if (!input) return { success: false, error: 'Usage: pw rary get <repo|path|builtin:name> [--source] [--build]\n  Subdir: owner/repo//subdir\n  Builtin: builtin:pw-monitor' };
 
-    const isSource = args.includes('--source');
     const isBuild = args.includes('--build');
+    const isSource = args.includes('--source') || isBuild; // --build implies source
 
     // Resolve builtin: prefix
     if (input.startsWith('builtin:')) {
@@ -281,20 +281,32 @@ export function createRaryCommands(store: RaryStore) {
 
     // --build: actually execute rolling/setup path
     let buildResult: string | undefined;
+    let buildFailed = false;
     if (isBuild) {
       if (manifest?.rolling?.entry) {
         const rollingResult = await rolling([pkgName]);
-        buildResult = rollingResult.success ? 'Build/setup completed via rolling.' : `Rolling failed: ${rollingResult.error}`;
+        if (rollingResult.success) {
+          buildResult = 'Build/setup completed via rolling.';
+        } else {
+          buildResult = `Rolling failed: ${rollingResult.error}`;
+          buildFailed = true;
+        }
       } else if (existsSync(pkgJson)) {
         const buildRun = spawnSync('npm', ['run', 'build', '--if-present'], { cwd: targetDir, stdio: 'ignore' });
-        buildResult = buildRun.status === 0 ? 'Build completed.' : 'Build script not found or failed.';
+        if (buildRun.status === 0) {
+          buildResult = 'Build completed.';
+        } else {
+          buildResult = 'Build script not found or failed.';
+          buildFailed = true;
+        }
       } else {
         buildResult = 'No build/setup path found for this package.';
+        buildFailed = true;
       }
     }
 
     return {
-      success: true,
+      success: !buildFailed,
       data: {
         message: `Fetched toy "${pkgName}" into the toybox.`,
         package: pkgName,
