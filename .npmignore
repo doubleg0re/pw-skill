@@ -19,6 +19,7 @@ extensions/
 .windsurf/
 .cline/
 .codex/
+.gemini/
 .aider*
 
 # State

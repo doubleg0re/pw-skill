@@ -684,22 +684,22 @@ Extension hooks integrate with session lifecycle:
 
 ## Custom Scripts
 
-Write project-specific scripts using `import { run } from 'pw-skill'`:
+Write project-specific scripts in `scripts/playwright/`. They are auto-discovered by `pw`:
 
 ```typescript
 // scripts/playwright/login.ts
-import { run, screenshotPath } from 'pw-skill';
+import { chromium } from 'playwright';
 
-run(async ({ page }) => {
-  await page.goto('http://localhost:3000/login');
-  await page.locator('#email').fill('admin@test.com');
-  await page.locator('#password').fill('password');
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL('**/dashboard');
-  const path = screenshotPath();
-  await page.screenshot({ path });
-  return { success: true, screenshot: path };
-});
+const browser = await chromium.connectOverCDP('http://localhost:9222');
+const page = browser.contexts()[0].pages()[0];
+
+await page.goto('http://localhost:3000/login');
+await page.locator('#email').fill('admin@test.com');
+await page.locator('#password').fill('password');
+await page.locator('button[type="submit"]').click();
+await page.waitForURL('**/dashboard');
+
+console.log(JSON.stringify({ success: true, url: page.url() }));
 ```
 
 ```bash

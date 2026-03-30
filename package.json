@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "Playwright CLI Skill for Claude Code — persistent browser, modular skills, minimal tokens",
   "type": "module",
-  "exports": {
-    ".": "./skills/pw-browse/scripts/common.ts"
-  },
+  "files": [
+    "README.md",
+    ".claude-plugin",
+    "skills"
+  ],
   "bin": {
     "pw": "./skills/pw-browse/scripts/pw.ts",
     "pwi": "./skills/pw-browse/scripts/pwi.ts"
