@@ -292,11 +292,23 @@ export function createRaryCommands(store: RaryStore) {
           buildFailed = true;
         }
       } else if (existsSync(pkgJson)) {
-        const buildRun = spawnSync('npm', ['run', 'build', '--if-present'], { cwd: targetDir, stdio: 'ignore' });
-        if (buildRun.status === 0) {
-          buildResult = 'Build completed.';
-        } else {
-          buildResult = 'Build script not found or failed.';
+        // Check if package.json actually has a build script
+        try {
+          const pkg = JSON.parse(readFileSync(pkgJson, 'utf-8'));
+          if (pkg.scripts?.build) {
+            const buildRun = spawnSync('npm', ['run', 'build'], { cwd: targetDir, stdio: 'ignore' });
+            if (buildRun.status === 0) {
+              buildResult = 'Build completed.';
+            } else {
+              buildResult = 'Build script failed.';
+              buildFailed = true;
+            }
+          } else {
+            buildResult = 'No build script found in package.json.';
+            buildFailed = true;
+          }
+        } catch {
+          buildResult = 'Failed to read package.json.';
           buildFailed = true;
         }
       } else {
