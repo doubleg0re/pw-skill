@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { normalizeAuthHeader, resolveFetchCredentials } from '../skills/pw-browse/scripts/fetch-utils.js';
 
 describe('fetch-utils', () => {
-  it('defaults credentials to include', () => {
-    expect(resolveFetchCredentials()).toBe('include');
+  it('defaults credentials to same-origin', () => {
+    expect(resolveFetchCredentials()).toBe('same-origin');
   });
 
   it('accepts valid credentials modes', () => {
@@ -23,6 +23,8 @@ describe('fetch-utils', () => {
   it('preserves explicit auth schemes', () => {
     expect(normalizeAuthHeader('Bearer abc123')).toBe('Bearer abc123');
     expect(normalizeAuthHeader('Basic xyz')).toBe('Basic xyz');
+    expect(normalizeAuthHeader('Digest abc')).toBe('Digest abc');
+    expect(normalizeAuthHeader('ApiKey xyz')).toBe('ApiKey xyz');
   });
 
   it('returns undefined for empty auth values', () => {
