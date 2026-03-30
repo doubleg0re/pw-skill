@@ -794,7 +794,13 @@ export async function runSteps(
 
       // --- General action ---
       debugLog?.(stepIndex, step.action!, 'start');
-      const { result } = await executeAction(page, step.action!, step.args || [], vars, options.actionMap, options.runtime);
+      // If step has no explicit args field, use step's own fields as named args
+      // (e.g., { action: "wait", target: "user-action", prompt: "..." })
+      const stepArgs = step.args !== undefined ? step.args : (() => {
+        const { action, out, label, save, retry, comment, ...rest } = step as any;
+        return Object.keys(rest).length > 0 ? rest : [];
+      })();
+      const { result } = await executeAction(page, step.action!, stepArgs, vars, options.actionMap, options.runtime);
 
       // Set ephemeral registers
       vars.set('$ret', result);
