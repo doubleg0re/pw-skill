@@ -851,7 +851,7 @@ export async function runSteps(
 const KNOWN_ACTIONS = new Set([
   'navigate', 'nav', 'refresh', 'reload', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'sel', 'upload', 'attr', 'submit', 'fetch', 'screenshot', 'shot',
-  'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'return',
+  'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'return', 'assert',
 ]);
 
 export function validateSteps(steps: Step[], prefix: string = '', extraKnownActions?: Set<string>): string[] {

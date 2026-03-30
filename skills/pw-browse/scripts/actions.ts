@@ -2,6 +2,7 @@
 import type { Page } from 'playwright';
 import { screenshotPath } from './common.js';
 import { headTruncate } from './dump-utils.js';
+import { evaluateAssertion, type AssertionType } from './assert-utils.js';
 
 /** Flexible argument type for actions */
 export type ActionArgs = string[] | Record<string, any>;
@@ -482,6 +483,87 @@ export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ resul
   return { result: evalResult };
 }
 
+const ASSERT_POLL_INTERVAL = 100;
+
+export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const selector = getArg(a, 'selector', 0);
+  if (!selector) throw new Error('Missing selector for assert action');
+
+  const isExists = Array.isArray(a) ? a.includes('exists') : !!a.exists;
+  const textVal = Array.isArray(a) ? undefined : a.text;
+  const containsVal = Array.isArray(a) ? undefined : a.contains;
+  const attrName = Array.isArray(a) ? undefined : a.attr;
+  const attrValue = Array.isArray(a) ? undefined : a.value;
+  const waitMs = Number(Array.isArray(a) ? undefined : a.wait) || 0;
+
+  let type: AssertionType;
+  let expected: string | undefined;
+
+  if (isExists) {
+    type = 'exists';
+  } else if (textVal !== undefined) {
+    type = 'text';
+    expected = String(textVal);
+  } else if (containsVal !== undefined) {
+    type = 'contains';
+    expected = String(containsVal);
+  } else if (attrName !== undefined) {
+    type = 'attr';
+    expected = attrValue !== undefined ? String(attrValue) : undefined;
+  } else {
+    throw new Error('Missing assertion type for assert action. Use exists, text, contains, or attr.');
+  }
+
+  async function evaluate() {
+    const elementExists = await page.locator(selector).count().then(c => c > 0);
+
+    let actualText: string | undefined;
+    let actualAttrValue: string | undefined;
+
+    if (elementExists && (type === 'text' || type === 'contains')) {
+      actualText = await page.locator(selector).first().evaluate(
+        (el) => (el as HTMLElement).innerText,
+      );
+    }
+
+    if (elementExists && type === 'attr' && attrName) {
+      actualAttrValue = await page.locator(selector).first().evaluate(
+        (el, name) => el.getAttribute(name),
+        String(attrName),
+      ).then(v => v ?? undefined);
+    }
+
+    return evaluateAssertion({ type, expected }, selector, elementExists, actualText, actualAttrValue);
+  }
+
+  if (!waitMs) {
+    const assertionResult = await evaluate();
+    return { result: assertionResult };
+  }
+
+  const start = Date.now();
+  let attempts = 0;
+  let lastResult = await evaluate();
+  attempts++;
+
+  while (!lastResult.passed && (Date.now() - start) < waitMs) {
+    await new Promise(r => setTimeout(r, ASSERT_POLL_INTERVAL));
+    lastResult = await evaluate();
+    attempts++;
+  }
+
+  const elapsedMs = Date.now() - start;
+
+  return {
+    result: {
+      ...lastResult,
+      waitMs,
+      elapsedMs,
+      attempts,
+    },
+  };
+}
+
 /** Map of action names to their implementations */
 export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const selector = Array.isArray(a) ? a[0] : a.selector;
@@ -603,4 +685,5 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs) => Promise<{
   evaluate: actionEvaluate,
   eval: actionEvaluate,
   dump: actionDump,
+  assert: actionAssert,
 };
