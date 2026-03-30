@@ -366,8 +366,21 @@ export async function actionScroll(page: Page, a: ActionArgs): Promise<{ result?
 
 export async function actionSelect(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const selector = getArg(a, 'selector', 0);
-  const value = getArg(a, 'value', 1);
-  const mode = getArg(a, 'mode', 2);
+  let value = getArg(a, 'value', 1);
+  let mode = getArg(a, 'mode', 2);
+
+  if (!Array.isArray(a)) {
+    if (a.label !== undefined && a.label !== false) {
+      mode = 'label';
+      value = a.label === true ? (a[1] ?? value) : a.label;
+    } else if (a.index !== undefined && a.index !== false) {
+      mode = 'index';
+      value = a.index === true ? (a[1] ?? value) : a.index;
+    } else if (a.value !== undefined && a.value !== false) {
+      mode = 'value';
+      value = a.value === true ? (a[1] ?? value) : a.value;
+    }
+  }
 
   if (mode === 'label') await page.locator(selector).first().selectOption({ label: String(value) });
   else if (mode === 'index') await page.locator(selector).first().selectOption({ index: Number(value) });
@@ -444,10 +457,10 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
   return { result: fetchResult };
 }
 
-export async function actionScreenshot(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: any): Promise<{ result?: any }> {
   const name = getArg(a, 'name', 1) || getArg(a, 'filename', 1);
   const target = getArg(a, 'selector', 0) || getArg(a, 'target', 0);
-  const path = screenshotPath(name);
+  const path = screenshotPath(name, runtime?.session);
 
   if (target === 'full') {
     await page.screenshot({ path, fullPage: true });

@@ -20,6 +20,7 @@ export interface SessionInfo {
   startedAt: string;
   video: string | null;
   lastUrl?: string;
+  screenshotDir?: string;
 }
 
 export interface SessionStoreOptions {
@@ -102,7 +103,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
   return {
     // --- CRUD ---
 
-    createSession(name: string, port: number, pid: number, wsEndpoint: string = '', video: string | null = null): SessionInfo {
+    createSession(name: string, port: number, pid: number, wsEndpoint: string = '', video: string | null = null, screenshotDir?: string): SessionInfo {
       const dir = sessionDir(name);
       ensureDir(dir);
       ensureDir(join(dir, 'user-data'));
@@ -115,6 +116,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
         wsEndpoint,
         startedAt: new Date().toISOString(),
         video,
+        ...(screenshotDir ? { screenshotDir } : {}),
       };
 
       const lockPath = join(dir, '.lock');

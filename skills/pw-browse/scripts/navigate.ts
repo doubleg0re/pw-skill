@@ -2,7 +2,7 @@
 import { run, hasFlag, screenshotPath } from './common.js';
 import { actionNavigate } from './actions.js';
 
-run(async ({ page, args }) => {
+run(async ({ page, args, session }) => {
   const url = args[0];
   if (!url) return { success: false, error: 'URL required. Usage: navigate.ts <url> [--screenshot]' };
 
@@ -12,7 +12,7 @@ run(async ({ page, args }) => {
 
   let screenshot: string | undefined;
   if (takeScreenshot) {
-    screenshot = screenshotPath();
+    screenshot = screenshotPath(undefined, session);
     await page.screenshot({ path: screenshot, fullPage: false });
   }
 

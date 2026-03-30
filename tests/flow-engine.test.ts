@@ -412,6 +412,44 @@ describe('Flow Engine — out (variable capture)', () => {
     const logs = results.filter(r => r.action === 'log');
     expect(logs[0].data).toBe(2);
   });
+
+  it('supports select with named label args', async () => {
+    const selectOption = vi.fn();
+    const page = mockPage({
+      locator: vi.fn(() => ({
+        first: vi.fn(() => ({
+          selectOption,
+        })),
+      })),
+    });
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    await runSteps(page, [
+      { action: 'select', args: { selector: '#dept', label: '제작부' } },
+    ], vars, results, emptyDefs());
+
+    expect(selectOption).toHaveBeenCalledWith({ label: '제작부' });
+  });
+
+  it('supports select with chain-style positional value and boolean flag', async () => {
+    const selectOption = vi.fn();
+    const page = mockPage({
+      locator: vi.fn(() => ({
+        first: vi.fn(() => ({
+          selectOption,
+        })),
+      })),
+    });
+    const vars = new VarStore();
+    const results: any[] = [];
+
+    await runSteps(page, [
+      { action: 'select', args: { 0: '#dept', 1: '제작부', label: true } as any },
+    ], vars, results, emptyDefs());
+
+    expect(selectOption).toHaveBeenCalledWith({ label: '제작부' });
+  });
 });
 
 describe('Flow Engine — combined', () => {

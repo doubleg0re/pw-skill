@@ -73,6 +73,14 @@ describe('SessionStore — createSession / getSession', () => {
     expect(session.wsEndpoint).toBe('ws://localhost:9333/fake');
   });
 
+  it('stores screenshot directory when provided', () => {
+    const session = store.createSession('shots', 9333, 111, 'ws://localhost:9333/fake', null, '/tmp/pw-shots');
+    expect(session.screenshotDir).toBe('/tmp/pw-shots');
+
+    const retrieved = store.getSession('shots');
+    expect(retrieved!.screenshotDir).toBe('/tmp/pw-shots');
+  });
+
   it('returns null for missing session', () => {
     expect(store.getSession('nonexistent')).toBeNull();
   });

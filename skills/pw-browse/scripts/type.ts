@@ -2,7 +2,7 @@
 import { run, parseFlag, screenshotPath } from './common.js';
 import { actionType } from './actions.js';
 
-run(async ({ page, args }) => {
+run(async ({ page, args, session }) => {
   const text = args[0];
   if (!text) return { success: false, error: 'Usage: type.ts <text> [--delay=ms]' };
 
@@ -11,7 +11,7 @@ run(async ({ page, args }) => {
 
   await actionType(page, [text, String(delay)]);
 
-  const path = screenshotPath();
+  const path = screenshotPath(undefined, session);
   await page.screenshot({ path });
 
   return { success: true, screenshot: path, data: { text, delay } };

@@ -2,7 +2,7 @@
 import { run, hasFlag, parseFlag, screenshotPath } from './common.js';
 import { actionScreenshot } from './actions.js';
 
-run(async ({ page, args }) => {
+run(async ({ page, args, session }) => {
   const selector = args[0];
   const fullPage = hasFlag(process.argv.slice(2), 'full');
   const name = parseFlag(process.argv.slice(2), 'name');
@@ -19,12 +19,12 @@ run(async ({ page, args }) => {
     if (name) actionArgs.push(name);
   } else if (name) {
     // Name only, no selector — use screenshotPath directly
-    const path = (await import('./common.js')).screenshotPath(name);
+    const path = (await import('./common.js')).screenshotPath(name, session);
     await page.screenshot({ path });
     return { success: true, screenshot: path };
   }
 
-  const { result } = await actionScreenshot(page, actionArgs);
+  const { result } = await actionScreenshot(page, actionArgs, { session });
 
   return { success: true, screenshot: (result as any).screenshot };
 });

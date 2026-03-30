@@ -21,7 +21,7 @@ import { autoRenameVideo } from './video-utils.js';
 import { launchBrowserServer } from './common.js';
 import { runHooks } from './rary.js';
 import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 // --- Helpers ---
 
@@ -41,15 +41,21 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   const url = args.filter(a => !a.startsWith('--'))[0];
   const name = parseFlag(args, 'name') || `s-${generateSessionId()}`;
   const resume = parseFlag(args, 'resume');
+  const screenshotPathFlag = parseFlag(args, 'screenshot-path');
   const headed = hasFlag(args, 'headed');
   const videoName = parseFlag(args, 'video');
   const videoEnabled = videoName !== undefined || hasFlag(args, 'video');
+  const screenshotDir = screenshotPathFlag ? resolve(screenshotPathFlag) : join(localStateDir(), 'screenshots');
 
   const sessionName = resume || name;
 
   // Check if session already running
   if (isSessionAlive(sessionName)) {
     const existing = getSession(sessionName)!;
+    if (screenshotPathFlag) {
+      updateSession(sessionName, { screenshotDir });
+      existing.screenshotDir = screenshotDir;
+    }
     return {
       success: true,
       data: { session: existing, message: `Session "${sessionName}" already running, reconnected` },
@@ -59,7 +65,7 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   try {
     const userDataDir = sessionUserDataDir(sessionName);
     const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(!headed, userDataDir);
-    const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null));
+    const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null), screenshotDir);
     if (cdpEndpoint) {
       updateSession(sessionName, { cdpEndpoint });
       (session as any).cdpEndpoint = cdpEndpoint;

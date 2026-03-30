@@ -2,14 +2,14 @@
 import { run, hasFlag, screenshotPath } from './common.js';
 import { actionRefresh } from './actions.js';
 
-run(async ({ page }) => {
+run(async ({ page, session }) => {
   const { result } = await actionRefresh(page, []);
 
   const takeScreenshot = hasFlag(process.argv.slice(2), 'screenshot');
 
   let screenshot: string | undefined;
   if (takeScreenshot) {
-    screenshot = screenshotPath();
+    screenshot = screenshotPath(undefined, session);
     await page.screenshot({ path: screenshot, fullPage: false });
   }
 

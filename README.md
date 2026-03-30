@@ -219,6 +219,7 @@ When you run a `pw` command, the session is resolved in this order:
 | `--viewport=WxH` | `pw` and `pwi` | Set viewport size (default: 1920x1080) |
 | `--video[=name]` | `pw` commands only | Enable video recording |
 | `--screenshot` | `pw` and `pwi` | Take screenshot after action |
+| `--screenshot-path=dir` | `pw launch` | Pin session screenshots to a stable directory |
 | `--no-restore` | `pw` commands only | Don't restore last URL on reconnect |
 
 ### What happens on each `pw` command
@@ -310,7 +311,7 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | `pw scroll <up\|down\|top\|bottom\|selector\|px>` | Scroll page |
 | `pw fill <selector> <text>` | Click + fill input |
 | `pw type <text> [--delay=ms]` | Type on keyboard |
-| `pw sel\|select <selector> [--value\|--label\|--index]` | Select dropdown option |
+| `pw sel\|select <selector> (--value=x\|--label=x\|--index=n)` | Select dropdown option |
 | `pw upload <selector> <file...>` | Upload file(s) |
 | `pw submit [selector] [--wait=/url]` | Submit form (Enter or selector) |
 | `pw submit --url=/api/x --method=POST --body='{}'` | Direct HTTP form submission |
@@ -337,6 +338,8 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 | `pw wait <ms\|HH:MM\|/url\|selector>` | Wait for condition |
 | `pw wait <selector> --attr=textContent --value=Done` | Wait for attribute value |
 
+Screenshots default to `./.playwright-state/screenshots` under the current working directory. For session-based work, `pw launch --screenshot-path=dir` pins the screenshot directory in session metadata so later commands keep writing there even if `cwd` changes.
+
 ### HTTP
 
 | Command | Description |
@@ -355,7 +358,7 @@ Multiple sessions can run simultaneously. Each gets isolated user-data, so login
 
 | Command | Description |
 |---|---|
-| `pw launch [url] [--name=N] [--resume=N]` | Launch browser session |
+| `pw launch [url] [--name=N] [--resume=N] [--screenshot-path=dir]` | Launch browser session |
 | `pw use <name>` | Bind session to project (freely switches, returns previous binding if any) |
 | `pw sessions` | List all sessions |
 | `pw close [--session=N] [--all]` | Close session(s) |

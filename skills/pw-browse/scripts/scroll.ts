@@ -9,13 +9,13 @@
 import { run, parseFlag, screenshotPath } from './common.js';
 import { actionScroll } from './actions.js';
 
-run(async ({ page, args }) => {
+run(async ({ page, args, session }) => {
   const target = args[0] || 'down';
   const pxStr = parseFlag(process.argv.slice(2), 'px');
 
   await actionScroll(page, [target, ...(pxStr ? [pxStr] : [])]);
 
-  const path = screenshotPath();
+  const path = screenshotPath(undefined, session);
   await page.screenshot({ path });
 
   const scrollY = await page.evaluate(() => window.scrollY);

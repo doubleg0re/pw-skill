@@ -7,7 +7,7 @@
 import { run, parseFlag, screenshotPath } from './common.js';
 import { actionSubmit } from './actions.js';
 
-run(async ({ page, args }) => {
+run(async ({ page, args, session }) => {
   const selector = args[0];
   const waitUrl = parseFlag(process.argv.slice(2), 'wait');
   const url = parseFlag(process.argv.slice(2), 'url');
@@ -37,7 +37,7 @@ run(async ({ page, args }) => {
       );
     }
 
-    const path = screenshotPath();
+    const path = screenshotPath(undefined, session);
     await page.screenshot({ path });
     return { success: true, screenshot: path, data: { method, url, response, navigated: page.url() } };
   }
@@ -49,7 +49,7 @@ run(async ({ page, args }) => {
     await page.waitForURL(waitUrl.includes('*') ? waitUrl : `**${waitUrl}*`, { timeout: 30000 });
   }
 
-  const path = screenshotPath();
+  const path = screenshotPath(undefined, session);
   await page.screenshot({ path });
   return { success: true, screenshot: path, data: { selector: selector || 'Enter', url: page.url() } };
 });

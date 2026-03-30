@@ -2,14 +2,14 @@
 import { run, screenshotPath } from './common.js';
 import { actionFill } from './actions.js';
 
-run(async ({ page, args }) => {
+run(async ({ page, args, session }) => {
   const selector = args[0];
   const text = args[1];
   if (!selector || !text) return { success: false, error: 'Usage: fill.ts <selector> <text>' };
 
   await actionFill(page, [selector, text]);
 
-  const path = screenshotPath();
+  const path = screenshotPath(undefined, session);
   await page.screenshot({ path });
 
   return { success: true, screenshot: path, data: { selector, text } };

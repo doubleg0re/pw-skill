@@ -48,6 +48,8 @@ npx tsx {script_path}/pw.ts nav https://example.com :: refresh :: wait 1000
 
 Chaining is restricted to browser actions only. Session, admin, and package commands are not chainable.
 
+Screenshots default to `./.playwright-state/screenshots` under the current working directory. For persistent sessions, `pw launch --screenshot-path=dir` pins screenshot output to a stable directory.
+
 **Session resolution order** (for `pw` commands):
 1. `--session=name` (explicit)
 2. Bound session via `pw use`
@@ -169,9 +171,11 @@ npx tsx {script_path}/attr.ts <selector> <attr-name> [value]
 
 ### select.ts — Select dropdown option
 ```bash
-npx tsx {script_path}/select.ts <selector> <value|label>
+npx tsx {script_path}/select.ts <selector> --value=x
+npx tsx {script_path}/select.ts <selector> --label=x
+npx tsx {script_path}/select.ts <selector> <value> --value|--label|--index
 ```
-- Selects an option in a `<select>` element by value or visible label
+- Selects an option in a `<select>` element by value, visible label, or index
 
 ### wait.ts — Conditional wait
 ```bash

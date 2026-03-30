@@ -26,6 +26,10 @@ export function ensureStateDir(): void {
   if (!existsSync(SCREENSHOTS_DIR)) mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 }
 
+export function defaultScreenshotsDir(): string {
+  return SCREENSHOTS_DIR;
+}
+
 // --- storageState load/save ---
 
 export function loadState(): string | undefined {
@@ -228,6 +232,7 @@ async function launchNewSession(opts: {
   viewport: { width: number; height: number };
   video: boolean;
   videoDir: string;
+  screenshotDir?: string;
   resumeName?: string;
   name?: string;
 }): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo }> {
@@ -236,7 +241,14 @@ async function launchNewSession(opts: {
 
   const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir);
 
-  const session = createSession(sessionName, port, pid, wsEndpoint, opts.video ? sessionName : null);
+  const session = createSession(
+    sessionName,
+    port,
+    pid,
+    wsEndpoint,
+    opts.video ? sessionName : null,
+    opts.screenshotDir || SCREENSHOTS_DIR,
+  );
   if (cdpEndpoint) {
     updateSession(sessionName, { cdpEndpoint });
   }
@@ -291,6 +303,7 @@ export async function launchSession(opts: {
   headless: boolean;
   viewport: { width: number; height: number };
   video: boolean;
+  screenshotDir?: string;
 }): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo }> {
   const videoDir = join(LOCAL_STATE_DIR, 'videos');
 
@@ -301,6 +314,7 @@ export async function launchSession(opts: {
       viewport: opts.viewport,
       video: opts.video,
       videoDir,
+      screenshotDir: opts.screenshotDir,
       resumeName: opts.resume,
     });
   }
@@ -310,6 +324,7 @@ export async function launchSession(opts: {
     viewport: opts.viewport,
     video: opts.video,
     videoDir,
+    screenshotDir: opts.screenshotDir,
     name: opts.name,
   });
 }
@@ -345,10 +360,11 @@ export function output(result: Result): void {
 
 // --- Screenshot save ---
 
-export function screenshotPath(name?: string): string {
-  ensureStateDir();
+export function screenshotPath(name?: string, session?: SessionInfo): string {
+  const dir = session?.screenshotDir || SCREENSHOTS_DIR;
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const filename = name ?? `${Date.now()}`;
-  return join(SCREENSHOTS_DIR, `${filename}.png`);
+  return join(dir, `${filename}.png`);
 }
 
 // --- Parameter parsing ---
@@ -627,7 +643,7 @@ export async function run(
           errorResult.warnings = [...(errorResult.warnings || []), ...hookErrors.map(e => `Extension hook error: ${e}`)];
         }
 
-        const errorScreenshotPath = screenshotPath(`error-${Date.now()}`);
+        const errorScreenshotPath = screenshotPath(`error-${Date.now()}`, conn.session);
         await diagnosticPage.screenshot({ path: errorScreenshotPath }).catch(() => {});
         if (existsSync(errorScreenshotPath)) {
           errorResult.screenshot = errorScreenshotPath;

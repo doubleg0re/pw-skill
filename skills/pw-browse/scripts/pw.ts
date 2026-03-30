@@ -52,10 +52,14 @@ const AGENT_SKILLS: Record<string, { title: string; summary: string; when: strin
       'A browse or test flow needs a browser but none is running',
     ],
     cli: [
-      'pw launch [url] [--name=N] [--resume=N]',
+      'pw launch [url] [--name=N] [--resume=N] [--screenshot-path=dir]',
       'pw launch [url] --headed [--video[=name]]',
       'pw use <name>',
       'pw sessions',
+    ],
+    notes: [
+      'Session screenshots default to the launch cwd under .playwright-state/screenshots',
+      'Use `--screenshot-path=dir` to pin a session to a stable screenshot directory',
     ],
   },
   test: {
@@ -211,7 +215,7 @@ Chaining:
   seq syntax                              Run pw help seq
 
 Session management:
-  launch [url] [--name=N] [--resume=N]     Launch browser session
+  launch [url] [--name=N] [--resume=N] [--screenshot-path=dir] Launch browser session
   use <name>                                Bind session to project
   sessions                                  List all sessions
   close [--session=N] [--all]               Close session(s)
@@ -241,7 +245,7 @@ Browser actions:
   scroll <up|down|top|bottom|selector>       Scroll page
   fill <selector> <text>                     Fill input field
   type <text> [--delay=ms]                   Type on keyboard
-  sel|select <selector> [--value|--label|--index] Select dropdown option
+  sel|select <selector> (--value=x|--label=x|--index=n) Select dropdown option
   upload <selector> <file-path...>           Upload file
   download <target> [--async] [--dir=path]   Download file
   download [status|list]                     Check downloads
@@ -255,6 +259,8 @@ Browser actions:
   fetch <METHOD> <url> [body-json]           HTTP request with auth
   eval|evaluate <js-expression>              Run JavaScript in page
   seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
+  screenshots                               Default: current cwd/.playwright-state/screenshots
+  sessions                                  pw launch --screenshot-path=dir pins screenshot output for that session
 
 Debugging:
   console [inject|dump|clear|tail]           Console log capture

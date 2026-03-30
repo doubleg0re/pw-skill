@@ -837,7 +837,7 @@ export async function runSteps(
         success: false,
         error: errorMsg,
       });
-      const path = screenshotPath(`sequence-error-${Date.now()}`);
+      const path = screenshotPath(`sequence-error-${Date.now()}`, options.runtime?.session);
       try { await page.screenshot({ path }); } catch {}
       return { success: false, failedAt: stepIndex };
     }
@@ -1289,7 +1289,7 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   clearInterval(heartbeat);
   releaseLock(lockPath);
 
-  const path = screenshotPath(outcome.success ? 'sequence-done' : `sequence-error-${Date.now()}`);
+  const path = screenshotPath(outcome.success ? 'sequence-done' : `sequence-error-${Date.now()}`, session);
   await page.screenshot({ path });
 
   return {
