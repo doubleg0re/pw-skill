@@ -597,14 +597,21 @@ Chaining is restricted to browser actions only. Session, admin, and package comm
 
 ## Extensions
 
-pw-skill uses the `rary` extension system. Extensions can add event handlers, hooks, and custom sequence actions. Custom action names must include a hyphen, for example `persist-user-action`.
+pw-skill uses the `rary` extension system. Extensions can add event handlers, hooks, and custom sequence actions.
 
-### Available extensions
+```bash
+# Install from official repo (// = subdirectory)
+pw rary get doubleg0re/pw-extensions//pw-monitor
+pw rary put pw-monitor
+```
+
+### Official extensions
 
 | Extension | Description |
 |---|---|
-| `pw-monitor` | Real-time tab monitor — CDP WebSocket sidecar, `tab:*` events, GUI dashboard (`pw gui`) |
-| `pw-persist-user-action` | Persists user-action overlay across navigation |
+| `pw-monitor` | Real-time tab monitor — CDP sidecar, `tab:*` events, GUI dashboard (`pw gui`) |
+| `pw-user-action` | Navigation-resilient user-action overlay, native renderer ready |
+| `pw-ws-server` | Generic protocol-driven WebSocket server framework |
 
 ### Extension dependency in flows
 

@@ -444,3 +444,100 @@ describe('rary commands (injected store)', () => {
     expect(Array.isArray(result.data.flavor)).toBe(true);
   });
 });
+
+// --- Subdir install ---
+
+describe('rary get — subdir install', () => {
+  beforeEach(() => { cleanup(); setup(); });
+  afterEach(cleanup);
+
+  function cmds() {
+    return createRaryCommands(store);
+  }
+
+  function createMonorepo(): string {
+    const monoDir = join(TEST_DIR, 'fake-monorepo');
+    // pw-monitor
+    const monitorDir = join(monoDir, 'pw-monitor');
+    mkdirSync(join(monitorDir, 'src'), { recursive: true });
+    writeFileSync(join(monitorDir, 'larry.json'), JSON.stringify({
+      name: 'pw-monitor', version: '0.1.0', type: 'extension', description: 'Test monitor',
+    }));
+    writeFileSync(join(monitorDir, 'src', 'index.ts'), '// monitor');
+    // pw-other
+    const otherDir = join(monoDir, 'pw-other');
+    mkdirSync(join(otherDir, 'src'), { recursive: true });
+    writeFileSync(join(otherDir, 'larry.json'), JSON.stringify({
+      name: 'pw-other', version: '0.1.0', type: 'extension', description: 'Test other',
+    }));
+    return monoDir;
+  }
+
+  it('installs subdir from local path via //', async () => {
+    const monoDir = createMonorepo();
+    const result = await cmds().get([`${monoDir}//pw-monitor`]);
+    expect(result.success).toBe(true);
+    expect(result.data.package).toBe('pw-monitor');
+    expect(result.data.subdir).toBe('pw-monitor');
+    expect(store.isInstalled('pw-monitor')).toBe(true);
+    expect(store.getManifest('pw-monitor')?.name).toBe('pw-monitor');
+  });
+
+  it('resolves package name from manifest.name', async () => {
+    const monoDir = join(TEST_DIR, 'manifest-name-repo');
+    const subDir = join(monoDir, 'my-dir');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, 'larry.json'), JSON.stringify({
+      name: 'actual-name', version: '1.0.0', type: 'extension',
+    }));
+    const result = await cmds().get([`${monoDir}//my-dir`]);
+    expect(result.success).toBe(true);
+    expect(result.data.package).toBe('actual-name');
+    expect(store.isInstalled('actual-name')).toBe(true);
+  });
+
+  it('fails when subdir does not exist', async () => {
+    const monoDir = createMonorepo();
+    const result = await cmds().get([`${monoDir}//nonexistent`]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found');
+  });
+
+  it('fails when subdir has no larry.json', async () => {
+    const monoDir = join(TEST_DIR, 'no-manifest');
+    mkdirSync(join(monoDir, 'empty-pkg'), { recursive: true });
+    writeFileSync(join(monoDir, 'empty-pkg', 'readme.txt'), 'no manifest');
+    const result = await cmds().get([`${monoDir}//empty-pkg`]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('larry.json');
+  });
+
+  it('fails on empty subdir after //', async () => {
+    const result = await cmds().get(['./some-repo//']);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('must not be empty');
+  });
+
+  it('installs without subdir (backward compatible)', async () => {
+    const monoDir = createMonorepo();
+    const monitorDir = join(monoDir, 'pw-monitor');
+    const result = await cmds().get([monitorDir]);
+    expect(result.success).toBe(true);
+    expect(store.isInstalled('pw-monitor')).toBe(true);
+  });
+
+  it('reports --source mode in result', async () => {
+    const monoDir = createMonorepo();
+    const result = await cmds().get([`${monoDir}//pw-monitor`, '--source']);
+    expect(result.success).toBe(true);
+    expect(result.data.mode).toBe('source');
+  });
+
+  it('fails if package already installed', async () => {
+    const monoDir = createMonorepo();
+    await cmds().get([`${monoDir}//pw-monitor`]);
+    const result = await cmds().get([`${monoDir}//pw-monitor`]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already installed');
+  });
+});
