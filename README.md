@@ -149,25 +149,34 @@ Chaining is restricted to browser actions only. Session, admin, and package comm
 pw-skill uses a lightweight extension system called `rary`. Extensions can add event handlers, hooks, and custom sequence actions.
 
 ```bash
-# Install and activate an extension
-pw rary get <repo-or-path>
-pw rary yoink <repo-or-path>  # Alias for get
-pw rary put <package-name>
+# Install from official extensions repo (// = subdirectory syntax)
+pw rary get doubleg0re/pw-extensions//pw-monitor
+pw rary get doubleg0re/pw-extensions//pw-user-action
+pw rary get doubleg0re/pw-extensions//pw-ws-server
 
-# List installed extensions
+# Activate
+pw rary put pw-monitor
+
+# Install with source preserved
+pw rary get doubleg0re/pw-extensions//pw-monitor --source
+
+# Install and build
+pw rary get doubleg0re/pw-extensions//pw-monitor --source --build
+
+# List / deactivate
 pw rary toybox
-
-# Deactivate
-pw rary ignore <package-name>
-pw rary snub <package-name>   # Alias for ignore
+pw rary yoink <package-name>
 ```
 
-### Built-in Extensions
+### Official Extensions
+
+Available at [doubleg0re/pw-extensions](https://github.com/doubleg0re/pw-extensions):
 
 | Extension | Description |
 |---|---|
-| `pw-monitor` | Real-time tab monitor — CDP WebSocket sidecar tracks tabs, emits `tab:*` events, powers GUI dashboard |
-| `pw-persist-user-action` | Persists user-action overlay state across navigation — re-injects overlay on tab change |
+| `pw-monitor` | Real-time tab monitor — CDP WebSocket sidecar, `tab:*` events, GUI dashboard |
+| `pw-user-action` | Navigation-resilient user-action overlay — persistent state, native renderer ready |
+| `pw-ws-server` | Generic protocol-driven WebSocket server framework |
 
 ### Extension Dependencies in Flows
 

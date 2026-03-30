@@ -1,7 +1,7 @@
 // rary-commands.ts — CLI handlers for pw rary subcommands
 // Accepts a RaryStore for testability. Production uses default store.
 import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { join, resolve, basename } from 'path';
 import {
   createRaryStore,
@@ -136,42 +136,109 @@ export function createRaryCommands(store: RaryStore) {
 
   // --- get <repo> ---
   async function get(args: string[], flavorKind?: FlavorKind): Promise<Result> {
-    const repo = args[0];
-    if (!repo) return { success: false, error: 'Usage: pw rary get <repo|path>' };
+    const input = args[0];
+    if (!input) return { success: false, error: 'Usage: pw rary get <repo|path> [--source] [--build]\n  Subdir syntax: owner/repo//subdir or ./path//subdir' };
+
+    const isSource = args.includes('--source');
+    const isBuild = args.includes('--build');
 
     if (!existsSync(store.toyboxDir)) mkdirSync(store.toyboxDir, { recursive: true });
 
-    const repoName = basename(repo).replace(/\.git$/, '') || repo;
+    // Parse repo//subdir syntax
+    const doubleslashIdx = input.indexOf('//');
+    const repoSpec = doubleslashIdx >= 0 ? input.slice(0, doubleslashIdx) : input;
+    const subdir = doubleslashIdx >= 0 ? input.slice(doubleslashIdx + 2) : null;
 
-    if (store.isInstalled(repoName)) {
-      return { success: false, error: `Package "${repoName}" already installed. Use \`pw rary destroy ${repoName}\` first.` };
+    if (subdir !== null && !subdir) {
+      return { success: false, error: 'Invalid syntax: subdir after // must not be empty. Example: owner/repo//pw-monitor' };
     }
 
-    const targetDir = store.packageDir(repoName);
+    // Determine package name (may be overridden by manifest.name later)
+    let pkgName = subdir ? basename(subdir) : basename(repoSpec).replace(/\.git$/, '') || repoSpec;
 
-    // Local path
-    if (existsSync(repo)) {
-      const absPath = resolve(repo);
-      const copyResult = process.platform === 'win32'
-        ? spawnSync('xcopy', [absPath, targetDir, '/E', '/I', '/Q'], { stdio: 'ignore' })
-        : spawnSync('cp', ['-r', absPath, targetDir], { stdio: 'ignore' });
+    if (store.isInstalled(pkgName)) {
+      return { success: false, error: `Package "${pkgName}" already installed. Use \`pw rary destroy ${pkgName}\` first.` };
+    }
 
-      if (copyResult.status !== 0) {
-        return { success: false, error: `Failed to copy "${absPath}" to toybox (exit code ${copyResult.status})` };
-      }
-      if (!existsSync(targetDir)) {
-        return { success: false, error: `Copy appeared to succeed but target directory not found: ${targetDir}` };
+    // --- Fetch repo/path into temp or target ---
+
+    let sourceDir: string; // where the package files are before copying to toybox
+    let tempDir: string | null = null;
+
+    if (existsSync(repoSpec)) {
+      // Local path
+      const absPath = resolve(repoSpec);
+      if (subdir) {
+        const subdirPath = join(absPath, subdir);
+        if (!existsSync(subdirPath)) {
+          return { success: false, error: `Subdir "${subdir}" not found in "${absPath}"` };
+        }
+        sourceDir = subdirPath;
+      } else {
+        sourceDir = absPath;
       }
     } else {
-      // Git clone (array args, no shell)
-      const gitUrl = repo.includes('://') ? repo : `https://github.com/${repo}.git`;
-      const cloneResult = spawnSync('git', ['clone', '--depth', '1', gitUrl, targetDir], { stdio: 'ignore' });
+      // Git clone to temp
+      const { tmpdir } = await import('os');
+      const { randomBytes } = await import('crypto');
+      tempDir = join(tmpdir(), `rary-get-${randomBytes(4).toString('hex')}`);
+      const gitUrl = repoSpec.includes('://') ? repoSpec : `https://github.com/${repoSpec}.git`;
+      const cloneResult = spawnSync('git', ['clone', '--depth', '1', gitUrl, tempDir], { stdio: 'ignore' });
       if (cloneResult.status !== 0) {
-        return { success: false, error: `Failed to clone "${repo}" (exit code ${cloneResult.status})` };
+        return { success: false, error: `Failed to clone "${repoSpec}" (exit code ${cloneResult.status})` };
+      }
+
+      if (subdir) {
+        const subdirPath = join(tempDir, subdir);
+        if (!existsSync(subdirPath)) {
+          cleanupTemp(tempDir);
+          return { success: false, error: `Subdir "${subdir}" not found in cloned repo "${repoSpec}"` };
+        }
+        sourceDir = subdirPath;
+      } else {
+        sourceDir = tempDir;
       }
     }
 
-    const manifest = store.getManifest(repoName);
+    // Validate larry.json exists in source
+    const manifestPath = join(sourceDir, 'larry.json');
+    if (!existsSync(manifestPath)) {
+      if (tempDir) cleanupTemp(tempDir);
+      return { success: false, error: `No larry.json found in ${subdir ? `"${subdir}" subdirectory of ` : ''}"${repoSpec}". Not a valid rary package.` };
+    }
+
+    // Read manifest to resolve package name
+    try {
+      const manifestData = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      if (manifestData.name && typeof manifestData.name === 'string') {
+        // Check if manifest name differs from directory-derived name
+        if (manifestData.name !== pkgName) {
+          // Use manifest name, but check for conflicts
+          if (store.isInstalled(manifestData.name)) {
+            if (tempDir) cleanupTemp(tempDir);
+            return { success: false, error: `Package "${manifestData.name}" (from manifest) already installed. Use \`pw rary destroy ${manifestData.name}\` first.` };
+          }
+          pkgName = manifestData.name;
+        }
+      }
+    } catch {}
+
+    // Copy package to toybox
+    const targetDir = store.packageDir(pkgName);
+    const copyResult = process.platform === 'win32'
+      ? spawnSync('xcopy', [sourceDir, targetDir, '/E', '/I', '/Q'], { stdio: 'ignore' })
+      : spawnSync('cp', ['-r', sourceDir, targetDir], { stdio: 'ignore' });
+
+    if (tempDir) cleanupTemp(tempDir);
+
+    if (copyResult.status !== 0) {
+      return { success: false, error: `Failed to copy package to toybox (exit code ${copyResult.status})` };
+    }
+    if (!existsSync(targetDir)) {
+      return { success: false, error: `Copy appeared to succeed but target directory not found: ${targetDir}` };
+    }
+
+    const manifest = store.getManifest(pkgName);
 
     // Install npm dependencies if package.json exists
     const pkgJson = join(targetDir, 'package.json');
@@ -179,16 +246,36 @@ export function createRaryCommands(store: RaryStore) {
       spawnSync('npm', ['install', '--production'], { cwd: targetDir, stdio: 'ignore' });
     }
 
+    // --build: trigger rolling/setup if available
+    let buildResult: string | undefined;
+    if (isBuild) {
+      if (manifest?.rolling) {
+        buildResult = `Run \`pw rary rolling ${pkgName}\` to complete setup.`;
+      } else if (existsSync(pkgJson)) {
+        const buildRun = spawnSync('npm', ['run', 'build', '--if-present'], { cwd: targetDir, stdio: 'ignore' });
+        buildResult = buildRun.status === 0 ? 'Build completed.' : 'Build script not found or failed.';
+      } else {
+        buildResult = 'No build/setup path found for this package.';
+      }
+    }
+
     return {
       success: true,
       data: {
-        message: `Fetched toy "${repoName}" into the toybox.`,
-        package: repoName,
+        message: `Fetched toy "${pkgName}" into the toybox.`,
+        package: pkgName,
+        ...(subdir ? { subdir } : {}),
+        ...(isSource ? { mode: 'source' } : {}),
+        ...(buildResult ? { build: buildResult } : {}),
         manifest: manifest ? { name: manifest.name, version: manifest.version, type: manifest.type, description: manifest.description } : null,
-        hint: manifest?.rolling ? `Run \`pw rary rolling ${repoName}\` for first-time setup.` : undefined,
-        ...(flavorKind ? { flavor: pickFlavor(flavorKind, repoName) } : {}),
+        hint: manifest?.rolling ? `Run \`pw rary rolling ${pkgName}\` for first-time setup.` : undefined,
+        ...(flavorKind ? { flavor: pickFlavor(flavorKind, pkgName) } : {}),
       },
     };
+  }
+
+  function cleanupTemp(dir: string): void {
+    try { rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 
   // --- toybox ---
