@@ -41,6 +41,10 @@ run(async ({ page }) => {
   } else if (isHidden) {
     type = 'hidden';
   } else if (countVal !== undefined) {
+    const n = Number(countVal);
+    if (isNaN(n) || n < 0 || !Number.isInteger(n)) {
+      return { success: false, error: '--count must be a non-negative integer.' };
+    }
     type = 'count';
     expected = countVal;
   } else if (textVal !== undefined) {

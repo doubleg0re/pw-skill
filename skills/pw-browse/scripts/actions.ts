@@ -130,7 +130,7 @@ export async function actionFill(page: Page, a: ActionArgs, runtime?: any): Prom
   const value = getArg(a, 'value', 1);
   await page.locator(selector).first().click();
   await page.locator(selector).first().fill(String(value));
-  return elementKey ? { result: { elementKey } } : {};
+  return { result: { ...(elementKey ? { elementKey } : { target: selector }), value: String(value) } };
 }
 
 export async function actionType(page: Page, a: ActionArgs): Promise<{ result?: any }> {
@@ -579,6 +579,10 @@ export async function actionAssert(page: Page, a: ActionArgs): Promise<{ result?
   } else if (isHidden) {
     type = 'hidden';
   } else if (countVal !== undefined) {
+    const n = Number(countVal);
+    if (isNaN(n) || n < 0 || !Number.isInteger(n)) {
+      throw new Error('count must be a non-negative integer.');
+    }
     type = 'count';
     expected = String(countVal);
   } else if (textVal !== undefined) {
