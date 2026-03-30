@@ -253,7 +253,7 @@ export function createRaryCommands(store: RaryStore) {
         return { success: false, error: `Failed to copy package to toybox (exit code ${copyResult.status})` };
       }
     } else {
-      // Default: copy runtime files only (exclude src/, tests/)
+      // Default: copy runtime files only (dist + config), exclude source and tests
       mkdirSync(targetDir, { recursive: true });
       const { readdirSync, statSync, cpSync } = await import('fs');
       const EXCLUDE_DIRS = new Set(['src', 'tests', 'test', '.git']);
