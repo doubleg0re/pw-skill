@@ -1,5 +1,5 @@
 // lock.ts — File-based locking for cross-process coordination
-import { existsSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { atomicWriteJSON, readJSONSafe } from './file-utils.js';
 import { isProcessAlive, getProcessStartTime } from './session.js';
@@ -23,31 +23,14 @@ export interface LockCheckResult {
 }
 
 /**
- * Attempt to acquire a lock file.
+ * Attempt to acquire a lock file atomically.
+ * Uses O_EXCL (wx flag) for atomic create — no TOCTOU race.
  * Returns true if acquired, false if already held by another active process.
- * Automatically cleans stale locks.
+ * Automatically cleans stale locks before retrying.
  */
 export function acquireLock(lockPath: string, operation?: string): boolean {
   const dir = dirname(lockPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-  // Check existing lock
-  const existing = checkLock(lockPath);
-
-  if (existing.status === 'active') {
-    // Someone else holds it
-    return false;
-  }
-
-  if (existing.status === 'uncertain') {
-    // Can't be sure — don't force
-    return false;
-  }
-
-  // Free, stale, or orphan — safe to take
-  if (existing.status === 'stale' || existing.status === 'orphan') {
-    releaseLock(lockPath); // clean up first
-  }
 
   const now = new Date().toISOString();
   const lock: LockInfo = {
@@ -57,9 +40,30 @@ export function acquireLock(lockPath: string, operation?: string): boolean {
     updatedAt: now,
     ...(operation ? { operation } : {}),
   };
+  const content = JSON.stringify(lock);
 
-  atomicWriteJSON(lockPath, lock);
-  return true;
+  // Try atomic exclusive create
+  try {
+    writeFileSync(lockPath, content, { flag: 'wx' });
+    return true;
+  } catch {
+    // Lock file exists — check if stale
+  }
+
+  const existing = checkLock(lockPath);
+
+  if (existing.status === 'active' || existing.status === 'uncertain') {
+    return false;
+  }
+
+  // Stale or orphan — clean up and retry once
+  try { unlinkSync(lockPath); } catch {}
+  try {
+    writeFileSync(lockPath, content, { flag: 'wx' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

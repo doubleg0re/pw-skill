@@ -1177,6 +1177,13 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   acquireLockOrThrow(lockPath, 'sequence');
   const heartbeat = setInterval(() => refreshLock(lockPath), 30000);
 
+  function cleanupLock() {
+    clearInterval(heartbeat);
+    releaseLock(lockPath);
+  }
+
+  try { // try/finally ensures cleanupLock runs on every exit path
+
   let steps: Step[];
   let info: any = undefined;
   try {
@@ -1291,10 +1298,6 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
 
   const outcome = await runSteps(page, steps, vars, results, defs, 0, { allowShell, requestPermission, debugLog, baseDir, actionMap: mergedActionMap, runtime: seqRuntime });
 
-  // Clean up heartbeat and lock
-  clearInterval(heartbeat);
-  releaseLock(lockPath);
-
   const path = screenshotPath(outcome.success ? 'sequence-done' : `sequence-error-${Date.now()}`, session);
   await page.screenshot({ path });
 
@@ -1311,4 +1314,8 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
     ...(outcome.failedAt !== undefined ? { error: `Step ${outcome.failedAt} failed` } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
+
+  } finally {
+    cleanupLock();
+  }
 });

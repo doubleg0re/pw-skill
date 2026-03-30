@@ -80,9 +80,17 @@ function atomicWriteJSON(filePath: string, data: unknown): void {
 async function connect(): Promise<void> {
   restoreRegistry();
 
+  // Startup timeout — covers /json/version fetch + WebSocket connect
+  const startupTimeout = setTimeout(() => {
+    process.stderr.write('[monitor-sidecar] startup timeout (10s), exiting\n');
+    persistRegistry();
+    process.exit(1);
+  }, 10000);
+
   // Get browser WebSocket URL from CDP endpoint
   const port = cdpEndpoint.match(/:(\d+)\//)?.[1];
   if (!port) {
+    clearTimeout(startupTimeout);
     process.stderr.write(`Cannot extract port from CDP endpoint: ${cdpEndpoint}\n`);
     process.exit(1);
   }
@@ -95,19 +103,13 @@ async function connect(): Promise<void> {
     browserWsUrl = info.webSocketDebuggerUrl;
     if (!browserWsUrl) throw new Error('No webSocketDebuggerUrl in /json/version');
   } catch (err: any) {
+    clearTimeout(startupTimeout);
     process.stderr.write(`Failed to get browser WS URL: ${err.message}\n`);
     process.exit(1);
   }
 
   const ws = new WebSocket(browserWsUrl);
   let msgId = 1;
-
-  // Startup timeout — fail if WS doesn't connect within 10s
-  const startupTimeout = setTimeout(() => {
-    process.stderr.write('[monitor-sidecar] WebSocket connection timeout (10s), exiting\n');
-    persistRegistry();
-    process.exit(1);
-  }, 10000);
 
   function send(method: string, params?: any): void {
     ws.send(JSON.stringify({ id: msgId++, method, params }));
