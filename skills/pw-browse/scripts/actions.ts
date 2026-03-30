@@ -1,6 +1,7 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
 import type { Page } from 'playwright';
 import { screenshotPath } from './common.js';
+import { headTruncate } from './dump-utils.js';
 
 /** Flexible argument type for actions */
 export type ActionArgs = string[] | Record<string, any>;
@@ -489,6 +490,7 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
   const savePath = Array.isArray(a) ? undefined : a.save;
   const doReplace = Array.isArray(a) ? false : !!a.replace;
   const doAppend = Array.isArray(a) ? false : !!a.append;
+  const headN = Array.isArray(a) ? undefined : (a.head !== undefined ? Number(a.head) : undefined);
 
   // Validate save flags
   if (doReplace && doAppend) throw new Error('Cannot use replace and append together.');
@@ -546,11 +548,27 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
     else writeFileSync(filePath, content);
   }
 
+  // Apply head truncation (only to returned content, not saved files)
+  let truncated = false;
+  let head: number | undefined;
+  let originalLength: number | undefined;
+
+  if (!savePath && headN !== undefined) {
+    const result = headTruncate(content, headN);
+    content = result.content;
+    truncated = result.truncated;
+    head = result.head;
+    originalLength = result.originalLength;
+  }
+
   return {
     result: {
       target,
       format,
       content,
+      ...(truncated ? { truncated: true } : {}),
+      ...(head !== undefined ? { head } : {}),
+      ...(originalLength !== undefined ? { originalLength } : {}),
       ...(filePath ? { path: filePath, mode } : {}),
     },
   };
