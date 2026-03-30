@@ -205,7 +205,7 @@ describe('buildFallbackSelector', () => {
 
   it('role', () => {
     const fp = makeFp({ stableAttrs: { role: 'dialog' } });
-    expect(buildFallbackSelector(fp)).toBe('[role="dialog"]');
+    expect(buildFallbackSelector(fp)).toBe('div[role="dialog"]');
   });
 
   it('null for no stable identity', () => {

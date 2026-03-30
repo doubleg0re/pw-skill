@@ -109,16 +109,20 @@ function escapeCssId(id: string): string {
   return id.replace(/([^\w-])/g, '\\$1');
 }
 
+function escapeCssAttrValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 // --- Fallback selector builder ---
 
 export function buildFallbackSelector(fp: ElementFingerprint): string | null {
   // Priority: id > data-testid > data-test > name > aria-label > role
   if (fp.id) return `#${escapeCssId(fp.id)}`;
-  if (fp.stableAttrs['data-testid']) return `[data-testid="${fp.stableAttrs['data-testid']}"]`;
-  if (fp.stableAttrs['data-test']) return `[data-test="${fp.stableAttrs['data-test']}"]`;
-  if (fp.stableAttrs['name']) return `${fp.tag}[name="${fp.stableAttrs['name']}"]`;
-  if (fp.stableAttrs['aria-label']) return `[aria-label="${fp.stableAttrs['aria-label']}"]`;
-  if (fp.stableAttrs['role']) return `[role="${fp.stableAttrs['role']}"]`;
+  if (fp.stableAttrs['data-testid']) return `[data-testid="${escapeCssAttrValue(fp.stableAttrs['data-testid'])}"]`;
+  if (fp.stableAttrs['data-test']) return `[data-test="${escapeCssAttrValue(fp.stableAttrs['data-test'])}"]`;
+  if (fp.stableAttrs['name']) return `${fp.tag}[name="${escapeCssAttrValue(fp.stableAttrs['name'])}"]`;
+  if (fp.stableAttrs['aria-label']) return `[aria-label="${escapeCssAttrValue(fp.stableAttrs['aria-label'])}"]`;
+  if (fp.stableAttrs['role']) return `${fp.tag}[role="${escapeCssAttrValue(fp.stableAttrs['role'])}"]`;
   return null;
 }
 
