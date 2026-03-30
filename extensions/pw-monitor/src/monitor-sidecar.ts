@@ -102,11 +102,19 @@ async function connect(): Promise<void> {
   const ws = new WebSocket(browserWsUrl);
   let msgId = 1;
 
+  // Startup timeout — fail if WS doesn't connect within 10s
+  const startupTimeout = setTimeout(() => {
+    process.stderr.write('[monitor-sidecar] WebSocket connection timeout (10s), exiting\n');
+    persistRegistry();
+    process.exit(1);
+  }, 10000);
+
   function send(method: string, params?: any): void {
     ws.send(JSON.stringify({ id: msgId++, method, params }));
   }
 
   ws.addEventListener('open', () => {
+    clearTimeout(startupTimeout);
     process.stderr.write(`[monitor-sidecar] connected to ${browserWsUrl}\n`);
     // Enable target discovery
     send('Target.setDiscoverTargets', { discover: true });

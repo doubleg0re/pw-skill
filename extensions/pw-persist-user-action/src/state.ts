@@ -41,16 +41,27 @@ export function savePending(sessionName: string, pending: PendingAction[]): void
 }
 
 export function addPending(sessionName: string, action: PendingAction): void {
-  const list = loadPending(sessionName);
-  // Replace existing for same tabId (only one pending per tab)
-  const filtered = list.filter(p => p.tabId !== action.tabId);
-  filtered.push(action);
-  savePending(sessionName, filtered);
+  const lockPath = join(dirname(statePath(sessionName)), '.pending-actions.lock');
+  simpleLock(lockPath);
+  try {
+    const list = loadPending(sessionName);
+    const filtered = list.filter(p => p.tabId !== action.tabId);
+    filtered.push(action);
+    savePending(sessionName, filtered);
+  } finally {
+    simpleUnlock(lockPath);
+  }
 }
 
 export function removePending(sessionName: string, tabId: number): void {
-  const list = loadPending(sessionName);
-  savePending(sessionName, list.filter(p => p.tabId !== tabId));
+  const lockPath = join(dirname(statePath(sessionName)), '.pending-actions.lock');
+  simpleLock(lockPath);
+  try {
+    const list = loadPending(sessionName);
+    savePending(sessionName, list.filter(p => p.tabId !== tabId));
+  } finally {
+    simpleUnlock(lockPath);
+  }
 }
 
 export function getPending(sessionName: string, tabId: number): PendingAction | undefined {
@@ -59,6 +70,27 @@ export function getPending(sessionName: string, tabId: number): PendingAction | 
 
 export function clearAll(sessionName: string): void {
   savePending(sessionName, []);
+}
+
+// Simple file lock (self-contained, no core dependency)
+function simpleLock(lockPath: string): void {
+  const maxRetries = 10;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      writeFileSync(lockPath, String(process.pid), { flag: 'wx' });
+      return;
+    } catch {
+      // Lock exists — wait and retry
+      const sleep = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end); };
+      sleep(50);
+    }
+  }
+  // Force acquire after retries (stale lock)
+  writeFileSync(lockPath, String(process.pid));
+}
+
+function simpleUnlock(lockPath: string): void {
+  try { unlinkSync(lockPath); } catch {}
 }
 
 function atomicWriteJSON(filePath: string, data: unknown): void {

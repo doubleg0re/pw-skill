@@ -29,9 +29,9 @@ function makeFp(overrides: Partial<ElementFingerprint> = {}): ElementFingerprint
 }
 
 describe('generateElementKey', () => {
-  it('returns 8-char hex string', () => {
+  it('returns 16-char hex string', () => {
     const key = generateElementKey();
-    expect(key).toMatch(/^[0-9a-f]{8}$/);
+    expect(key).toMatch(/^[0-9a-f]{16}$/);
   });
 
   it('generates unique keys', () => {
@@ -211,6 +211,18 @@ describe('buildFallbackSelector', () => {
   it('null for no stable identity', () => {
     const fp = makeFp({ stableAttrs: {} });
     expect(buildFallbackSelector(fp)).toBeNull();
+  });
+
+  it('escapes digit-prefixed IDs', () => {
+    const fp = makeFp({ id: '1foo' });
+    const selector = buildFallbackSelector(fp);
+    expect(selector).toBe('#\\31 foo');
+  });
+
+  it('escapes special chars in IDs', () => {
+    const fp = makeFp({ id: 'my.id' });
+    const selector = buildFallbackSelector(fp);
+    expect(selector).toBe('#my\\.id');
   });
 });
 
