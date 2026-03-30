@@ -5,7 +5,7 @@ import { randomBytes } from 'crypto';
 import { join } from 'path';
 import type { Page } from 'playwright';
 import { atomicWriteJSON, readJSONSafe } from './file-utils.js';
-import { acquireLock, releaseLock } from './lock.js';
+import { acquireLockOrThrow, releaseLock } from './lock.js';
 
 // --- Stable attribute names collected for fingerprinting ---
 
@@ -148,7 +148,7 @@ export function createElementRegistry(stateDir: string): ElementRegistry {
 
   return {
     store(fp: ElementFingerprint): void {
-      acquireLock(lockPath, 'element-registry');
+      acquireLockOrThrow(lockPath, 'element-registry');
       try {
         const data = loadAll();
         data[fp.key] = fp;
@@ -174,7 +174,7 @@ export function createElementRegistry(stateDir: string): ElementRegistry {
     },
 
     clear(): void {
-      acquireLock(lockPath, 'element-registry');
+      acquireLockOrThrow(lockPath, 'element-registry');
       try { saveAll({}); } finally { releaseLock(lockPath); }
     },
   };

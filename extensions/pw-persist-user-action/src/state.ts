@@ -74,23 +74,38 @@ export function clearAll(sessionName: string): void {
 
 // Simple file lock (self-contained, no core dependency)
 function simpleLock(lockPath: string): void {
-  const maxRetries = 10;
+  const maxRetries = 20;
   for (let i = 0; i < maxRetries; i++) {
     try {
       writeFileSync(lockPath, String(process.pid), { flag: 'wx' });
       return;
     } catch {
-      // Lock exists — wait and retry
+      // Lock exists — check if owner is still alive
+      try {
+        const ownerPid = parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
+        if (ownerPid && ownerPid !== process.pid) {
+          try { process.kill(ownerPid, 0); } catch {
+            // Owner dead — stale lock, safe to take
+            try { unlinkSync(lockPath); } catch {}
+            continue;
+          }
+        }
+      } catch {}
       const sleep = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end); };
       sleep(50);
     }
   }
-  // Force acquire after retries (stale lock)
-  writeFileSync(lockPath, String(process.pid));
+  throw new Error(`Failed to acquire lock: ${lockPath}`);
 }
 
 function simpleUnlock(lockPath: string): void {
-  try { unlinkSync(lockPath); } catch {}
+  try {
+    // Only release if we own the lock
+    const ownerPid = parseInt(readFileSync(lockPath, 'utf-8').trim(), 10);
+    if (!ownerPid || ownerPid === process.pid) {
+      unlinkSync(lockPath);
+    }
+  } catch {}
 }
 
 function atomicWriteJSON(filePath: string, data: unknown): void {

@@ -63,12 +63,28 @@ export function acquireLock(lockPath: string, operation?: string): boolean {
 }
 
 /**
- * Release a lock file.
+ * Release a lock file (only if owned by this process).
  */
 export function releaseLock(lockPath: string): void {
   try {
-    if (existsSync(lockPath)) unlinkSync(lockPath);
+    if (!existsSync(lockPath)) return;
+    const lock = readJSONSafe<LockInfo>(lockPath);
+    // Only release if we own the lock (or lock is unreadable)
+    if (!lock || lock.pid === process.pid) {
+      unlinkSync(lockPath);
+    }
   } catch {}
+}
+
+/**
+ * Acquire lock or throw. Use in critical sections where proceeding without
+ * the lock would cause data corruption.
+ */
+export function acquireLockOrThrow(lockPath: string, operation?: string): void {
+  if (!acquireLock(lockPath, operation)) {
+    const existing = checkLock(lockPath);
+    throw new Error(`Failed to acquire lock for "${operation || 'unknown'}": held by pid ${existing.lock?.pid} (${existing.status})`);
+  }
 }
 
 /**

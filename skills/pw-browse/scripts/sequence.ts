@@ -1171,10 +1171,10 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   const debugLog = process.argv.includes('--debug-log');
 
   // Heartbeat lock for long-running sequences
-  const { acquireLock, releaseLock, refreshLock } = await import('./lock.js');
+  const { acquireLockOrThrow, releaseLock, refreshLock } = await import('./lock.js');
   const { join } = await import('path');
   const lockPath = join(process.cwd(), '.playwright-state', '.sequence.lock');
-  acquireLock(lockPath, 'sequence');
+  acquireLockOrThrow(lockPath, 'sequence');
   const heartbeat = setInterval(() => refreshLock(lockPath), 30000);
 
   let steps: Step[];
