@@ -205,39 +205,62 @@ export async function actionWait(page: Page, a: ActionArgs, runtime?: ActionRunt
       await new Promise(r => setTimeout(r, idle));
     }
 
-    // Inject overlay with action buttons
-    await page.evaluate(({ promptMsg, btns }: { promptMsg: string; btns: string[] }) => {
-      const overlay = document.createElement('div');
-      overlay.id = '__pw_user_action_overlay';
-      overlay.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999999;background:#1a1a2e;color:#fff;padding:16px 24px;border-radius:8px;font-family:system-ui;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:400px;';
+    // Navigation-resilient loop: inject overlay, wait for click.
+    // If navigation destroys the page context, wait for load and re-inject.
+    const MAX_RETRIES = 20;
+    let clicked: string | undefined;
 
-      const buttonsHtml = btns.map(b =>
-        `<button class="__pw_action_btn" data-action="${b}" style="background:#4f46e5;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;font-size:14px;margin-right:8px;">${b}</button>`
-      ).join('');
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        // Inject overlay
+        await page.evaluate(({ promptMsg, btns }: { promptMsg: string; btns: string[] }) => {
+          document.getElementById('__pw_user_action_overlay')?.remove();
+          const overlay = document.createElement('div');
+          overlay.id = '__pw_user_action_overlay';
+          overlay.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999999;background:#1a1a2e;color:#fff;padding:16px 24px;border-radius:8px;font-family:system-ui;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:400px;';
 
-      overlay.innerHTML = `
-        <div style="font-weight:600;margin-bottom:8px;">Waiting for user action</div>
-        <div style="color:#ccc;margin-bottom:12px;">${promptMsg}</div>
-        <div>${buttonsHtml}</div>
-      `;
-      document.body.appendChild(overlay);
-    }, { promptMsg: prompt, btns: actions });
+          const buttonsHtml = btns.map(b =>
+            `<button class="__pw_action_btn" data-action="${b}" style="background:#4f46e5;color:#fff;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;font-size:14px;margin-right:8px;">${b}</button>`
+          ).join('');
 
-    // Wait for any action button click
-    const clicked = await page.evaluate(() => {
-      return new Promise<string>((resolve) => {
-        document.querySelectorAll('.__pw_action_btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            resolve((btn as HTMLElement).dataset.action || 'continue');
+          overlay.innerHTML = `
+            <div style="font-weight:600;margin-bottom:8px;">Waiting for user action</div>
+            <div style="color:#ccc;margin-bottom:12px;">${promptMsg}</div>
+            <div>${buttonsHtml}</div>
+          `;
+          document.body.appendChild(overlay);
+        }, { promptMsg: prompt, btns: actions });
+
+        // Wait for button click
+        clicked = await page.evaluate(() => {
+          return new Promise<string>((resolve) => {
+            document.querySelectorAll('.__pw_action_btn').forEach(btn => {
+              btn.addEventListener('click', () => {
+                resolve((btn as HTMLElement).dataset.action || 'continue');
+              });
+            });
           });
         });
-      });
-    });
 
-    // Remove overlay
-    await page.evaluate(() => {
-      document.getElementById('__pw_user_action_overlay')?.remove();
-    });
+        // Click received — remove overlay and break
+        await page.evaluate(() => {
+          document.getElementById('__pw_user_action_overlay')?.remove();
+        }).catch(() => {});
+        break;
+      } catch (err: any) {
+        const msg = err.message || '';
+        if (msg.includes('Execution context was destroyed') || msg.includes('navigation')) {
+          // Navigation happened — wait for new page to load, then re-inject
+          await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+          continue;
+        }
+        throw err; // unexpected error — don't retry
+      }
+    }
+
+    if (!clicked) {
+      throw new Error('user-action: overlay destroyed too many times by navigation (max retries exceeded)');
+    }
 
     // Emit user-action:completed so extensions can clear state
     if (runtime?.emitEvent) {
