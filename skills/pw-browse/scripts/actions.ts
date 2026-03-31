@@ -186,11 +186,22 @@ export async function actionWait(page: Page, a: ActionArgs, runtime?: ActionRunt
       const overlay = document.createElement('div');
       overlay.id = '__pw_user_alert_overlay';
       overlay.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999999;background:#1a1a2e;color:#fff;padding:16px 24px;border-radius:8px;font-family:system-ui;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);max-width:320px;cursor:pointer;';
-      overlay.innerHTML = `
-        <div style="font-weight:600;margin-bottom:8px;">Notice</div>
-        <div style="color:#ccc;">${promptMsg}</div>
-        <div style="color:#666;font-size:12px;margin-top:8px;">Click to dismiss</div>
-      `;
+
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:600;margin-bottom:8px;';
+      title.textContent = 'Notice';
+      overlay.appendChild(title);
+
+      const msg = document.createElement('div');
+      msg.style.cssText = 'color:#ccc;';
+      msg.textContent = promptMsg;
+      overlay.appendChild(msg);
+
+      const hint = document.createElement('div');
+      hint.style.cssText = 'color:#666;font-size:12px;margin-top:8px;';
+      hint.textContent = 'Click to dismiss';
+      overlay.appendChild(hint);
+
       overlay.addEventListener('click', () => overlay.remove());
       document.body.appendChild(overlay);
     }, prompt);
