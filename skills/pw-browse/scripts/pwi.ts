@@ -60,9 +60,10 @@ const { steps } = parseInlineSteps(rawArgs);
 const headed = rawArgs.includes('--headed');
 const takeScreenshot = rawArgs.includes('--screenshot');
 const viewportFlag = rawArgs.find(a => a.startsWith('--viewport='));
-const viewport = viewportFlag
-  ? { width: parseInt(viewportFlag.split('=')[1].split('x')[0]), height: parseInt(viewportFlag.split('=')[1].split('x')[1]) }
-  : { width: 1920, height: 1080 };
+const viewportSpec = viewportFlag?.split('=')[1];
+const viewport = !viewportSpec || viewportSpec === 'auto'
+  ? null
+  : { width: parseInt(viewportSpec.split('x')[0]), height: parseInt(viewportSpec.split('x')[1]) };
 
 if (steps.length === 0) {
   console.log(JSON.stringify({ success: false, error: 'Usage: pwi <action> [args...] [:: <action> [args...] ...]' }));

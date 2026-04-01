@@ -52,13 +52,20 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   // Check if session already running
   if (isSessionAlive(sessionName)) {
     const existing = getSession(sessionName)!;
+    const previous = getBoundSession();
     if (screenshotPathFlag) {
       updateSession(sessionName, { screenshotDir });
       existing.screenshotDir = screenshotDir;
     }
+    bindSession(sessionName);
     return {
       success: true,
-      data: { session: existing, message: `Session "${sessionName}" already running, reconnected` },
+      data: {
+        session: existing,
+        message: `Session "${sessionName}" already running, reconnected`,
+        bound: true,
+        ...(previous && previous !== sessionName ? { previous } : {}),
+      },
     };
   }
 
@@ -90,7 +97,7 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
       if (videoEnabled) {
         const videoDir = join(localStateDir(), 'videos');
         if (!existsSync(videoDir)) mkdirSync(videoDir, { recursive: true });
-        ctx = await browser.newContext({ recordVideo: { dir: videoDir, size: { width: 1920, height: 1080 } } });
+        ctx = await browser.newContext({ recordVideo: { dir: videoDir } });
         page = await ctx.newPage();
       } else {
         ctx = browser.contexts()[0] || await browser.newContext();

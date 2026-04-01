@@ -242,6 +242,7 @@ describe('SessionStore — resolveSession', () => {
     store.createSession('only', 9222, process.pid);
     const resolved = store.resolveSession();
     expect(resolved.name).toBe('only');
+    expect(store.getBoundSession()).toBe('only');
   });
 
   it('throws when no sessions', () => {
@@ -260,6 +261,23 @@ describe('SessionStore — resolveSession', () => {
     store.bindSession('dead');
     const resolved = store.resolveSession();
     expect(resolved.name).toBe('alive');
+    expect(store.getBoundSession()).toBe('alive');
+  });
+
+  it('returns warning when auto-binding the only live session', () => {
+    store.createSession('only', 9222, process.pid);
+    const resolved = store.resolveSessionWithContext();
+    expect(resolved.session.name).toBe('only');
+    expect(resolved.warnings).toEqual(['No session was bound for this cwd. Auto-bound "only".']);
+  });
+
+  it('returns warning when recovering from a stale bound session', () => {
+    store.createSession('dead', 9001, 99999999);
+    store.createSession('alive', 9002, process.pid);
+    store.bindSession('dead');
+    const resolved = store.resolveSessionWithContext();
+    expect(resolved.session.name).toBe('alive');
+    expect(resolved.warnings).toEqual(['Bound session "dead" was unavailable. Auto-bound "alive".']);
   });
 });
 

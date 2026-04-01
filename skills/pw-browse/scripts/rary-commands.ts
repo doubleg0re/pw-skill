@@ -5,9 +5,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { join, resolve, basename } from 'path';
 import {
   createRaryStore,
+  type LarryManifest,
   type RaryStore,
+  validateLarryManifest,
 } from './rary.js';
 import { homedir } from 'os';
+import { ACTION_MAP } from './actions.js';
 
 interface Result {
   success: boolean;
@@ -130,6 +133,39 @@ function pickStatus(): { pose: LarryStatusPose; flavor: FlavorLines } {
   return STATUS_PRESETS[Math.floor(Math.random() * STATUS_PRESETS.length)]!;
 }
 
+function formatManifestValidationError(issues: string[]): string {
+  return [
+    'Invalid larry.json:',
+    ...issues.map(issue => `- ${issue}`),
+  ].join('\n');
+}
+
+function findActivationConflicts(store: RaryStore, pkgName: string, manifest: LarryManifest): {
+  builtinCollisions: string[];
+  extensionCollisions: Array<{ actionName: string; packages: string[] }>;
+} {
+  const builtinCollisions = Object.keys(manifest.actions || {}).filter(actionName => actionName in ACTION_MAP);
+  const activeOwners = new Map<string, string[]>();
+
+  for (const { name, manifest: activeManifest } of store.getActiveExtensions()) {
+    if (name === pkgName || !activeManifest?.actions) continue;
+    for (const actionName of Object.keys(activeManifest.actions)) {
+      const owners = activeOwners.get(actionName) || [];
+      owners.push(name);
+      activeOwners.set(actionName, owners);
+    }
+  }
+
+  const extensionCollisions = Object.keys(manifest.actions || {})
+    .map(actionName => ({
+      actionName,
+      packages: activeOwners.get(actionName) || [],
+    }))
+    .filter(conflict => conflict.packages.length > 0);
+
+  return { builtinCollisions, extensionCollisions };
+}
+
 // --- Factory: create commands bound to a store ---
 
 export function createRaryCommands(store: RaryStore) {
@@ -172,10 +208,6 @@ export function createRaryCommands(store: RaryStore) {
 
     // Determine package name (may be overridden by manifest.name later)
     let pkgName = subdir ? basename(subdir) : basename(repoSpec).replace(/\.git$/, '') || repoSpec;
-
-    if (store.isInstalled(pkgName)) {
-      return { success: false, error: `Package "${pkgName}" already installed. Use \`pw rary destroy ${pkgName}\` first.` };
-    }
 
     // --- Fetch repo/path into temp or target ---
 
@@ -224,21 +256,28 @@ export function createRaryCommands(store: RaryStore) {
       return { success: false, error: `No larry.json found in ${subdir ? `"${subdir}" subdirectory of ` : ''}"${repoSpec}". Not a valid rary package.` };
     }
 
-    // Read manifest to resolve package name
+    // Read and validate manifest before copying to toybox
+    let manifestData: LarryManifest;
     try {
-      const manifestData = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-      if (manifestData.name && typeof manifestData.name === 'string') {
-        // Check if manifest name differs from directory-derived name
-        if (manifestData.name !== pkgName) {
-          // Use manifest name, but check for conflicts
-          if (store.isInstalled(manifestData.name)) {
-            if (tempDir) cleanupTemp(tempDir);
-            return { success: false, error: `Package "${manifestData.name}" (from manifest) already installed. Use \`pw rary destroy ${manifestData.name}\` first.` };
-          }
-          pkgName = manifestData.name;
-        }
-      }
-    } catch {}
+      manifestData = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    } catch (err) {
+      if (tempDir) cleanupTemp(tempDir);
+      return { success: false, error: `Invalid larry.json: ${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    const manifestIssues = validateLarryManifest(manifestData, { packageDir: sourceDir });
+    if (manifestIssues.length > 0) {
+      if (tempDir) cleanupTemp(tempDir);
+      return { success: false, error: formatManifestValidationError(manifestIssues) };
+    }
+
+    if (manifestData.name !== pkgName) {
+      pkgName = manifestData.name;
+    }
+    if (store.isInstalled(pkgName)) {
+      if (tempDir) cleanupTemp(tempDir);
+      return { success: false, error: `Package "${pkgName}" already installed. Use \`pw rary destroy ${pkgName}\` first.` };
+    }
 
     // Copy package to toybox
     const targetDir = store.packageDir(pkgName);
@@ -456,8 +495,38 @@ export function createRaryCommands(store: RaryStore) {
       return { success: false, error: `Package "${name}" is type "${manifest.type || 'script'}", not an extension. Script packages don't need \`put\`.` };
     }
 
+    const manifestIssues = validateLarryManifest(manifest, { packageDir: store.packageDir(name) });
+    if (manifestIssues.length > 0) {
+      return { success: false, error: formatManifestValidationError(manifestIssues) };
+    }
+
     if (store.isExtensionActive(name)) {
       return { success: true, data: { message: `Extension "${name}" is already active.`, package: name } };
+    }
+
+    const { builtinCollisions, extensionCollisions } = findActivationConflicts(store, name, manifest);
+    if (builtinCollisions.length > 0) {
+      return {
+        success: false,
+        error: [
+          `Cannot activate extension "${name}" because it defines action names that collide with built-ins: ${builtinCollisions.join(', ')}`,
+          'Rename those actions in larry.json and try again.',
+        ].join('\n'),
+      };
+    }
+    if (extensionCollisions.length > 0) {
+      const conflictingPackages = [...new Set(extensionCollisions.flatMap(conflict => conflict.packages))];
+      const guidance = conflictingPackages.length === 1
+        ? `Run \`pw rary ignore ${conflictingPackages[0]}\` (or \`pw rary snub ${conflictingPackages[0]}\`) first, then retry \`pw rary put ${name}\`.`
+        : `Ignore one of the conflicting extensions first with \`pw rary ignore <package>\` (or \`pw rary snub <package>\`), then retry \`pw rary put ${name}\`. Conflicting packages: ${conflictingPackages.map(pkg => `"${pkg}"`).join(', ')}.`;
+      return {
+        success: false,
+        error: [
+          `Cannot activate extension "${name}" because custom action names are already active:`,
+          ...extensionCollisions.map(conflict => `- "${conflict.actionName}" is already provided by ${conflict.packages.map(pkg => `"${pkg}"`).join(', ')}`),
+          guidance,
+        ].join('\n'),
+      };
     }
 
     store.activateExtension(name);

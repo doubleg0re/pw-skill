@@ -29,6 +29,7 @@ async function findFreePort(): Promise<number> {
   // This gives us a real persistent Chrome profile that survives restarts
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless,
+    viewport: null,
     args: [
       '--no-first-run',
       '--no-default-browser-check',

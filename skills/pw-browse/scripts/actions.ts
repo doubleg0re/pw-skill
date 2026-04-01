@@ -30,6 +30,8 @@ import { createElementRegistry, resolveElementKey } from './element-registry.js'
 import { normalizeAuthHeader, resolveFetchCredentials } from './fetch-utils.js';
 import { localStateDir, getSession, getDocumentEpoch } from './session.js';
 import { findTabByPageIndex, findTabByUrl } from './tab-registry.js';
+import { runConsoleCommand } from './console-runtime.js';
+import { runNetworkCommand } from './network-runtime.js';
 
 /** Flexible argument type for actions */
 export type ActionArgs = string[] | Record<string, any>;
@@ -38,6 +40,35 @@ export type ActionArgs = string[] | Record<string, any>;
 function getArg(a: ActionArgs, name: string, index: number): any {
   if (Array.isArray(a)) return a[index];
   return a[name] ?? a[index]; // fallback to index if name not found
+}
+
+function actionArgsToCliArgs(a: ActionArgs): string[] {
+  if (Array.isArray(a)) return a.map(value => String(value));
+
+  const positionals = Object.keys(a)
+    .filter(key => /^\d+$/.test(key))
+    .sort((lhs, rhs) => Number(lhs) - Number(rhs))
+    .map(key => String(a[key]));
+
+  const flags = Object.entries(a)
+    .filter(([key]) => !/^\d+$/.test(key))
+    .flatMap(([key, value]) => {
+      if (value === undefined || value === null || value === false) return [];
+      if (value === true) return [`--${key}`];
+      return [`--${key}=${String(value)}`];
+    });
+
+  return [...positionals, ...flags];
+}
+
+function parseCliFlag(args: string[], flag: string): string | undefined {
+  const prefix = `--${flag}=`;
+  const found = args.find(arg => arg.startsWith(prefix));
+  return found ? found.slice(prefix.length) : undefined;
+}
+
+function hasCliFlag(args: string[], flag: string): boolean {
+  return args.includes(`--${flag}`);
 }
 
 /**
@@ -721,6 +752,42 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
   };
 }
 
+export async function actionConsole(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const cliArgs = actionArgsToCliArgs(a);
+  const positionals = cliArgs.filter(arg => !arg.startsWith('--'));
+  const command = positionals[0];
+  const result = await runConsoleCommand(page, {
+    command,
+    filters: positionals.slice(1),
+    raw: hasCliFlag(cliArgs, 'raw'),
+    redactionLevel: parseCliFlag(cliArgs, 'redaction-level'),
+  });
+  if (!result.success) {
+    throw new Error(result.error || 'console action failed');
+  }
+  return { result: result.data };
+}
+
+export async function actionNetwork(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const cliArgs = actionArgsToCliArgs(a);
+  const positionals = cliArgs.filter(arg => !arg.startsWith('--'));
+  const bodyLimitRaw = parseCliFlag(cliArgs, 'body-limit');
+  const bodyLimit = bodyLimitRaw ? (parseInt(bodyLimitRaw, 10) || 5000) : undefined;
+  const result = await runNetworkCommand(page, {
+    command: positionals[0],
+    pattern: positionals[1],
+    raw: hasCliFlag(cliArgs, 'raw'),
+    redactionLevel: parseCliFlag(cliArgs, 'redaction-level'),
+    body: hasCliFlag(cliArgs, 'body'),
+    json: hasCliFlag(cliArgs, 'json'),
+    bodyLimit,
+  });
+  if (!result.success) {
+    throw new Error(result.error || 'network action failed');
+  }
+  return { result: result.data };
+}
+
 export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: ActionRuntime) => Promise<{ result?: any }>> = {
   navigate: actionNavigate,
   nav: actionNavigate,
@@ -745,5 +812,7 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: Ac
   evaluate: actionEvaluate,
   eval: actionEvaluate,
   dump: actionDump,
+  console: actionConsole,
+  network: actionNetwork,
   assert: actionAssert,
 };

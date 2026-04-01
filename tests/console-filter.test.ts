@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterLines } from '../skills/pw-browse/scripts/console.js';
+import { filterLines } from '../skills/pw-browse/scripts/console-runtime.js';
 
 const SAMPLE_LOGS = [
   '[2026-03-27T00:00:00.000Z] [LOG] page loaded',

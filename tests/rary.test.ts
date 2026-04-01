@@ -354,6 +354,37 @@ describe('rary commands (injected store)', () => {
     expect(result.error).toContain('not an extension');
   });
 
+  it('put rejects duplicate action names and tells the user how to resolve them', () => {
+    seedPackage('alpha', {
+      name: 'alpha',
+      version: '1.0.0',
+      type: 'extension',
+      actions: {
+        'shared-action': { entry: 'actions/shared-action.js' },
+      },
+    }, {
+      'actions/shared-action.js': 'export default async () => ({ result: { ok: true } });',
+    });
+    seedPackage('beta', {
+      name: 'beta',
+      version: '1.0.0',
+      type: 'extension',
+      actions: {
+        'shared-action': { entry: 'actions/shared-action.js' },
+      },
+    }, {
+      'actions/shared-action.js': 'export default async () => ({ result: { ok: true } });',
+    });
+    store.activateExtension('alpha');
+
+    const result = cmds().put(['beta']);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('shared-action');
+    expect(result.error).toContain('pw rary ignore alpha');
+    expect(result.error).toContain('pw rary snub alpha');
+    expect(store.isExtensionActive('beta')).toBe(false);
+  });
+
   it('ignore deactivates extension', () => {
     seedPackage('ext', { name: 'ext', version: '1.0.0', type: 'extension' });
     store.activateExtension('ext');
@@ -430,6 +461,35 @@ describe('rary commands (injected store)', () => {
     expect(result.success).toBe(true);
     expect(store.isInstalled('source-pkg')).toBe(true);
     expect(result.data.flavor).toBeUndefined();
+  });
+
+  it('get rejects invalid larry.json JSON', async () => {
+    const sourceDir = join(TEST_DIR, 'bad-json-pkg');
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, 'larry.json'), '{"name":"bad-json-pkg",');
+
+    const result = await cmds().get([sourceDir]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid larry.json');
+    expect(store.isInstalled('bad-json-pkg')).toBe(false);
+  });
+
+  it('get validates manifest entries before install', async () => {
+    const sourceDir = join(TEST_DIR, 'bad-entry-pkg');
+    mkdirSync(join(sourceDir, 'actions'), { recursive: true });
+    writeFileSync(join(sourceDir, 'larry.json'), JSON.stringify({
+      name: 'bad-entry-pkg',
+      version: '1.0.0',
+      type: 'extension',
+      actions: {
+        'missing-action': { entry: 'actions/missing-action.js' },
+      },
+    }));
+
+    const result = await cmds().get([sourceDir]);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Action entry not found');
+    expect(store.isInstalled('bad-entry-pkg')).toBe(false);
   });
 
   it('yoink remains as alias for get', async () => {

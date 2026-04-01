@@ -619,6 +619,13 @@ describe('validateSteps', () => {
     ])).toEqual([]);
   });
 
+  it('accepts console and network actions', () => {
+    expect(validateSteps([
+      { action: 'network', args: ['inject'] },
+      { action: 'console', args: ['dump'] },
+    ])).toEqual([]);
+  });
+
   it('detects unknown action', () => {
     const errors = validateSteps([{ action: 'banana' }]);
     expect(errors[0]).toContain('unknown action');

@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 const CHAINABLE_ACTIONS = new Set([
   'navigate', 'screenshot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
   'fill', 'type', 'select', 'upload', 'submit',
-  'dump', 'attr', 'wait', 'fetch', 'evaluate',
+  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'console', 'network',
 ]);
 
 const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'video', 'no-restore']);
@@ -117,7 +117,7 @@ describe('pw chaining: buildStepArgs', () => {
 
 describe('pw chaining: CHAINABLE_ACTIONS', () => {
   it('includes common browser actions', () => {
-    for (const action of ['navigate', 'click', 'fill', 'dump', 'screenshot', 'evaluate']) {
+    for (const action of ['navigate', 'click', 'fill', 'dump', 'screenshot', 'evaluate', 'console', 'network']) {
       expect(CHAINABLE_ACTIONS.has(action)).toBe(true);
     }
   });

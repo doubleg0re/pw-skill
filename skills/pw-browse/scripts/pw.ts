@@ -11,7 +11,7 @@ const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS = [
   'navigate', 'nav', 'refresh', 'reload', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
   'fill', 'type', 'select', 'sel', 'upload', 'submit',
-  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert',
+  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert', 'console', 'network',
 ] as const;
 const CHAINABLE_ACTION_SET = new Set(CHAINABLE_ACTIONS);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
@@ -280,7 +280,7 @@ Global flags:
   --session=N    Target specific session (name or ID)
   --tab=N        Target specific tab (default: 0)
   --headed       Show browser window
-  --viewport=WxH Viewport size (default: 1920x1080)
+  --viewport=auto|WxH Viewport size (default: auto)
   --video[=name] Enable video recording
 `.trim();
 }
@@ -325,7 +325,7 @@ if (args.includes('::')) {
   if (rejected.length > 0) {
     console.log(JSON.stringify({
       success: false,
-      error: `pw chaining only supports built-in browser actions. Not chainable: ${rejected.map(r => `"${r}"`).join(', ')}. Supported: ${CHAINABLE_ACTIONS_TEXT}. Custom extension actions and commands like launch, close, rary, and analyze must use separate pw commands or \`pw sequence\`.`,
+      error: `pw chaining only supports built-in chainable actions. Not chainable: ${rejected.map(r => `"${r}"`).join(', ')}. Supported: ${CHAINABLE_ACTIONS_TEXT}. Custom extension actions and commands like launch, close, rary, and analyze must use separate pw commands or \`pw sequence\`.`,
     }));
     process.exit(1);
   }

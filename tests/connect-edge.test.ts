@@ -66,6 +66,7 @@ describe('resolveSession — edge cases', () => {
     store.bindSession('dead');
     const session = store.resolveSession();
     expect(session.name).toBe('alive');
+    expect(store.getBoundSession()).toBe('alive');
   });
 
   it('dead session resume keeps profile', () => {

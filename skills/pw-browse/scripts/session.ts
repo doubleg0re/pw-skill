@@ -29,6 +29,11 @@ export interface SessionStoreOptions {
   localDir: string;
 }
 
+export interface ResolvedSessionResult {
+  session: SessionInfo;
+  warnings: string[];
+}
+
 // --- ID Generation ---
 
 export function generateSessionId(): string {
@@ -214,30 +219,49 @@ export function createSessionStore(opts: SessionStoreOptions) {
 
     // --- Resolution ---
 
-    resolveSession(sessionFlag?: string): SessionInfo {
+    resolveSessionWithContext(sessionFlag?: string): ResolvedSessionResult {
       // 1. Explicit --session
       if (sessionFlag) {
         const session = this.getSession(sessionFlag);
         if (!session) throw new Error(`Session "${sessionFlag}" not found`);
         if (!isProcessAlive(session.pid)) throw new Error(`Session "${sessionFlag}" is not running (pid ${session.pid} dead)`);
-        return session;
+        return { session, warnings: [] };
       }
 
       // 2. Bound session (pw use)
       const bound = this.getBoundSession();
       if (bound) {
         const session = this.getSession(bound);
-        if (session && isProcessAlive(session.pid)) return session;
+        if (session && isProcessAlive(session.pid)) {
+          return { session, warnings: [] };
+        }
       }
 
       // 3. Only one alive session → auto-select
       const alive = this.listSessions().filter(s => isProcessAlive(s.pid));
-      if (alive.length === 1) return alive[0];
+      if (alive.length === 1) {
+        const session = alive[0];
+        const warnings: string[] = [];
+
+        if (!bound) {
+          this.bindSession(session.name);
+          warnings.push(`No session was bound for this cwd. Auto-bound "${session.name}".`);
+        } else if (bound !== session.name) {
+          this.bindSession(session.name);
+          warnings.push(`Bound session "${bound}" was unavailable. Auto-bound "${session.name}".`);
+        }
+
+        return { session, warnings };
+      }
       if (alive.length === 0) throw new Error('No active sessions. Run `pw launch` first.');
       throw new Error(
         `Multiple active sessions. Specify --session=<name> or run \`pw use <name>\`.\n` +
         `Active: ${alive.map(s => s.name).join(', ')}`
       );
+    },
+
+    resolveSession(sessionFlag?: string): SessionInfo {
+      return this.resolveSessionWithContext(sessionFlag).session;
     },
 
     // --- Profile ---
@@ -280,6 +304,7 @@ export const cleanupDeadSessions = defaultStore.cleanupDeadSessions.bind(default
 export const getBoundSession = defaultStore.getBoundSession.bind(defaultStore);
 export const bindSession = defaultStore.bindSession.bind(defaultStore);
 export const unbindSession = defaultStore.unbindSession.bind(defaultStore);
+export const resolveSessionWithContext = defaultStore.resolveSessionWithContext.bind(defaultStore);
 export const resolveSession = defaultStore.resolveSession.bind(defaultStore);
 export const sessionUserDataDir = defaultStore.sessionUserDataDir.bind(defaultStore);
 export const hasProfile = defaultStore.hasProfile.bind(defaultStore);

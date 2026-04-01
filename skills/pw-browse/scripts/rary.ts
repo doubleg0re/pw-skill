@@ -66,6 +66,174 @@ function hasActionNamespace(actionName: string): boolean {
   return actionName.includes('-');
 }
 
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function validateEntryPath(
+  issues: string[],
+  packageDir: string | undefined,
+  label: string,
+  entry: unknown,
+  missingMessage: (entryPath: string) => string,
+): void {
+  if (!isNonEmptyString(entry)) {
+    issues.push(`${label}: expected non-empty string`);
+    return;
+  }
+  if (packageDir && !existsSync(join(packageDir, entry))) {
+    issues.push(missingMessage(entry));
+  }
+}
+
+export function validateLarryManifest(manifest: unknown, opts: { packageDir?: string } = {}): string[] {
+  const { packageDir } = opts;
+  const issues: string[] = [];
+
+  if (!isPlainObject(manifest)) {
+    return ['Manifest must be a JSON object'];
+  }
+
+  if (!isNonEmptyString(manifest.name)) {
+    issues.push('Missing or invalid "name" in larry.json');
+  }
+  if (!isNonEmptyString(manifest.version)) {
+    issues.push('Missing or invalid "version" in larry.json');
+  }
+  if (manifest.description !== undefined && typeof manifest.description !== 'string') {
+    issues.push('Invalid "description" in larry.json: expected string');
+  }
+  if (manifest.type !== undefined && manifest.type !== 'script' && manifest.type !== 'extension') {
+    issues.push('Invalid "type" in larry.json: expected "script" or "extension"');
+  }
+  if (manifest.entry !== undefined) {
+    validateEntryPath(
+      issues,
+      packageDir,
+      'Invalid "entry" in larry.json',
+      manifest.entry,
+      (entryPath) => `Entry file not found: ${entryPath}`,
+    );
+  }
+
+  if (manifest.commands !== undefined) {
+    if (!Array.isArray(manifest.commands)) {
+      issues.push('Invalid "commands" in larry.json: expected array');
+    } else {
+      for (const [index, cmd] of manifest.commands.entries()) {
+        if (!isPlainObject(cmd)) {
+          issues.push(`Invalid command at index ${index}: expected object`);
+          continue;
+        }
+        if (!isNonEmptyString(cmd.name)) {
+          issues.push(`Invalid command name at index ${index}: expected non-empty string`);
+        }
+        validateEntryPath(
+          issues,
+          packageDir,
+          `Invalid command entry for "${cmd.name || `index ${index}`}"`,
+          cmd.entry,
+          (entryPath) => `Command entry not found: ${cmd.name || `index ${index}`} -> ${entryPath}`,
+        );
+      }
+    }
+  }
+
+  if (manifest.hooks !== undefined) {
+    if (!isPlainObject(manifest.hooks)) {
+      issues.push('Invalid "hooks" in larry.json: expected object');
+    } else {
+      for (const [hookName, hook] of Object.entries(manifest.hooks)) {
+        if (!isPlainObject(hook)) {
+          issues.push(`Invalid hook definition for "${hookName}": expected object`);
+          continue;
+        }
+        validateEntryPath(
+          issues,
+          packageDir,
+          `Invalid hook entry for "${hookName}"`,
+          hook.entry,
+          (entryPath) => `Hook entry not found: ${hookName} -> ${entryPath}`,
+        );
+        if (hook.scope !== undefined && !['page', 'session', 'context', 'once'].includes(hook.scope)) {
+          issues.push(`Invalid hook scope for "${hookName}": expected one of page, session, context, once`);
+        }
+      }
+    }
+  }
+
+  if (manifest.rolling !== undefined) {
+    if (!isPlainObject(manifest.rolling)) {
+      issues.push('Invalid "rolling" in larry.json: expected object');
+    } else {
+      validateEntryPath(
+        issues,
+        packageDir,
+        'Invalid rolling entry',
+        manifest.rolling.entry,
+        (entryPath) => `Rolling entry not found: ${entryPath}`,
+      );
+    }
+  }
+
+  if (manifest.events !== undefined) {
+    if (!isPlainObject(manifest.events)) {
+      issues.push('Invalid "events" in larry.json: expected object');
+    } else {
+      for (const [eventName, eventDef] of Object.entries(manifest.events)) {
+        if (!isPlainObject(eventDef)) {
+          issues.push(`Invalid event handler definition for "${eventName}": expected object`);
+          continue;
+        }
+        validateEntryPath(
+          issues,
+          packageDir,
+          `Invalid event handler entry for "${eventName}"`,
+          eventDef.entry,
+          (entryPath) => `Event handler entry not found: ${eventName} -> ${entryPath}`,
+        );
+      }
+    }
+  }
+
+  if (manifest.actions !== undefined) {
+    if (!isPlainObject(manifest.actions)) {
+      issues.push('Invalid "actions" in larry.json: expected object');
+    } else {
+      for (const [actionName, actionDef] of Object.entries(manifest.actions)) {
+        if (!hasActionNamespace(actionName)) {
+          issues.push(`Action name must include "-" to distinguish extension actions: ${actionName}`);
+        }
+        if (!isPlainObject(actionDef)) {
+          issues.push(`Invalid action definition for "${actionName}": expected object`);
+          continue;
+        }
+        validateEntryPath(
+          issues,
+          packageDir,
+          `Invalid action entry for "${actionName}"`,
+          actionDef.entry,
+          (entryPath) => `Action entry not found: ${actionName} -> ${entryPath}`,
+        );
+      }
+    }
+  }
+
+  if (manifest.extension !== undefined) {
+    if (!isPlainObject(manifest.extension)) {
+      issues.push('Invalid "extension" in larry.json: expected object');
+    } else if (manifest.extension.scope !== undefined && typeof manifest.extension.scope !== 'string') {
+      issues.push('Invalid extension scope in larry.json: expected string');
+    }
+  }
+
+  return issues;
+}
+
 // --- Store factory ---
 
 function ensureDir(dir: string): void {

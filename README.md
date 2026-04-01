@@ -131,6 +131,7 @@ pwi navigate url :: click "#login" :: screenshot
 
 # Options
 pwi navigate url --headed          # show browser window
+pwi navigate url                   # auto viewport (follow browser window)
 pwi navigate url --viewport=800x600
 ```
 
@@ -225,7 +226,7 @@ When you run a `pw` command, the session is resolved in this order:
 | `--session=N` | `pw` commands only | Target a specific named session |
 | `--tab=N` | `pw` commands only | Target a specific tab (default: 0) |
 | `--headed` | `pw` and `pwi` | Show browser window |
-| `--viewport=WxH` | `pw` and `pwi` | Set viewport size (default: 1920x1080) |
+| `--viewport=auto\|WxH` | `pw` and `pwi` | Use auto viewport by default, or set an explicit size |
 | `--video[=name]` | `pw` commands only | Enable video recording |
 | `--screenshot` | `pw` and `pwi` | Take screenshot after action |
 | `--screenshot-path=dir` | `pw launch` | Pin session screenshots to a stable directory |
@@ -408,7 +409,7 @@ All commands support these flags:
 --session=N    Target specific session
 --tab=N        Target specific tab (default: 0)
 --headed       Show browser window
---viewport=WxH Viewport size (default: 1920x1080)
+--viewport=auto|WxH Viewport size (default: auto)
 --video[=name] Enable video recording
 --raw          Bypass truncation/masking in console/network dump
 ```

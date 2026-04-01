@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { spawn } from 'child_process';
 import {
-  resolveSession,
+  resolveSessionWithContext,
   createSession,
   getSession,
   updateSession,
@@ -13,6 +13,7 @@ import {
   localStateDir,
   globalSessionDir,
   generateSessionId,
+  bindSession,
   type SessionInfo,
 } from './session.js';
 
@@ -124,13 +125,28 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
 
 interface ConnectOptions {
   headless?: boolean;
-  viewport?: { width: number; height: number };
+  viewport?: { width: number; height: number } | null;
   video?: boolean;
   sessionName?: string;
   restoreUrl?: boolean; // restore lastUrl on reconnect (default: true)
 }
 
-const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
+const DEFAULT_VIEWPORT = null;
+
+function buildRecordVideoOptions(
+  videoDir: string,
+  viewport: { width: number; height: number } | null,
+): { dir: string; size?: { width: number; height: number } } {
+  return viewport ? { dir: videoDir, size: viewport } : { dir: videoDir };
+}
+
+function parseViewportSpec(viewportStr?: string): { width: number; height: number } | null {
+  if (!viewportStr || viewportStr === 'auto') return DEFAULT_VIEWPORT;
+  return {
+    width: parseInt(viewportStr.split('x')[0]),
+    height: parseInt(viewportStr.split('x')[1]),
+  };
+}
 
 /**
  * Connect to an existing session's browser, or launch a new one.
@@ -141,16 +157,20 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
   context: BrowserContext;
   page: Page;
   session: SessionInfo;
+  warnings: string[];
 }> {
   const headless = options.headless ?? true;
   const viewport = options.viewport ?? DEFAULT_VIEWPORT;
   const video = options.video ?? false;
   const videoDir = join(LOCAL_STATE_DIR, 'videos');
+  const warnings: string[] = [];
 
   // Resolve which session to use
   let session: SessionInfo;
   try {
-    session = resolveSession(options.sessionName);
+    const resolved = resolveSessionWithContext(options.sessionName);
+    session = resolved.session;
+    warnings.push(...resolved.warnings);
   } catch (err) {
     // If session was explicitly specified, propagate the error — don't silently create a new one
     if (options.sessionName) {
@@ -174,15 +194,15 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
           const newCtx = await browser.newContext({
             viewport,
             acceptDownloads: true,
-            recordVideo: { dir: videoDir, size: viewport },
+            recordVideo: buildRecordVideoOptions(videoDir, viewport),
             ...(state ? { storageState: state } : {}),
           });
           const page = await newCtx.newPage();
-          return { browser, context: newCtx, page, session };
+          return { browser, context: newCtx, page, session, warnings };
         }
         const pages = ctx.pages();
         const page = pages.length > 0 ? pages[0] : await ctx.newPage();
-        return { browser, context: ctx, page, session };
+        return { browser, context: ctx, page, session, warnings };
       }
 
       // No context — create one
@@ -192,10 +212,10 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
         viewport,
         acceptDownloads: true,
         ...(storageState ? { storageState } : {}),
-        ...(video ? { recordVideo: { dir: videoDir, size: viewport } } : {}),
+        ...(video ? { recordVideo: buildRecordVideoOptions(videoDir, viewport) } : {}),
       });
       const page = await ctx.newPage();
-      return { browser, context: ctx, page, session };
+      return { browser, context: ctx, page, session, warnings };
     } catch {
       // CDP failed — fall through to PW WebSocket or relaunch
     }
@@ -211,7 +231,7 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
       viewport,
       acceptDownloads: true,
       ...(storageState ? { storageState } : {}),
-      ...(video ? { recordVideo: { dir: videoDir, size: viewport } } : {}),
+      ...(video ? { recordVideo: buildRecordVideoOptions(videoDir, viewport) } : {}),
     });
     const page = await ctx.newPage();
 
@@ -220,7 +240,7 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
       await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     }
 
-    return { browser, context: ctx, page, session };
+    return { browser, context: ctx, page, session, warnings };
   }
 
   // Session exists but port is dead — clean up and relaunch with same profile
@@ -229,13 +249,13 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
 
 async function launchNewSession(opts: {
   headless: boolean;
-  viewport: { width: number; height: number };
+  viewport: { width: number; height: number } | null;
   video: boolean;
   videoDir: string;
   screenshotDir?: string;
   resumeName?: string;
   name?: string;
-}): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo }> {
+}): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo; warnings: string[] }> {
   const sessionName = opts.resumeName || opts.name || `s-${generateSessionId()}`;
   const userDataDir = sessionUserDataDir(sessionName);
 
@@ -252,6 +272,7 @@ async function launchNewSession(opts: {
   if (cdpEndpoint) {
     updateSession(sessionName, { cdpEndpoint });
   }
+  bindSession(sessionName);
 
   // Prefer CDP for context persistence, fallback to PW WebSocket
   const browser = cdpEndpoint
@@ -271,7 +292,7 @@ async function launchNewSession(opts: {
     ctx = await browser.newContext({
       viewport: opts.viewport,
       acceptDownloads: true,
-      recordVideo: { dir: opts.videoDir, size: opts.viewport },
+      recordVideo: buildRecordVideoOptions(opts.videoDir, opts.viewport),
       ...(storageState ? { storageState } : {}),
     });
     page = await ctx.newPage();
@@ -290,7 +311,7 @@ async function launchNewSession(opts: {
     });
     page = await ctx.newPage();
   }
-  return { browser, context: ctx, page, session };
+  return { browser, context: ctx, page, session, warnings: [] };
 }
 
 /**
@@ -301,10 +322,10 @@ export async function launchSession(opts: {
   name?: string;
   resume?: string;
   headless: boolean;
-  viewport: { width: number; height: number };
+  viewport: { width: number; height: number } | null;
   video: boolean;
   screenshotDir?: string;
-}): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo }> {
+}): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo; warnings: string[] }> {
   const videoDir = join(LOCAL_STATE_DIR, 'videos');
 
   if (opts.resume) {
@@ -518,16 +539,14 @@ export async function run(
     const cliArgs = parseArgs();
     const headed = hasFlag(cliArgs, 'headed');
     const viewportStr = parseFlag(cliArgs, 'viewport');
-    const viewport = viewportStr
-      ? { width: parseInt(viewportStr.split('x')[0]), height: parseInt(viewportStr.split('x')[1]) }
-      : DEFAULT_VIEWPORT;
+    const viewport = parseViewportSpec(viewportStr);
 
     const videoName = parseFlag(cliArgs, 'video');
     const videoEnabled = videoName !== undefined || hasFlag(cliArgs, 'video');
     const sessionName = parseFlag(cliArgs, 'session');
     const noRestore = hasFlag(cliArgs, 'no-restore');
 
-    const { browser, context, page: defaultPage, session } = await connectBrowser({
+    const { browser, context, page: defaultPage, session, warnings: bindingWarnings } = await connectBrowser({
       headless: !headed,
       viewport,
       video: videoEnabled,
@@ -585,6 +604,9 @@ export async function run(
     });
 
     // Merge hook errors into warnings
+    if (bindingWarnings.length > 0) {
+      result.warnings = [...(result.warnings || []), ...bindingWarnings];
+    }
     if (hookErrors.length > 0) {
       result.warnings = [...(result.warnings || []), ...hookErrors.map(e => `Extension hook error: ${e}`)];
     }
