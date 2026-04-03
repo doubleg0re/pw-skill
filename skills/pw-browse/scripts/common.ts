@@ -554,6 +554,26 @@ export async function run(
       restoreUrl: !noRestore,
     });
 
+    // Register dialog handler to prevent Playwright's internal auto-dismiss CDP race condition.
+    // For standalone commands, auto-accept beforeunload and dismiss others.
+    // When sequence.ts sets dialogState on options, its handler takes precedence via
+    // the dialogState.pending field — this handler only acts as a fallback.
+    const dialogHandler = (d: import('playwright').Dialog) => {
+      // If sequence's dialogState is active, let sequence handle it (don't auto-dismiss)
+      if ((context as any).__pwDialogState) {
+        return;
+      }
+      if (d.type() === 'beforeunload') {
+        d.accept().catch(() => {});
+      } else {
+        d.dismiss().catch(() => {});
+      }
+    };
+    context.on('page', p => p.on('dialog', dialogHandler));
+    for (const p of context.pages()) {
+      p.on('dialog', dialogHandler);
+    }
+
     // Save video metadata for rename on close
     if (videoEnabled && videoName) {
       ensureStateDir();

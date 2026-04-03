@@ -755,12 +755,16 @@ export async function actionDump(page: Page, a: ActionArgs): Promise<{ result?: 
 export async function actionConsole(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const cliArgs = actionArgsToCliArgs(a);
   const positionals = cliArgs.filter(arg => !arg.startsWith('--'));
-  const command = positionals[0];
+  const rawFilters = Array.isArray(a)
+    ? positionals.slice(1) // strip flags before selecting positionals
+    : ((a as any).filters || Object.keys(a).filter(k => /^\d+$/.test(k) && Number(k) > 0).sort((x, y) => Number(x) - Number(y)).map(k => String((a as any)[k])));
+  // Normalize: string → single-element array
+  const filters = typeof rawFilters === 'string' ? [rawFilters] : rawFilters;
   const result = await runConsoleCommand(page, {
-    command,
-    filters: positionals.slice(1),
-    raw: hasCliFlag(cliArgs, 'raw'),
-    redactionLevel: parseCliFlag(cliArgs, 'redaction-level'),
+    command: getArg(a, 'command', 0) ?? positionals[0],
+    filters,
+    raw: getArg(a, 'raw', -1) === true || hasCliFlag(cliArgs, 'raw'),
+    redactionLevel: getArg(a, 'redactionLevel', -1) || parseCliFlag(cliArgs, 'redaction-level'),
   });
   if (!result.success) {
     throw new Error(result.error || 'console action failed');
@@ -771,15 +775,15 @@ export async function actionConsole(page: Page, a: ActionArgs): Promise<{ result
 export async function actionNetwork(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const cliArgs = actionArgsToCliArgs(a);
   const positionals = cliArgs.filter(arg => !arg.startsWith('--'));
-  const bodyLimitRaw = parseCliFlag(cliArgs, 'body-limit');
-  const bodyLimit = bodyLimitRaw ? (parseInt(bodyLimitRaw, 10) || 5000) : undefined;
+  const bodyLimitRaw = getArg(a, 'bodyLimit', -1) || parseCliFlag(cliArgs, 'body-limit');
+  const bodyLimit = bodyLimitRaw ? (parseInt(String(bodyLimitRaw), 10) || 5000) : undefined;
   const result = await runNetworkCommand(page, {
-    command: positionals[0],
-    pattern: positionals[1],
-    raw: hasCliFlag(cliArgs, 'raw'),
-    redactionLevel: parseCliFlag(cliArgs, 'redaction-level'),
-    body: hasCliFlag(cliArgs, 'body'),
-    json: hasCliFlag(cliArgs, 'json'),
+    command: getArg(a, 'command', 0) ?? positionals[0],
+    pattern: getArg(a, 'pattern', 1) ?? positionals[1],
+    raw: getArg(a, 'raw', -1) === true || hasCliFlag(cliArgs, 'raw'),
+    redactionLevel: getArg(a, 'redactionLevel', -1) || parseCliFlag(cliArgs, 'redaction-level'),
+    body: getArg(a, 'body', -1) === true || hasCliFlag(cliArgs, 'body'),
+    json: getArg(a, 'json', -1) === true || hasCliFlag(cliArgs, 'json'),
     bodyLimit,
   });
   if (!result.success) {

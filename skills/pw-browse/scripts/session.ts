@@ -261,7 +261,30 @@ export function createSessionStore(opts: SessionStoreOptions) {
     },
 
     resolveSession(sessionFlag?: string): SessionInfo {
-      return this.resolveSessionWithContext(sessionFlag).session;
+      // Pure read-only lookup — no side effects (no auto-binding).
+      // 1. Explicit --session
+      if (sessionFlag) {
+        const session = this.getSession(sessionFlag);
+        if (!session) throw new Error(`Session "${sessionFlag}" not found`);
+        if (!isProcessAlive(session.pid)) throw new Error(`Session "${sessionFlag}" is not running (pid ${session.pid} dead)`);
+        return session;
+      }
+
+      // 2. Bound session
+      const bound = this.getBoundSession();
+      if (bound) {
+        const session = this.getSession(bound);
+        if (session && isProcessAlive(session.pid)) return session;
+      }
+
+      // 3. Only one alive → return it (but don't bind)
+      const alive = this.listSessions().filter(s => isProcessAlive(s.pid));
+      if (alive.length === 1) return alive[0];
+      if (alive.length === 0) throw new Error('No active sessions. Run `pw launch` first.');
+      throw new Error(
+        `Multiple active sessions. Specify --session=<name> or run \`pw use <name>\`.\n` +
+        `Active: ${alive.map(s => s.name).join(', ')}`
+      );
     },
 
     // --- Profile ---

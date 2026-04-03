@@ -66,7 +66,8 @@ describe('resolveSession — edge cases', () => {
     store.bindSession('dead');
     const session = store.resolveSession();
     expect(session.name).toBe('alive');
-    expect(store.getBoundSession()).toBe('alive');
+    // resolveSession() is pure — stale binding is not overwritten
+    expect(store.getBoundSession()).toBe('dead');
   });
 
   it('dead session resume keeps profile', () => {

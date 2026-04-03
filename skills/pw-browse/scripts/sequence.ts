@@ -262,6 +262,13 @@ export async function executeAction(
 
 // --- Flow engine ---
 
+export interface DialogState {
+  pending: import('playwright').Dialog | null;
+  log: Array<{ type: string; message: string }>;
+  interruptedAction?: Promise<{ result?: any }>;
+  interruptedStep?: { out?: string; action?: string; stepIndex?: number };
+}
+
 export interface RunOptions {
   allowShell?: boolean;
   requestPermission?: boolean;
@@ -272,6 +279,30 @@ export interface RunOptions {
   actionMap?: Record<string, (page: any, args: any, runtime?: any) => Promise<{ result?: any }>>;
   runtime?: any; // ExtensionRuntimeContext for extension actions
   inSubflow?: boolean;
+  dialogState?: DialogState;
+}
+
+async function postActionBookkeeping(action: string, result: any, page: Page, options: RunOptions): Promise<void> {
+  // Emit core tab events after relevant actions
+  if (options.runtime?.emitEvent) {
+    if (action === 'navigate' || action === 'nav') {
+      const { findTabByPageIndex, findTabByUrl, updateTab, assignTabId, buildTabEvent, TAB_EVENTS } = await import('./tab-registry.js');
+      const pageIndex = page.context().pages().indexOf(page);
+      let navTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(result?.url);
+      if (navTab) {
+        updateTab(navTab.tabId, { url: result?.url, title: result?.title });
+      } else {
+        navTab = assignTabId(result?.url, result?.title, pageIndex >= 0 ? pageIndex : undefined);
+      }
+      options.runtime.emitEvent(TAB_EVENTS.NAVIGATED, buildTabEvent(TAB_EVENTS.NAVIGATED, options.runtime.session.name, navTab));
+    }
+  }
+
+  // Advance documentEpoch after navigation/reload actions
+  if (['navigate', 'nav', 'refresh', 'reload'].includes(action) && options.runtime?.session?.name) {
+    const { advanceDocumentEpoch } = await import('./session.js');
+    advanceDocumentEpoch(options.runtime.session.name);
+  }
 }
 
 export async function runSteps(
@@ -282,7 +313,25 @@ export async function runSteps(
   defs: Map<string, DefEntry>,
   baseIndex: number = 0,
   options: RunOptions = {},
-): Promise<{ success: boolean; failedAt?: number; goto?: string; returnValue?: any }> {
+): Promise<{ success: boolean; failedAt?: number; goto?: string; returnValue?: any; pendingDialog?: { type: string; message: string } }> {
+  // --- Dialog state: shared across nested runSteps calls ---
+  const dialogState: DialogState = options.dialogState || { pending: null, log: [] };
+  if (!options.dialogState && typeof page.on === 'function') {
+    // Top-level call with real Playwright page: register dialog listener
+    // Mark context so common.ts handler defers to us
+    try { (page.context() as any).__pwDialogState = true; } catch {}
+    page.on('dialog', d => {
+      dialogState.pending = d;
+      dialogState.log.push({ type: d.type(), message: d.message() });
+      // Auto-dismiss beforeunload to prevent navigation blocking
+      if (d.type() === 'beforeunload') {
+        d.accept().catch(() => {});
+        dialogState.pending = null;
+      }
+    });
+    options = { ...options, dialogState };
+  }
+
   // Debug log helper
   const debugLog = options.debugLog
     ? (stepIdx: number, action: string, status: string, detail?: string) => {
@@ -633,7 +682,7 @@ export async function runSteps(
           vars.set('$index', entry.index);
           vars.set('$key', entry.key);
 
-          const sub = await runSteps(page, body, vars, results, defs, (stepIndex * 1000) + (entry.index * 100));
+          const sub = await runSteps(page, body, vars, results, defs, (stepIndex * 1000) + (entry.index * 100), options);
           if (!sub.success) return sub;
           if (sub.goto) {
             if (labelMap.has(sub.goto)) {
@@ -671,7 +720,7 @@ export async function runSteps(
           // Evaluate condition before each iteration
           if (condNode && !evaluateCondition(condNode, vars)) break;
 
-          const sub = await runSteps(page, body, vars, results, defs, (stepIndex * 1000) + (iteration * 100));
+          const sub = await runSteps(page, body, vars, results, defs, (stepIndex * 1000) + (iteration * 100), options);
           if (!sub.success) return sub;
           if (sub.goto) {
             if (labelMap.has(sub.goto)) {
@@ -792,6 +841,105 @@ export async function runSteps(
         continue;
       }
 
+      // --- dialog action (accept / dismiss / show) ---
+      if (step.action === 'dialog') {
+        // Build args same way as general actions: explicit args, or step's own fields as named args
+        const rawDialogArgs = step.args !== undefined ? step.args : (() => {
+          const { action, out, label, save, retry, comment, ...rest } = step as any;
+          return Object.keys(rest).length > 0 ? rest : [];
+        })();
+        const dialogArgs = vars.interpolateArgs(rawDialogArgs);
+        const subcommand = Array.isArray(dialogArgs) ? dialogArgs[0] : (dialogArgs as any)?.command || dialogArgs?.[0];
+        const dlg = dialogState.pending;
+
+        if (subcommand === 'show' || !subcommand) {
+          results.push({
+            step: stepIndex, action: 'dialog', success: true,
+            data: dlg
+              ? { pending: true, type: dlg.type(), message: dlg.message(), defaultValue: dlg.defaultValue() }
+              : { pending: false },
+          });
+          i++;
+          continue;
+        }
+
+        if (!dlg) {
+          results.push({ step: stepIndex, action: 'dialog', success: false, error: 'No pending dialog' });
+          return { success: false, failedAt: stepIndex };
+        }
+
+        if (subcommand === 'accept') {
+          const promptText = Array.isArray(dialogArgs) ? dialogArgs[1] : (dialogArgs as any)?.text;
+          await dlg.accept(promptText).catch(() => {});
+          results.push({ step: stepIndex, action: 'dialog', success: true, data: { action: 'accept', type: dlg.type(), message: dlg.message() } });
+        } else if (subcommand === 'dismiss') {
+          await dlg.dismiss().catch(() => {});
+          results.push({ step: stepIndex, action: 'dialog', success: true, data: { action: 'dismiss', type: dlg.type(), message: dlg.message() } });
+        } else {
+          results.push({ step: stepIndex, action: 'dialog', success: false, error: `Unknown dialog subcommand: ${subcommand}. Use accept, dismiss, or show.` });
+          return { success: false, failedAt: stepIndex };
+        }
+        dialogState.pending = null;
+        // Await the interrupted action (with dialog re-race) and run normal success bookkeeping
+        if (dialogState.interruptedAction) {
+          const iStep = dialogState.interruptedStep;
+          try {
+            // Re-race against another dialog so we don't deadlock
+            let cancelResumePoll = false;
+            const resumeDialogPromise = new Promise<'dialog'>((resolve) => {
+              const check = () => {
+                if (cancelResumePoll) return;
+                if (dialogState.pending) resolve('dialog');
+                else setTimeout(check, 50);
+              };
+              setTimeout(check, 10);
+            });
+            const resumeRace = await Promise.race([
+              dialogState.interruptedAction.then(
+                r => { cancelResumePoll = true; return { kind: 'resolved' as const, ...r }; },
+                err => { cancelResumePoll = true; throw err; },
+              ),
+              resumeDialogPromise.then(() => { cancelResumePoll = true; return { kind: 'dialog' as const, result: undefined }; }),
+            ]);
+            if (resumeRace.kind === 'dialog') {
+              // Second dialog appeared — keep interruptedAction/Step so next dialog step can resume it
+              i++;
+              continue;
+            }
+            const { result: interruptedResult } = resumeRace;
+            vars.set('$ret', interruptedResult);
+            vars.set('$err', null);
+            vars.set('$code', null);
+            if (iStep?.out) vars.set(iStep.out, interruptedResult);
+            // Record the resumed action result and run post-action bookkeeping
+            results.push({
+              step: iStep?.stepIndex ?? stepIndex,
+              action: iStep?.action ?? 'unknown',
+              success: true,
+              ...(interruptedResult !== undefined ? { data: interruptedResult } : {}),
+            });
+            if (iStep?.action) {
+              await postActionBookkeeping(iStep.action, interruptedResult, page, options);
+            }
+          } catch (actionErr) {
+            const errMsg = actionErr instanceof Error ? actionErr.message : String(actionErr);
+            results.push({
+              step: iStep?.stepIndex ?? stepIndex,
+              action: iStep?.action ?? 'unknown',
+              success: false,
+              error: `Interrupted action failed after dialog: ${errMsg}`,
+            });
+            dialogState.interruptedAction = undefined;
+            dialogState.interruptedStep = undefined;
+            return { success: false, failedAt: iStep?.stepIndex ?? stepIndex };
+          }
+          dialogState.interruptedAction = undefined;
+          dialogState.interruptedStep = undefined;
+        }
+        i++;
+        continue;
+      }
+
       // --- General action ---
       debugLog?.(stepIndex, step.action!, 'start');
       // If step has no explicit args field, use step's own fields as named args
@@ -800,7 +948,60 @@ export async function runSteps(
         const { action, out, label, save, retry, comment, ...rest } = step as any;
         return Object.keys(rest).length > 0 ? rest : [];
       })();
-      const { result } = await executeAction(page, step.action!, stepArgs, vars, options.actionMap, options.runtime);
+
+      // Race action execution against dialog detection
+      const actionPromise = executeAction(page, step.action!, stepArgs, vars, options.actionMap, options.runtime);
+      let cancelPoll = false;
+      const dialogPromise = new Promise<'dialog'>((resolve) => {
+        const check = () => {
+          if (cancelPoll) return;
+          if (dialogState.pending) resolve('dialog');
+          else setTimeout(check, 50);
+        };
+        setTimeout(check, 10);
+      });
+
+      const raceResult = await Promise.race([
+        actionPromise.then(
+          r => { cancelPoll = true; return { kind: 'action' as const, ...r }; },
+          err => { cancelPoll = true; throw err; },
+        ),
+        dialogPromise.then(() => ({ kind: 'dialog' as const, result: undefined })),
+      ]);
+
+      if (raceResult.kind === 'dialog') {
+        // Dialog appeared during action — find next meaningful step (skip labels/comments)
+        let nextIdx = i + 1;
+        while (nextIdx < steps.length && !steps[nextIdx].action) nextIdx++;
+        const nextStep = steps[nextIdx];
+        if (nextStep?.action === 'dialog') {
+          // Record current step as interrupted but successful (action started)
+          results.push({
+            step: stepIndex, action: step.action!, success: true,
+            data: { interrupted: true, dialogType: dialogState.pending?.type(), dialogMessage: dialogState.pending?.message() },
+          });
+          debugLog?.(stepIndex, step.action!, 'dialog-interrupted');
+          // Store the pending action and step metadata so we can await it after dialog is handled
+          dialogState.interruptedAction = actionPromise;
+          dialogState.interruptedStep = { out: step.out, action: step.action!, stepIndex };
+          i++;
+          continue; // next iteration will handle the dialog step
+        }
+
+        // No dialog handler next — interrupt the chain
+        const dlg = dialogState.pending!;
+        results.push({
+          step: stepIndex, action: step.action!, success: false,
+          error: `Action interrupted by ${dlg.type()} dialog: "${dlg.message()}"`,
+        });
+        return {
+          success: false,
+          failedAt: stepIndex,
+          pendingDialog: { type: dlg.type(), message: dlg.message() },
+        };
+      }
+
+      const { result } = raceResult;
 
       // Set ephemeral registers
       vars.set('$ret', result);
@@ -814,27 +1015,7 @@ export async function runSteps(
       results.push({ step: stepIndex, action: step.action!, success: true, ...(result !== undefined ? { data: result } : {}) });
       debugLog?.(stepIndex, step.action!, 'ok');
 
-      // Emit core tab events after relevant actions
-      if (options.runtime?.emitEvent) {
-        if (step.action === 'navigate') {
-          const { findTabByPageIndex, findTabByUrl, updateTab, assignTabId, buildTabEvent, TAB_EVENTS } = await import('./tab-registry.js');
-          // Find existing tab: prefer pageIndex (accurate), fall back to URL
-          const pageIndex = page.context().pages().indexOf(page);
-          let navTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(result?.url);
-          if (navTab) {
-            updateTab(navTab.tabId, { url: result?.url, title: result?.title });
-          } else {
-            navTab = assignTabId(result?.url, result?.title, pageIndex >= 0 ? pageIndex : undefined);
-          }
-          options.runtime.emitEvent(TAB_EVENTS.NAVIGATED, buildTabEvent(TAB_EVENTS.NAVIGATED, options.runtime.session.name, navTab));
-        }
-      }
-
-      // Advance documentEpoch after navigation/reload actions
-      if (['navigate', 'nav', 'refresh', 'reload'].includes(step.action!) && options.runtime?.session?.name) {
-        const { advanceDocumentEpoch } = await import('./session.js');
-        advanceDocumentEpoch(options.runtime.session.name);
-      }
+      await postActionBookkeeping(step.action!, result, page, options);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       debugLog?.(stepIndex, step.action || 'unknown', `failed (${errorMsg.slice(0, 60)})`);
@@ -863,7 +1044,7 @@ export async function runSteps(
 const KNOWN_ACTIONS = new Set([
   'navigate', 'nav', 'refresh', 'reload', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'sel', 'upload', 'attr', 'submit', 'fetch', 'screenshot', 'shot',
-  'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'console', 'network', 'return', 'assert',
+  'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'console', 'network', 'dialog', 'return', 'assert',
 ]);
 
 export function validateSteps(steps: Step[], prefix: string = '', extraKnownActions?: Set<string>): string[] {
@@ -1318,6 +1499,7 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
       vars: vars.snapshot(),
     },
     ...(outcome.failedAt !== undefined ? { error: `Step ${outcome.failedAt} failed` } : {}),
+    ...(outcome.pendingDialog ? { pendingDialog: outcome.pendingDialog } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 

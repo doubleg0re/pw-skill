@@ -242,7 +242,8 @@ describe('SessionStore — resolveSession', () => {
     store.createSession('only', 9222, process.pid);
     const resolved = store.resolveSession();
     expect(resolved.name).toBe('only');
-    expect(store.getBoundSession()).toBe('only');
+    // resolveSession() is pure — does not auto-bind
+    expect(store.getBoundSession()).toBeNull();
   });
 
   it('throws when no sessions', () => {
@@ -261,7 +262,8 @@ describe('SessionStore — resolveSession', () => {
     store.bindSession('dead');
     const resolved = store.resolveSession();
     expect(resolved.name).toBe('alive');
-    expect(store.getBoundSession()).toBe('alive');
+    // resolveSession() is pure — stale binding is not overwritten
+    expect(store.getBoundSession()).toBe('dead');
   });
 
   it('returns warning when auto-binding the only live session', () => {

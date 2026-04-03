@@ -265,10 +265,11 @@ export function createRaryCommands(store: RaryStore) {
       return { success: false, error: `Invalid larry.json: ${err instanceof Error ? err.message : String(err)}` };
     }
 
-    const manifestIssues = validateLarryManifest(manifestData, { packageDir: sourceDir });
-    if (manifestIssues.length > 0) {
+    // Schema validation + file existence check (skip file check for --build, files may not exist until after build)
+    const preInstallIssues = validateLarryManifest(manifestData, isBuild ? undefined : { packageDir: sourceDir });
+    if (preInstallIssues.length > 0) {
       if (tempDir) cleanupTemp(tempDir);
-      return { success: false, error: formatManifestValidationError(manifestIssues) };
+      return { success: false, error: formatManifestValidationError(preInstallIssues) };
     }
 
     if (manifestData.name !== pkgName) {
@@ -354,6 +355,14 @@ export function createRaryCommands(store: RaryStore) {
         buildResult = 'No build/setup path found for this package.';
         buildFailed = true;
       }
+    }
+
+    // Validate file existence against the final installed payload
+    const fileIssues = validateLarryManifest(manifestData, { packageDir: targetDir });
+    if (fileIssues.length > 0) {
+      // Clean up broken install
+      try { rmSync(targetDir, { recursive: true, force: true }); } catch {}
+      return { success: false, error: formatManifestValidationError(fileIssues) };
     }
 
     return {

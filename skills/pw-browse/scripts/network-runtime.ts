@@ -58,7 +58,15 @@ function summarizeBody(text: string): string {
 export const NETWORK_INJECT_SCRIPT = `
 if (!window.__PW_NETWORK_PATCHED) {
   window.__PW_NETWORK_PATCHED = true;
-  window.__PW_NETWORK = window.__PW_NETWORK || [];
+
+  // Recovery from sessionStorage (persistent across navigations within same tab)
+  try {
+    const saved = sessionStorage.getItem('__PW_NETWORK_BACKUP');
+    window.__PW_NETWORK = saved ? JSON.parse(saved) : [];
+    sessionStorage.removeItem('__PW_NETWORK_BACKUP');
+  } catch {
+    window.__PW_NETWORK = window.__PW_NETWORK || [];
+  }
 
   // Patch fetch
   const origFetch = window.fetch.bind(window);
@@ -102,6 +110,10 @@ if (!window.__PW_NETWORK_PATCHED) {
     });
     return origSend.call(this, body);
   };
+
+  window.addEventListener('beforeunload', () => {
+    try { sessionStorage.setItem('__PW_NETWORK_BACKUP', JSON.stringify(window.__PW_NETWORK.slice(-500))); } catch {}
+  });
 }
 `;
 
@@ -160,7 +172,7 @@ export async function runNetworkCommand(
         });
       }
 
-      await page.evaluate('window.__PW_NETWORK = []');
+      await page.evaluate('window.__PW_NETWORK = []; try { sessionStorage.removeItem("__PW_NETWORK_BACKUP"); } catch {}');
 
       return {
         success: true,
@@ -169,7 +181,7 @@ export async function runNetworkCommand(
     }
 
     case 'clear': {
-      await page.evaluate('window.__PW_NETWORK = []');
+      await page.evaluate('window.__PW_NETWORK = []; try { sessionStorage.removeItem("__PW_NETWORK_BACKUP"); } catch {}');
       if (existsSync(LOG_FILE)) writeFileSync(LOG_FILE, '');
       if (existsSync(NDJSON_FILE)) writeFileSync(NDJSON_FILE, '');
       return { success: true, data: { message: 'Network logs cleared' } };

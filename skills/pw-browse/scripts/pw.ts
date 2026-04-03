@@ -11,7 +11,7 @@ const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS = [
   'navigate', 'nav', 'refresh', 'reload', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
   'fill', 'type', 'select', 'sel', 'upload', 'submit',
-  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert', 'console', 'network',
+  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert', 'console', 'network', 'dialog',
 ] as const;
 const CHAINABLE_ACTION_SET = new Set(CHAINABLE_ACTIONS);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');

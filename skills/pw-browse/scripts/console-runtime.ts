@@ -127,7 +127,7 @@ export async function runConsoleCommand(
       const lines = formatted.join('\n');
       if (lines) writeFileSync(LOG_FILE, lines + '\n', { flag: 'a' });
 
-      await page.evaluate('window.__PW_LOGS = []');
+      await page.evaluate('window.__PW_LOGS = []; try { sessionStorage.removeItem("__PW_LOGS_BACKUP"); } catch {}');
 
       return {
         success: true,
@@ -136,7 +136,7 @@ export async function runConsoleCommand(
     }
 
     case 'clear': {
-      await page.evaluate('window.__PW_LOGS = []');
+      await page.evaluate('window.__PW_LOGS = []; try { sessionStorage.removeItem("__PW_LOGS_BACKUP"); } catch {}');
       if (existsSync(LOG_FILE)) writeFileSync(LOG_FILE, '');
       return { success: true, data: { message: 'Logs cleared' } };
     }

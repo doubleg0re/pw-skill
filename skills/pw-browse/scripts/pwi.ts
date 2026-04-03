@@ -75,7 +75,7 @@ for (const step of steps) {
     console.log(JSON.stringify({ success: false, error: `"${step.action}" is not available in pwi. Use "pw ${step.action}" instead.` }));
     process.exit(1);
   }
-  if (!ACTION_MAP[step.action]) {
+  if (!ACTION_MAP[step.action] && step.action !== 'dialog') {
     console.log(JSON.stringify({ success: false, error: `Unknown action: "${step.action}". pwi only supports built-in actions.` }));
     process.exit(1);
   }
@@ -87,12 +87,44 @@ async function main() {
   const browser = await chromium.launch({ headless: !headed });
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
+  let pendingDialog: import('playwright').Dialog | null = null;
+  page.on('dialog', d => {
+    if (d.type() === 'beforeunload') {
+      d.accept().catch(() => {});
+    } else {
+      pendingDialog = d;
+    }
+  });
 
   try {
     const results: any[] = [];
     let lastResult: any = null;
 
     for (const step of steps) {
+      // Handle dialog action inline
+      if (step.action === 'dialog') {
+        const sub = step.args[0] || 'show';
+        if (sub === 'show') {
+          lastResult = pendingDialog
+            ? { pending: true, type: pendingDialog.type(), message: pendingDialog.message() }
+            : { pending: false };
+        } else if (sub === 'accept') {
+          if (!pendingDialog) throw new Error('No pending dialog');
+          await pendingDialog.accept(step.args[1]).catch(() => {});
+          lastResult = { action: 'accept', type: pendingDialog.type(), message: pendingDialog.message() };
+          pendingDialog = null;
+        } else if (sub === 'dismiss') {
+          if (!pendingDialog) throw new Error('No pending dialog');
+          await pendingDialog.dismiss().catch(() => {});
+          lastResult = { action: 'dismiss', type: pendingDialog.type(), message: pendingDialog.message() };
+          pendingDialog = null;
+        } else {
+          throw new Error(`Unknown dialog subcommand: ${sub}`);
+        }
+        results.push({ action: 'dialog', success: true, data: lastResult });
+        continue;
+      }
+
       const actionArgs = buildInlineStepArgs(step.args, { $ret: lastResult });
       const result = await ACTION_MAP[step.action](page, actionArgs);
       lastResult = result?.result ?? result;
