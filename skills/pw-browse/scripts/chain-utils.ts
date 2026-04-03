@@ -1,4 +1,5 @@
-// chain-utils.ts — Shared helpers for :: chaining and inline $ret references
+// chain-utils.ts — Shared helpers for :: chaining, dialog handling, and inline $ret references
+import type { Dialog } from 'playwright';
 
 export function isChainReference(value: string): boolean {
   return /^\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*$/.test(value);
@@ -71,4 +72,83 @@ export function buildInlineStepArgs(args: string[], scope: Record<string, any>):
   }
 
   return result;
+}
+
+// --- Chainable actions list (shared by pw and pwi) ---
+
+export const CHAINABLE_ACTIONS = [
+  'navigate', 'nav', 'refresh', 'reload', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
+  'fill', 'type', 'select', 'sel', 'upload', 'submit',
+  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert', 'console', 'network', 'dialog',
+] as const;
+
+export const CHAINABLE_ACTION_SET = new Set<string>(CHAINABLE_ACTIONS);
+
+// --- :: segment parser (shared by pw and pwi) ---
+
+export interface ChainSegment {
+  action: string;
+  args: string[];
+}
+
+export function parseChainSegments(
+  argv: string[],
+  globalFlagNames?: Set<string>,
+): { segments: ChainSegment[]; globalFlags: string[] } {
+  const isGlobalFlag = globalFlagNames
+    ? (a: string) => a.startsWith('--') && globalFlagNames.has(a.replace(/^--/, '').split('=')[0])
+    : undefined;
+
+  const segments: ChainSegment[] = [];
+  let current: string[] = [];
+  const globalFlags: string[] = [];
+
+  for (const a of argv) {
+    if (a === '::') {
+      if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
+      current = [];
+    } else if (isGlobalFlag?.(a)) {
+      globalFlags.push(a);
+    } else {
+      current.push(a);
+    }
+  }
+  if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
+
+  return { segments, globalFlags };
+}
+
+// --- Dialog inline handler (shared by sequence.ts and pwi.ts) ---
+
+export async function handleDialogStep(
+  pendingDialog: Dialog | null,
+  subcommand: string | undefined,
+  promptText?: string,
+): Promise<{ data: any; cleared: boolean; error?: string }> {
+  const sub = subcommand || 'show';
+
+  if (sub === 'show') {
+    return {
+      data: pendingDialog
+        ? { pending: true, type: pendingDialog.type(), message: pendingDialog.message(), defaultValue: pendingDialog.defaultValue() }
+        : { pending: false },
+      cleared: false,
+    };
+  }
+
+  if (!pendingDialog) {
+    return { data: null, cleared: false, error: 'No pending dialog' };
+  }
+
+  if (sub === 'accept') {
+    await pendingDialog.accept(promptText).catch(() => {});
+    return { data: { action: 'accept', type: pendingDialog.type(), message: pendingDialog.message() }, cleared: true };
+  }
+
+  if (sub === 'dismiss') {
+    await pendingDialog.dismiss().catch(() => {});
+    return { data: { action: 'dismiss', type: pendingDialog.type(), message: pendingDialog.message() }, cleared: true };
+  }
+
+  return { data: null, cleared: false, error: `Unknown dialog subcommand: ${sub}. Use accept, dismiss, or show.` };
 }

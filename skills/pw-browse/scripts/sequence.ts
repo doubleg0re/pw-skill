@@ -850,36 +850,17 @@ export async function runSteps(
         })();
         const dialogArgs = vars.interpolateArgs(rawDialogArgs);
         const subcommand = Array.isArray(dialogArgs) ? dialogArgs[0] : (dialogArgs as any)?.command || dialogArgs?.[0];
-        const dlg = dialogState.pending;
+        const promptText = Array.isArray(dialogArgs) ? dialogArgs[1] : (dialogArgs as any)?.text;
 
-        if (subcommand === 'show' || !subcommand) {
-          results.push({
-            step: stepIndex, action: 'dialog', success: true,
-            data: dlg
-              ? { pending: true, type: dlg.type(), message: dlg.message(), defaultValue: dlg.defaultValue() }
-              : { pending: false },
-          });
-          i++;
-          continue;
-        }
+        const { handleDialogStep } = await import('./chain-utils.js');
+        const { data, cleared, error } = await handleDialogStep(dialogState.pending, subcommand, promptText);
 
-        if (!dlg) {
-          results.push({ step: stepIndex, action: 'dialog', success: false, error: 'No pending dialog' });
+        if (error) {
+          results.push({ step: stepIndex, action: 'dialog', success: false, error });
           return { success: false, failedAt: stepIndex };
         }
-
-        if (subcommand === 'accept') {
-          const promptText = Array.isArray(dialogArgs) ? dialogArgs[1] : (dialogArgs as any)?.text;
-          await dlg.accept(promptText).catch(() => {});
-          results.push({ step: stepIndex, action: 'dialog', success: true, data: { action: 'accept', type: dlg.type(), message: dlg.message() } });
-        } else if (subcommand === 'dismiss') {
-          await dlg.dismiss().catch(() => {});
-          results.push({ step: stepIndex, action: 'dialog', success: true, data: { action: 'dismiss', type: dlg.type(), message: dlg.message() } });
-        } else {
-          results.push({ step: stepIndex, action: 'dialog', success: false, error: `Unknown dialog subcommand: ${subcommand}. Use accept, dismiss, or show.` });
-          return { success: false, failedAt: stepIndex };
-        }
-        dialogState.pending = null;
+        results.push({ step: stepIndex, action: 'dialog', success: true, data });
+        if (cleared) dialogState.pending = null;
         // Await the interrupted action (with dialog re-race) and run normal success bookkeeping
         if (dialogState.interruptedAction) {
           const iStep = dialogState.interruptedStep;

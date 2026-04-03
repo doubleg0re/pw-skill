@@ -4,16 +4,10 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { buildChainStepArgs } from './chain-utils.js';
+import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments } from './chain-utils.js';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
-const CHAINABLE_ACTIONS = [
-  'navigate', 'nav', 'refresh', 'reload', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
-  'fill', 'type', 'select', 'sel', 'upload', 'submit',
-  'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert', 'console', 'network', 'dialog',
-] as const;
-const CHAINABLE_ACTION_SET = new Set(CHAINABLE_ACTIONS);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
 
 const AGENT_SKILLS: Record<string, { title: string; summary: string; when: string[]; cli: string[]; notes?: string[] }> = {
@@ -297,31 +291,10 @@ if (args[0] === '--inline' || args[0] === '-i') {
 
 // :: chaining: build sequence JSON and run through full runtime (session-based)
 if (args.includes('::')) {
-  // Global flags that apply to the whole execution, not individual steps
   const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'video', 'no-restore']);
-  function isGlobalFlag(a: string): boolean {
-    if (!a.startsWith('--')) return false;
-    const name = a.replace(/^--/, '').split('=')[0];
-    return GLOBAL_FLAG_NAMES.has(name);
-  }
+  const { segments, globalFlags } = parseChainSegments(args, GLOBAL_FLAG_NAMES);
 
-  // Parse segments: split by ::, keep per-step flags with their step
-  const segments: { action: string; args: string[] }[] = [];
-  let current: string[] = [];
-  const globalFlags: string[] = [];
-  for (const a of args) {
-    if (a === '::') {
-      if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
-      current = [];
-    } else if (isGlobalFlag(a)) {
-      globalFlags.push(a);
-    } else {
-      current.push(a);
-    }
-  }
-  if (current.length > 0) segments.push({ action: current[0], args: current.slice(1) });
-
-  const rejected = segments.filter(s => !CHAINABLE_ACTION_SET.has(s.action as any)).map(s => s.action);
+  const rejected = segments.filter(s => !CHAINABLE_ACTION_SET.has(s.action)).map(s => s.action);
   if (rejected.length > 0) {
     console.log(JSON.stringify({
       success: false,

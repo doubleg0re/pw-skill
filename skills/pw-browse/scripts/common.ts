@@ -140,7 +140,7 @@ function buildRecordVideoOptions(
   return viewport ? { dir: videoDir, size: viewport } : { dir: videoDir };
 }
 
-function parseViewportSpec(viewportStr?: string): { width: number; height: number } | null {
+export function parseViewportSpec(viewportStr?: string): { width: number; height: number } | null {
   if (!viewportStr || viewportStr === 'auto') return DEFAULT_VIEWPORT;
   return {
     width: parseInt(viewportStr.split('x')[0]),
