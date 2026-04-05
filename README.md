@@ -30,9 +30,12 @@ MCP gives tools to AI. CLI gives tools to everyone.
 ```bash
 /plugin marketplace add doubleg0re/pw-skill
 /plugin install pw-skill@pw-skill
-cd ~/.claude/plugins/marketplaces/pw-skill/skills/pw-browse/scripts
+cd ~/.claude/plugins/marketplaces/pw-skill
 npm run setup
 ```
+
+This registers the Claude Code skills and installs the local npm dependencies used by the plugin checkout.
+It does **not** add `pw` / `pwi` to your shell `PATH`.
 
 ### npm (CLI only)
 
@@ -52,13 +55,28 @@ pw agent skill --test
 pw agent skill --close
 ```
 
-### Manual
+### Both (plugin + CLI)
+
+```bash
+/plugin marketplace add doubleg0re/pw-skill
+/plugin install pw-skill@pw-skill
+cd ~/.claude/plugins/marketplaces/pw-skill
+npm run setup
+
+npm install -g pw-skill
+```
+
+Use this when you want the Claude Code plugin **and** the `pw` / `pwi` shell commands.
+
+### Local Editable Checkout (advanced)
 
 ```bash
 git clone https://github.com/doubleg0re/pw-skill.git
-cp -r pw-skill/skills/pw-* ~/.claude/skills/
-cd ~/.claude/skills/pw-browse/scripts && npm install && npx playwright install chromium
+cd pw-skill
+npm run setup
 ```
+
+This is mainly for hacking on the repo directly. If you also want the shell CLI on your `PATH`, run `npm install -g pw-skill` separately.
 
 ## Quick Start
 
@@ -460,7 +478,7 @@ All commands support these flags:
 
 Sequence is a full flow engine that runs JSON action lists with variables, branching, loops, and functions.
 
-> Full syntax reference for AI generation: [SEQUENCE-SYNTAX.md](SEQUENCE-SYNTAX.md)
+> Full syntax reference for AI generation: [docs/SEQUENCE-SYNTAX.md](docs/SEQUENCE-SYNTAX.md)
 
 ```bash
 pw sequence ./login-flow.json

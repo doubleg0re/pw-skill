@@ -64,8 +64,8 @@ async function main() {
         output({ success: false, error: `Invalid index. ${pages.length} tabs open (0-${pages.length - 1})` });
         break;
       }
-      const { findTabByPageIndex, findTabByUrl, buildTabEvent: buildCloseEvent, TAB_EVENTS: CLOSE_EVENTS } = await import('./tab-registry.js');
-      const closedTab = findTabByPageIndex(idx) || findTabByUrl(pages[idx].url());
+      const { resolveTab, buildTabEvent: buildCloseEvent, TAB_EVENTS: CLOSE_EVENTS } = await import('./tab-registry.js');
+      const closedTab = resolveTab(pages[idx].url(), idx);
       await pages[idx].close();
       if (closedTab) {
         runtime.emitEvent(CLOSE_EVENTS.CLOSED, buildCloseEvent(CLOSE_EVENTS.CLOSED, session.name, closedTab));

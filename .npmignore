@@ -5,13 +5,9 @@ larry.png
 
 # Docs (not needed for npm package)
 docs/
-SEQUENCE-SYNTAX.md
 
 # Tests
 tests/
-
-# Extensions (developed in monorepo, installed separately via rary)
-extensions/
 
 # Plans and configs
 .claude/

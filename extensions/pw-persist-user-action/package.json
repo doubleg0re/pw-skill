@@ -1,7 +1,0 @@
-{
-  "name": "pw-persist-user-action",
-  "version": "0.1.0",
-  "description": "Persist user-action overlay across navigation for pw-skill",
-  "type": "module",
-  "private": true
-}

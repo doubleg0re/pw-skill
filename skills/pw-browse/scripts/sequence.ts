@@ -286,9 +286,9 @@ async function postActionBookkeeping(action: string, result: any, page: Page, op
   // Emit core tab events after relevant actions
   if (options.runtime?.emitEvent) {
     if (action === 'navigate' || action === 'nav') {
-      const { findTabByPageIndex, findTabByUrl, updateTab, assignTabId, buildTabEvent, TAB_EVENTS } = await import('./tab-registry.js');
+      const { resolveTab, updateTab, assignTabId, buildTabEvent, TAB_EVENTS } = await import('./tab-registry.js');
       const pageIndex = page.context().pages().indexOf(page);
-      let navTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(result?.url);
+      let navTab = resolveTab(result?.url, pageIndex >= 0 ? pageIndex : undefined);
       if (navTab) {
         updateTab(navTab.tabId, { url: result?.url, title: result?.title });
       } else {
@@ -1441,7 +1441,7 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   // Build runtime context with event handlers for extension actions
   const { buildRuntime, loadEventHandlers } = await import('./runtime.js');
   const { getActiveExtensions: getActiveExts, packageDir } = await import('./rary.js');
-  const { findTabByPageIndex, findTabByUrl } = await import('./tab-registry.js');
+  const { resolveTab } = await import('./tab-registry.js');
 
   let eventHandlers: any[] = [];
   try {
@@ -1454,7 +1454,7 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
 
   // Resolve stable tabId for current page
   const pageIndex = page.context().pages().indexOf(page);
-  const currentTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(page.url());
+  const currentTab = resolveTab(page.url(), pageIndex >= 0 ? pageIndex : undefined);
   const tabId = currentTab?.tabId;
 
   const seqRuntime = buildRuntime({

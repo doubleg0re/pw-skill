@@ -29,7 +29,7 @@ import { evaluateAssertion, type AssertionType } from './assert-utils.js';
 import { createElementRegistry, resolveElementKey } from './element-registry.js';
 import { normalizeAuthHeader, resolveFetchCredentials } from './fetch-utils.js';
 import { localStateDir, getSession, getDocumentEpoch } from './session.js';
-import { findTabByPageIndex, findTabByUrl } from './tab-registry.js';
+import { resolveTab } from './tab-registry.js';
 import { runConsoleCommand } from './console-runtime.js';
 import { runNetworkCommand } from './network-runtime.js';
 
@@ -107,7 +107,7 @@ async function resolveKeyOrSelector(
     if (runtime?.tab?.id !== undefined) return runtime.tab.id;
     const context = page.context();
     const pageIndex = context.pages().indexOf(page);
-    const curTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(page.url());
+    const curTab = resolveTab(page.url(), pageIndex >= 0 ? pageIndex : undefined);
     return curTab?.tabId ?? 0;
   })();
 
@@ -200,9 +200,9 @@ export async function actionWait(page: Page, a: ActionArgs, runtime?: ActionRunt
   const attr = getArg(a, 'attr', 1);
   const value = getArg(a, 'value', 2);
 
-  // wait user-action: moved to pw-persist-user-action extension as "pw-user-action" action
+  // wait user-action: moved to pw-user-action extension as "pw-user-action" action
   if (target === 'user-action') {
-    throw new Error('wait user-action has been moved to the pw-persist-user-action extension. Use {"action": "pw-user-action", "prompt": "...", "actions": [...]} instead.');
+    throw new Error('wait user-action has been moved to the pw-user-action extension. Use {"action": "pw-user-action", "prompt": "...", "actions": [...]} instead.');
   }
 
   // wait user-alert: informational overlay, auto-dismiss on click
