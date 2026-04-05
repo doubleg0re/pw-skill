@@ -9,9 +9,6 @@ docs/
 # Tests
 tests/
 
-# Extensions (developed in monorepo, installed separately via rary)
-extensions/
-
 # Plans and configs
 .claude/
 .cursor/

@@ -14,6 +14,15 @@ Playwright CLI Skill for Claude Code. Persistent browser sessions, modular skill
 | Flow engine | None | Sequence with variables, conditions, loops |
 | CLI access | No | `pw` command (35+ subcommands) |
 
+## Why CLI?
+
+MCP gives tools to AI. CLI gives tools to everyone.
+
+- Same command for humans and AI: `pw click "#btn"`
+- Share the same browser session — real coworking
+- Reproduce and debug by running the exact command yourself
+- No protocol overhead, no server setup
+
 ## Install
 
 ### Claude Code Plugin (recommended)
@@ -21,9 +30,12 @@ Playwright CLI Skill for Claude Code. Persistent browser sessions, modular skill
 ```bash
 /plugin marketplace add doubleg0re/pw-skill
 /plugin install pw-skill@pw-skill
-cd ~/.claude/plugins/marketplaces/pw-skill/skills/pw-browse/scripts
+cd ~/.claude/plugins/marketplaces/pw-skill
 npm run setup
 ```
+
+This registers the Claude Code skills and installs the local npm dependencies used by the plugin checkout.
+It does **not** add `pw` / `pwi` to your shell `PATH`.
 
 ### npm (CLI only)
 
@@ -43,13 +55,28 @@ pw agent skill --test
 pw agent skill --close
 ```
 
-### Manual
+### Both (plugin + CLI)
+
+```bash
+/plugin marketplace add doubleg0re/pw-skill
+/plugin install pw-skill@pw-skill
+cd ~/.claude/plugins/marketplaces/pw-skill
+npm run setup
+
+npm install -g pw-skill
+```
+
+Use this when you want the Claude Code plugin **and** the `pw` / `pwi` shell commands.
+
+### Local Editable Checkout (advanced)
 
 ```bash
 git clone https://github.com/doubleg0re/pw-skill.git
-cp -r pw-skill/skills/pw-* ~/.claude/skills/
-cd ~/.claude/skills/pw-browse/scripts && npm install && npx playwright install chromium
+cd pw-skill
+npm run setup
 ```
+
+This is mainly for hacking on the repo directly. If you also want the shell CLI on your `PATH`, run `npm install -g pw-skill` separately.
 
 ## Quick Start
 
@@ -147,41 +174,74 @@ Chaining is restricted to browser actions only. Session, admin, and package comm
 
 ## Extensions
 
-pw-skill uses a lightweight extension system called `rary`. Extensions can add event handlers, hooks, and custom sequence actions.
+pw-skill uses a lightweight extension system called `rary`. Extensions can add event handlers, hooks, and custom sequence actions. Official extensions live in [doubleg0re/pw-extensions](https://github.com/doubleg0re/pw-extensions).
 
 ```bash
-# Install from official extensions repo (// = subdirectory syntax)
+# Install official extensions using builtin aliases (recommended)
+pw rary get builtin:pw-monitor
+pw rary get builtin:pw-user-action
+pw rary get builtin:pw-ws-server
+
+# Equivalent explicit repo syntax
 pw rary get doubleg0re/pw-extensions//pw-monitor
-pw rary get doubleg0re/pw-extensions//pw-user-action
-pw rary get doubleg0re/pw-extensions//pw-ws-server
 
 # Activate
 pw rary put pw-monitor
 
 # Install with source preserved
-pw rary get doubleg0re/pw-extensions//pw-monitor --source
+pw rary get builtin:pw-monitor --source
 
 # Install and build
-pw rary get doubleg0re/pw-extensions//pw-monitor --source --build
+pw rary get builtin:pw-monitor --source --build
 
-# List / deactivate
+# List
 pw rary toybox
-pw rary yoink <package-name>
+
+# Deactivate without removing
+pw rary ignore <package-name>     # alias: snub
 ```
 
 ### Official Extensions
 
-Available at [doubleg0re/pw-extensions](https://github.com/doubleg0re/pw-extensions):
+Builtin aliases resolve to packages in [doubleg0re/pw-extensions](https://github.com/doubleg0re/pw-extensions):
 
 | Extension | Description |
 |---|---|
-| `pw-monitor` | Real-time tab monitor — CDP WebSocket sidecar, `tab:*` events, GUI dashboard |
-| `pw-user-action` | Navigation-resilient user-action overlay — persistent state, native renderer ready |
-| `pw-ws-server` | Generic protocol-driven WebSocket server framework |
+| `pw-ws-server` | Transport-only WebSocket server. Loads providers declared by other extensions and relays `snapshot`/`event` messages per channel — no domain logic of its own |
+| `pw-monitor` | Owns the `pw-monitor/v1` protocol: real-time tab/focus/visibility snapshots via a CDP sidecar + OS foreground detection. Publishes via pw-ws-server, exposes a consumer client API for other extensions |
+| `pw-user-action` | Prompts the user to complete a manual step inside a flow. Uses a native Tauri/wry dialog (always-on-top, title + icon) and subscribes to `pw-monitor/v1` so the dialog hides when the browser loses focus or the user switches tabs |
 
-### Extension Dependencies in Flows
+### Extension dependency model
 
-Flows can declare required extensions via `info.requiresRary`:
+Extensions declare their relationships in `larry.json` using the nested `extension.*` fields:
+
+```jsonc
+// pw-user-action/larry.json
+{
+  "extension": {
+    "dependencies": { "pw-monitor": "builtin:pw-monitor" },
+    "consumes": { "protocols": ["pw-monitor/v1"] }
+  }
+}
+
+// pw-monitor/larry.json
+{
+  "extension": {
+    "dependencies": { "pw-ws-server": "builtin:pw-ws-server" },
+    "provides": {
+      "protocols": {
+        "pw-monitor/v1": { "transport": "ws", "entry": "dist/provider.js" }
+      }
+    }
+  }
+}
+```
+
+`pw rary get` installs the dependency chain recursively, and `pw rary put` activates dependencies along with the target. `pw rary destroy` / `ignore` is blocked if active dependents exist (override with `--force`). So `pw rary get builtin:pw-user-action` is enough to bring up `pw-ws-server -> pw-monitor -> pw-user-action` in one step.
+
+### Extension dependencies in flows
+
+Flows can also declare extensions they need at the flow level via `info.requiresRary`. This is checked before the flow runs and complements `extension.dependencies` (which covers package-level install/activation).
 
 ```json
 {
@@ -667,8 +727,8 @@ Larry the Cat's package and extension ecosystem. Install, inspect, activate, and
 
 ```bash
 # Install a package
-pw rary get doubleg0re/pw-persistws
-pw rary yoink doubleg0re/pw-persistws   # Alias for get
+pw rary get builtin:pw-user-action
+pw rary yoink builtin:pw-user-action   # Alias for get
 pw rary get ./local-package
 
 # Inspect
@@ -769,10 +829,7 @@ pw-skill/
         tab.ts, status.ts
     pw-test/SKILL.md
     pw-close/SKILL.md
-  extensions/
-    pw-monitor/                   # Real-time tab monitor (CDP sidecar + GUI)
-    pw-persist-user-action/       # Overlay persistence across navigation
-  tests/                          # 325 tests (vitest)
+  tests/                          # 426 tests across 20 files (vitest)
   package.json
 ```
 
@@ -791,9 +848,9 @@ pw-skill/
 - **$ref resolution**: `{ "$ref": "path" }` preserves types in sequence args. `{ "$literal": ... }` for escape. Depth-limited.
 - **Error diagnostics**: Failed commands auto-capture URL, title, tab, session name, and an error screenshot.
 - **Extension Runtime SDK**: `ExtensionRuntimeContext` gives extensions session info, `cdpEndpoint`, `emitEvent()`, lazy browser/page access, and `registerCleanup()`. Extensions can register custom sequence actions, event handlers, and build persistent monitors — all without making core heavy.
-- **Extension sequence actions**: Active rary extensions can register custom actions in `larry.json` that become first-class sequence DSL actions. Custom action names must include a hyphen, for example `persist-user-action`, so they stay visually distinct from built-ins. Per-run merged map, built-in collision rejection.
+- **Extension sequence actions**: Active rary extensions can register custom actions in `larry.json` that become first-class sequence DSL actions. Custom action names must include a hyphen, for example `pw-user-action`, so they stay visually distinct from built-ins. Per-run merged map, built-in collision rejection.
 - **One-shot mode (`pwi`)**: Launches a temporary browser, executes action(s), and exits. No sessions, no CDP server, no hooks. For quick tasks without `pw launch`.
-- **Stable tab events**: `TAB_EVENTS` constants with canonical `TabEventPayload`. Core and extensions follow the same contract. Cross-contract tests enforce consistency.
+- **Stable tab events**: `TAB_EVENTS` constants with canonical `TabEventPayload`. Core and extensions follow the same contract.
 - **requiresRary**: Flows declare extension dependencies via `info.requiresRary`. Missing extensions fail fast. CLI `--rary=name` also supported.
 - **DI-based stores**: Session and rary stores use factory pattern (`createSessionStore`, `createRaryStore`) for testability.
 - **Standardized result schema**: All environment-dependent operations report `warnings: string[]` array and consistent status fields.
@@ -813,7 +870,7 @@ See [Core and Extension Runtime Guide](docs/CORE-AND-EXTENSION-RUNTIME-GUIDE.md)
 
 ## Tests
 
-325 tests using vitest, covering session management, sequence flow engine (incl. requiresRary), variable interpolation, console/network filtering, action dispatch, rary store operations, file locking, error result assembly, connect edge cases, runtime SDK, event contract validation, tab sync (pw-monitor), pending action state (pw-persist-user-action), and settings.
+426 tests across 20 files (vitest), covering session management, sequence flow engine (incl. `requiresRary` / `extension.dependencies` resolution), variable interpolation, console/network filtering, action dispatch, rary store operations + dependency install/activation chains, file locking, error result assembly, connect edge cases, runtime SDK, tab sync, and settings.
 
 ```bash
 npm test           # run all tests

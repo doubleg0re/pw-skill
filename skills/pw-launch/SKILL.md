@@ -28,7 +28,7 @@ This is the standard way to start a browser session. The `pw launch` command han
 | `--resume=N` | Resume a previous session by name (reuses user-data profile) |
 | `--headed` | Show the browser window (default: headless) |
 | `--video[=name]` | Enable video recording; optional name for auto-rename on close |
-| `--viewport=WxH` | Viewport size (default: `1920x1080`) |
+| `--viewport=WxH` | Viewport size (default: `auto`, resolved from the current screen) |
 
 ### Examples
 
@@ -59,7 +59,13 @@ pw use                 # Show current binding
 pw sessions            # List all sessions
 ```
 
-## Steps (when not using `pw launch`)
+## Manual bootstrap for `@playwright/test`
+
+> These steps are **only** for users who want to run tests with the official
+> `@playwright/test` runner (e.g. `npx playwright test tests/e2e/*.spec.ts`).
+> The `pw launch` CLI itself does **not** create `playwright.config.ts` or
+> initialize `.playwright-state/` — it manages its own CDP sessions. If you
+> only use `pw` / `pwi` / `pw sequence`, skip this whole section.
 
 ### 1. Check playwright installation
 
@@ -107,7 +113,7 @@ If `.playwright-state/` is not in `.gitignore`, add it.
 |--------|---------|----------|
 | headless | `true` | Add `--headed` flag |
 | browser | chromium | (chromium only for now) |
-| viewport | 1920x1080 | Add `--viewport=WxH` flag |
+| viewport | `auto` (resolved from current screen) | Add `--viewport=WxH` flag |
 
 ### If headless fails
 

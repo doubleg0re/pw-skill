@@ -10,7 +10,7 @@
 import { run, parseFlag, hasFlag } from './common.js';
 import { localStateDir, getDocumentEpoch } from './session.js';
 import { createElementRegistry, generateElementKey, type ElementFingerprint } from './element-registry.js';
-import { findTabByPageIndex, findTabByUrl } from './tab-registry.js';
+import { resolveTab } from './tab-registry.js';
 
 type DetailLevel = 'tag' | 'class' | 'full';
 
@@ -77,7 +77,7 @@ run(async ({ page, args, session }) => {
   // Collect fingerprint data via a second evaluateAll, then store keys
   const context = page.context();
   const pageIndex = context.pages().indexOf(page);
-  const curTab = (pageIndex >= 0 ? findTabByPageIndex(pageIndex) : undefined) || findTabByUrl(page.url());
+  const curTab = resolveTab(page.url(), pageIndex >= 0 ? pageIndex : undefined);
   const tabId = curTab?.tabId ?? 0;
   const documentEpoch = getDocumentEpoch(session.name);
   const registry = createElementRegistry(localStateDir());

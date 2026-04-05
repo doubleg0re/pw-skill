@@ -166,6 +166,19 @@ describe('tab-registry', () => {
     expect(getTab(2)?.url).toBe('http://b.com');
     clearRegistry();
   });
+
+  it('resolves tabs by URL before stale pageIndex and refreshes pageIndex', async () => {
+    const { assignTabId, getTab, resolveTab, clearRegistry } = await import('../skills/pw-browse/scripts/tab-registry.js');
+    clearRegistry();
+    assignTabId('http://a.com', 'A', 0);
+    const t2 = assignTabId('http://b.com', 'B', 1);
+
+    const resolved = resolveTab('http://b.com', 0);
+    expect(resolved?.tabId).toBe(t2.tabId);
+    expect(getTab(t2.tabId)?.pageIndex).toBe(0);
+
+    clearRegistry();
+  });
 });
 
 describe('structured log buffer', () => {

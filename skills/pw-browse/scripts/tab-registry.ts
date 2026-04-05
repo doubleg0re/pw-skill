@@ -93,6 +93,19 @@ export function findTabByPageIndex(pageIndex: number): TabEntry | undefined {
   return undefined;
 }
 
+export function resolveTab(url: string | undefined, pageIndex?: number): TabEntry | undefined {
+  const byUrl = url ? findTabByUrl(url) : undefined;
+  if (byUrl) {
+    if (pageIndex !== undefined && byUrl.pageIndex !== pageIndex) {
+      updateTab(byUrl.tabId, { pageIndex });
+    }
+    return byUrl;
+  }
+
+  if (pageIndex === undefined) return undefined;
+  return findTabByPageIndex(pageIndex);
+}
+
 export function clearRegistry(): void {
   registry.clear();
   nextId = 1;

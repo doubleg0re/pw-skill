@@ -241,15 +241,15 @@ describe('RaryStore — loadExtensionActions', () => {
       version: '1.0.0',
       type: 'extension',
       actions: {
-        'persist-user-action': { entry: 'actions/persist-user-action.js' },
+        'pw-user-action': { entry: 'actions/pw-user-action.js' },
       },
     }, {
-      'actions/persist-user-action.js': 'export default async () => ({ result: { ok: true } });',
+      'actions/pw-user-action.js': 'export default async () => ({ result: { ok: true } });',
     });
     store.activateExtension('good-actions');
 
     const loaded = await store.loadExtensionActions();
-    expect(Object.keys(loaded.actions)).toContain('persist-user-action');
+    expect(Object.keys(loaded.actions)).toContain('pw-user-action');
     expect(loaded.errors).toEqual([]);
   });
 
@@ -259,16 +259,16 @@ describe('RaryStore — loadExtensionActions', () => {
       version: '1.0.0',
       type: 'extension',
       actions: {
-        persistUserAction: { entry: 'actions/persist-user-action.js' },
+        pwUserAction: { entry: 'actions/pw-user-action.js' },
       },
     }, {
-      'actions/persist-user-action.js': 'export default async () => ({ result: { ok: true } });',
+      'actions/pw-user-action.js': 'export default async () => ({ result: { ok: true } });',
     });
     store.activateExtension('bad-actions');
 
     const loaded = await store.loadExtensionActions();
-    expect(Object.keys(loaded.actions)).not.toContain('persistUserAction');
-    expect(loaded.errors.some(e => e.includes('must include "-"') && e.includes('persistUserAction'))).toBe(true);
+    expect(Object.keys(loaded.actions)).not.toContain('pwUserAction');
+    expect(loaded.errors.some(e => e.includes('must include "-"') && e.includes('pwUserAction'))).toBe(true);
   });
 });
 

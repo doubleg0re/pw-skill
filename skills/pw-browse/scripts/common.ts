@@ -592,6 +592,10 @@ export async function run(
       }
     }
 
+    // Restore stable tab registry for the active session before runtime/hook work.
+    const { restoreRegistry } = await import('./tab-registry.js');
+    restoreRegistry(join(globalSessionDir(session.name), 'tabs.json'));
+
     // --- Core: Load event handlers + run 'load' hooks ---
     const { runHooks, getActiveExtensions, packageDir } = await import('./rary.js');
     const { buildRuntime, loadEventHandlers } = await import('./runtime.js');
@@ -603,9 +607,9 @@ export async function run(
       hookErrors.push(...eventErrors);
 
       // Resolve stable tabId for current page
-      const { findTabByPageIndex, findTabByUrl } = await import('./tab-registry.js');
+      const { resolveTab } = await import('./tab-registry.js');
       const pIdx = context.pages().indexOf(page);
-      const curTab = (pIdx >= 0 ? findTabByPageIndex(pIdx) : undefined) || findTabByUrl(page.url());
+      const curTab = resolveTab(page.url(), pIdx >= 0 ? pIdx : undefined);
 
       extensionRuntime = buildRuntime({
         session, browser, context, page, eventHandlers,

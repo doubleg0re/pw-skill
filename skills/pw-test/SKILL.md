@@ -16,7 +16,7 @@ Confirm the test direction with the user, then write the test code, run it, and 
 ## Prerequisites
 
 1. If the `.playwright-state/` directory does not exist, invoke the `pw-launch` skill first
-2. If `playwright.config.ts` does not exist, `pw-launch` will create it automatically
+2. If `playwright.config.ts` does not exist, create it manually — the pw-skill CLI does not generate it. See the "Manual bootstrap for @playwright/test" section of pw-launch for a starter config
 
 ## Workflow
 

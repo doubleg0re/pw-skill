@@ -158,7 +158,7 @@ Implementation note:
 Examples:
 
 - `[pw-runtime-monitor] connected to cdp endpoint`
-- `[pw-persist-user-action] overlay restored`
+- `[pw-user-action] overlay restored`
 
 Reason:
 
@@ -214,7 +214,7 @@ Recommended format:
 Examples:
 
 - `pw-runtime-monitor:overlay-restored`
-- `pw-persist-user-action:pending-updated`
+- `pw-user-action:pending-updated`
 
 Reason:
 

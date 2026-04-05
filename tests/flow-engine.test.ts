@@ -1099,10 +1099,10 @@ describe('validateRequiresRary', () => {
 
   it('combines info and cli requirements', () => {
     const info = { requiresRary: ['pw-monitor'] };
-    const cliRary = ['pw-persist-user-action'];
-    const active = new Set(['pw-monitor']); // missing pw-persist-user-action
+    const cliRary = ['pw-user-action'];
+    const active = new Set(['pw-monitor']); // missing pw-user-action
     const err = validateRequiresRary(info, cliRary, active);
-    expect(err).toContain('"pw-persist-user-action"');
+    expect(err).toContain('"pw-user-action"');
   });
 
   it('passes when cli requirement is active', () => {
@@ -1231,8 +1231,8 @@ describe('normalizeStep', () => {
   });
 
   it('handles extension action shorthand', () => {
-    const result = normalizeStep({ 'persist-user-action': ['Please log in', ['done', 'cancel']] });
-    expect(result).toEqual({ action: 'persist-user-action', args: ['Please log in', ['done', 'cancel']] });
+    const result = normalizeStep({ 'pw-user-action': ['Please log in', ['done', 'cancel']] });
+    expect(result).toEqual({ action: 'pw-user-action', args: ['Please log in', ['done', 'cancel']] });
   });
 
   it('passes through multi-key non-explicit object (ambiguous)', () => {
