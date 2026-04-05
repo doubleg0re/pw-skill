@@ -6,7 +6,8 @@
   "files": [
     "README.md",
     ".claude-plugin",
-    "skills"
+    "skills",
+    "docs"
   ],
   "bin": {
     "pw": "./skills/pw-browse/scripts/pw.ts",

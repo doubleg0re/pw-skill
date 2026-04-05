@@ -68,12 +68,12 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | `--session=N` | `pw` only | Target a specific named session |
 | `--tab=N` | `pw` only | Target a specific tab (default: 0) |
 | `--headed` | `pw` and `pwi` | Show browser window |
-| `--viewport=WxH` | `pw` and `pwi` | Viewport size (default: 1920x1080) |
+| `--viewport=WxH` | `pw` and `pwi` | Viewport size (default: `auto`, resolved from the current screen) |
 | `--video[=name]` | `pw` only | Enable video recording |
 | `--screenshot` | `pw` and `pwi` | Take screenshot after action |
 | `--no-restore` | `pw` only | Don't restore last URL on reconnect |
 
-## General-purpose Script Reference (25 scripts)
+## General-purpose Script Reference
 
 ### navigate.ts — Navigate to URL
 ```bash
@@ -597,23 +597,44 @@ Chaining is restricted to browser actions only. Session, admin, and package comm
 
 ## Extensions
 
-pw-skill uses the `rary` extension system. Extensions can add event handlers, hooks, and custom sequence actions.
+pw-skill uses the `rary` extension system. Extensions can add event handlers, hooks, and custom sequence actions. Official extensions live in `doubleg0re/pw-extensions`.
 
 ```bash
-# Install from official repo (// = subdirectory)
-pw rary get doubleg0re/pw-extensions//pw-monitor
+# Install from builtin alias (recommended)
+pw rary get builtin:pw-monitor
 pw rary put pw-monitor
+
+# Equivalent explicit repo syntax
+pw rary get doubleg0re/pw-extensions//pw-monitor
 ```
 
 ### Official extensions
 
 | Extension | Description |
 |---|---|
-| `pw-monitor` | Real-time tab monitor — CDP sidecar, `tab:*` events, GUI dashboard (`pw gui`) |
-| `pw-user-action` | Navigation-resilient user-action overlay, native renderer ready |
-| `pw-ws-server` | Generic protocol-driven WebSocket server framework |
+| `pw-ws-server` | Transport-only WebSocket server. Loads providers from other extensions and relays `snapshot`/`event` per channel |
+| `pw-monitor` | Owns `pw-monitor/v1` — real-time tab/focus/visibility snapshots via CDP sidecar + OS foreground detection. Publishes via pw-ws-server |
+| `pw-user-action` | Native Tauri/wry dialog that asks the user to complete a manual step. Subscribes to `pw-monitor/v1` to auto-hide on browser defocus / tab switch |
 
-### Extension dependency in flows
+### Extension dependency model
+
+Extensions declare dependencies and protocols in `larry.json` via nested `extension.*` fields:
+
+```jsonc
+// pw-user-action/larry.json
+{
+  "extension": {
+    "dependencies": { "pw-monitor": "builtin:pw-monitor" },
+    "consumes": { "protocols": ["pw-monitor/v1"] }
+  }
+}
+```
+
+`pw rary get` recursively installs the chain, `pw rary put` activates dependencies alongside the target, and `pw rary destroy`/`ignore` is blocked when active dependents exist (override with `--force`). So one `pw rary get builtin:pw-user-action` brings up `pw-ws-server -> pw-monitor -> pw-user-action`.
+
+### Flow-level extension dependency
+
+Flows can also require extensions at the flow level via `info.requiresRary`, checked before the flow runs:
 
 ```json
 {
