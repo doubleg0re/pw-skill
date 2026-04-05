@@ -5,13 +5,14 @@
   "type": "module",
   "files": [
     "README.md",
+    "bin",
     ".claude-plugin",
     "skills",
     "docs"
   ],
   "bin": {
-    "pw": "./skills/pw-browse/scripts/pw.ts",
-    "pwi": "./skills/pw-browse/scripts/pwi.ts"
+    "pw": "./bin/pw.mjs",
+    "pwi": "./bin/pwi.mjs"
   },
   "scripts": {
     "setup": "npm install && npx playwright install chromium",

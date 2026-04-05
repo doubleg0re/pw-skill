@@ -279,13 +279,34 @@ Global flags:
 `.trim();
 }
 
+function resolveTsxCli(): string {
+  const candidates = [
+    resolve(SCRIPTS_DIR, '..', '..', '..', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+    resolve(SCRIPTS_DIR, '..', '..', '..', '..', 'tsx', 'dist', 'cli.mjs'),
+  ];
+  const cli = candidates.find(existsSync);
+  if (!cli) {
+    throw new Error('tsx runtime not found');
+  }
+  return cli;
+}
+
+function spawnScript(scriptPath: string, scriptArgs: string[]) {
+  const cmdArgs = scriptPath.endsWith('.ts')
+    ? [resolveTsxCli(), scriptPath, ...scriptArgs]
+    : [scriptPath, ...scriptArgs];
+
+  return spawnSync(process.execPath, cmdArgs, {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    env: process.env,
+  });
+}
+
 // --inline mode: delegate to pwi
 if (args[0] === '--inline' || args[0] === '-i') {
   const pwiScript = join(SCRIPTS_DIR, 'pwi.ts');
-  const result = spawnSync(process.execPath, [...process.execArgv, pwiScript, ...args.slice(1)], {
-    stdio: 'inherit',
-    cwd: process.cwd(),
-  });
+  const result = spawnScript(pwiScript, args.slice(1));
   process.exit(result.status ?? 1);
 }
 
@@ -306,10 +327,7 @@ if (args.includes('::')) {
   // Build inline sequence JSON and run through sequence.ts (full runtime)
   const seqSteps = JSON.stringify(segments.map(s => ({ action: s.action, args: buildChainStepArgs(s.args) })));
   const seqScript = join(SCRIPTS_DIR, 'sequence.ts');
-  const result = spawnSync(process.execPath, [...process.execArgv, seqScript, seqSteps, ...globalFlags], {
-    stdio: 'inherit',
-    cwd: process.cwd(),
-  });
+  const result = spawnScript(seqScript, [seqSteps, ...globalFlags]);
   process.exit(result.status ?? 1);
 }
 
@@ -499,10 +517,7 @@ if (command === 'gui') {
       process.exit(1);
     }
     const portArg = restArgs.find(a => a.startsWith('--port=')) || '--port=3100';
-    const result = spawnSync(process.execPath, [...process.execArgv, guiScript, session.name, portArg], {
-      stdio: 'inherit',
-      cwd: process.cwd(),
-    });
+    const result = spawnScript(guiScript, [session.name, portArg]);
     process.exit(result.status ?? 1);
   } catch (err: any) {
     console.log(JSON.stringify({ success: false, error: err.message }));
@@ -523,10 +538,7 @@ const globalScript = join(SCRIPTS_DIR, cmd.script);
 const scriptPath = existsSync(localScript) ? localScript : globalScript;
 
 try {
-  const result = spawnSync(process.execPath, [...process.execArgv, scriptPath, ...restArgs], {
-    stdio: 'inherit',
-    cwd: process.cwd(),
-  });
+  const result = spawnScript(scriptPath, restArgs);
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
