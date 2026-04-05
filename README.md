@@ -25,6 +25,8 @@ MCP gives tools to AI. CLI gives tools to everyone.
 
 ## Install
 
+Requires Node 18+.
+
 ### Claude Code Plugin (recommended)
 
 ```bash
