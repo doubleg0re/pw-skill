@@ -178,12 +178,14 @@ export function createRaryCommands(store: RaryStore) {
     'pw-ws-server': 'doubleg0re/pw-extensions//pw-ws-server',
   };
 
-  async function get(args: string[], flavorKind?: FlavorKind): Promise<Result> {
+  async function get(args: string[], flavorKind?: FlavorKind, installing?: Set<string>): Promise<Result> {
     let input = args[0];
-    if (!input) return { success: false, error: 'Usage: pw rary get <repo|path|builtin:name> [--source] [--build]\n  Subdir: owner/repo//subdir\n  Builtin: builtin:pw-monitor' };
+    if (!input) return { success: false, error: 'Usage: pw rary get <repo|path|builtin:name> [--source] [--build] [--no-deps]\n  Subdir: owner/repo//subdir\n  Builtin: builtin:pw-monitor' };
 
     const isBuild = args.includes('--build');
     const isSource = args.includes('--source') || isBuild; // --build implies source
+    const skipDeps = args.includes('--no-deps');
+    const inProgress = installing || new Set<string>();
 
     // Resolve builtin: prefix
     if (input.startsWith('builtin:')) {
@@ -280,6 +282,37 @@ export function createRaryCommands(store: RaryStore) {
       return { success: false, error: `Package "${pkgName}" already installed. Use \`pw rary destroy ${pkgName}\` first.` };
     }
 
+    // --- Install rary dependencies first (extension.dependencies) ---
+    const installedDeps: Array<{ name: string; spec: string }> = [];
+    const skippedDeps: Array<{ name: string; reason: string }> = [];
+    const depWarnings: string[] = [];
+    const extDeps = manifestData.extension?.dependencies;
+    if (!skipDeps && extDeps && Object.keys(extDeps).length > 0) {
+      inProgress.add(pkgName);
+      for (const [depName, depSpec] of Object.entries(extDeps)) {
+        if (store.isInstalled(depName)) {
+          skippedDeps.push({ name: depName, reason: 'already installed' });
+          continue;
+        }
+        if (inProgress.has(depName)) {
+          skippedDeps.push({ name: depName, reason: 'circular dependency skipped' });
+          continue;
+        }
+        const depResult = await get([depSpec], flavorKind, inProgress);
+        if (!depResult.success) {
+          if (tempDir) cleanupTemp(tempDir);
+          inProgress.delete(pkgName);
+          return {
+            success: false,
+            error: `Failed to install dependency "${depName}" (spec: ${depSpec}): ${depResult.error}`,
+          };
+        }
+        installedDeps.push({ name: depName, spec: depSpec });
+        if (depResult.warnings) depWarnings.push(...depResult.warnings);
+      }
+      inProgress.delete(pkgName);
+    }
+
     // Copy package to toybox
     const targetDir = store.packageDir(pkgName);
 
@@ -316,7 +349,8 @@ export function createRaryCommands(store: RaryStore) {
     // Install npm dependencies if package.json exists
     const pkgJson = join(targetDir, 'package.json');
     if (existsSync(pkgJson)) {
-      spawnSync('npm', ['install', '--production'], { cwd: targetDir, stdio: 'ignore' });
+      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      spawnSync(npmCmd, ['install', '--production'], { cwd: targetDir, stdio: 'ignore', shell: process.platform === 'win32' });
     }
 
     // --build: actually execute rolling/setup path
@@ -336,7 +370,8 @@ export function createRaryCommands(store: RaryStore) {
         try {
           const pkg = JSON.parse(readFileSync(pkgJson, 'utf-8'));
           if (pkg.scripts?.build) {
-            const buildRun = spawnSync('npm', ['run', 'build'], { cwd: targetDir, stdio: 'ignore' });
+            const npmBuildCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+            const buildRun = spawnSync(npmBuildCmd, ['run', 'build'], { cwd: targetDir, stdio: 'ignore', shell: process.platform === 'win32' });
             if (buildRun.status === 0) {
               buildResult = 'Build completed.';
             } else {
@@ -375,8 +410,11 @@ export function createRaryCommands(store: RaryStore) {
         ...(buildResult ? { build: buildResult } : {}),
         manifest: manifest ? { name: manifest.name, version: manifest.version, type: manifest.type, description: manifest.description } : null,
         hint: manifest?.rolling ? `Run \`pw rary rolling ${pkgName}\` for first-time setup.` : undefined,
+        ...(installedDeps.length > 0 ? { installedDependencies: installedDeps } : {}),
+        ...(skippedDeps.length > 0 ? { skippedDependencies: skippedDeps } : {}),
         ...(flavorKind ? { flavor: pickFlavor(flavorKind, pkgName) } : {}),
       },
+      ...(depWarnings.length > 0 ? { warnings: depWarnings } : {}),
     };
   }
 
@@ -434,12 +472,36 @@ export function createRaryCommands(store: RaryStore) {
   }
 
   // --- destroy / kick ---
+  /** Returns names of active extensions whose extension.dependencies list the given package */
+  function findActiveDependents(target: string): string[] {
+    const dependents: string[] = [];
+    for (const { name, manifest } of store.getActiveExtensions()) {
+      const deps = manifest?.extension?.dependencies;
+      if (deps && Object.prototype.hasOwnProperty.call(deps, target)) {
+        dependents.push(name);
+      }
+    }
+    return dependents;
+  }
+
   function destroy(args: string[], flavorKind?: FlavorKind): Result {
     const name = args[0];
-    if (!name) return { success: false, error: 'Usage: pw rary destroy <package>' };
+    if (!name) return { success: false, error: 'Usage: pw rary destroy <package> [--force]' };
+    const force = args.includes('--force');
 
     if (!existsSync(store.packageDir(name))) {
       return { success: false, error: `Package "${name}" not found in toybox.` };
+    }
+
+    // Block destroy if active dependents still require this package
+    if (store.isExtensionActive(name) && !force) {
+      const dependents = findActiveDependents(name);
+      if (dependents.length > 0) {
+        return {
+          success: false,
+          error: `Cannot destroy "${name}": still required by active extensions: ${dependents.join(', ')}.\nDeactivate those first with \`pw rary ignore <name>\`, or retry with --force.`,
+        };
+      }
     }
 
     const wasActive = store.isExtensionActive(name);
@@ -495,13 +557,38 @@ export function createRaryCommands(store: RaryStore) {
   // --- put ---
   function put(args: string[]): Result {
     const name = args[0];
-    if (!name) return { success: false, error: 'Usage: pw rary put <package>' };
+    if (!name) return { success: false, error: 'Usage: pw rary put <package> [--no-deps]' };
+    const skipDeps = args.includes('--no-deps');
 
     if (!store.isInstalled(name)) return { success: false, error: `Package "${name}" not found in toybox.` };
 
     const manifest = store.getManifest(name)!;
     if (manifest.type !== 'extension') {
       return { success: false, error: `Package "${name}" is type "${manifest.type || 'script'}", not an extension. Script packages don't need \`put\`.` };
+    }
+
+    // Auto-activate rary dependencies (extensions only, scripts skipped)
+    const activatedDeps: string[] = [];
+    const depWarnings: string[] = [];
+    const extDeps = manifest.extension?.dependencies;
+    if (!skipDeps && extDeps) {
+      for (const depName of Object.keys(extDeps)) {
+        if (!store.isInstalled(depName)) {
+          depWarnings.push(`Dependency "${depName}" is declared but not installed. Run \`pw rary get <spec>\` first.`);
+          continue;
+        }
+        if (store.isExtensionActive(depName)) continue;
+        const depManifest = store.getManifest(depName);
+        if (depManifest?.type !== 'extension') continue;
+        const depResult = put([depName]);
+        if (!depResult.success) {
+          return {
+            success: false,
+            error: `Failed to activate dependency "${depName}": ${depResult.error}`,
+          };
+        }
+        activatedDeps.push(depName);
+      }
     }
 
     const manifestIssues = validateLarryManifest(manifest, { packageDir: store.packageDir(name) });
@@ -546,17 +633,30 @@ export function createRaryCommands(store: RaryStore) {
         message: `Extension "${name}" is now active. Larry's ready to play.`,
         package: name,
         hooks: manifest.hooks ? Object.keys(manifest.hooks) : [],
+        ...(activatedDeps.length > 0 ? { activatedDependencies: activatedDeps } : {}),
       },
+      ...(depWarnings.length > 0 ? { warnings: depWarnings } : {}),
     };
   }
 
   // --- ignore ---
   function ignore(args: string[], flavorKind?: FlavorKind): Result {
     const name = args[0];
-    if (!name) return { success: false, error: 'Usage: pw rary ignore <package>' };
+    if (!name) return { success: false, error: 'Usage: pw rary ignore <package> [--force]' };
+    const force = args.includes('--force');
 
     if (!store.isExtensionActive(name)) {
       return { success: false, error: `Extension "${name}" is not active.` };
+    }
+
+    if (!force) {
+      const dependents = findActiveDependents(name);
+      if (dependents.length > 0) {
+        return {
+          success: false,
+          error: `Cannot ignore "${name}": still required by active extensions: ${dependents.join(', ')}.\nDeactivate those first with \`pw rary ignore <name>\`, or retry with --force.`,
+        };
+      }
     }
 
     store.deactivateExtension(name);
@@ -641,6 +741,7 @@ Usage: pw rary <command> [args...]
 
 Commands:
   get <repo|path>      Fetch a toy into the toybox (alias: yoink)
+                       Auto-installs raryDependencies unless --no-deps is passed
   toybox               List installed packages
   peek <package>       Inspect a package
   put <package>        Activate an extension

@@ -418,7 +418,7 @@ All commands support these flags:
 
 Sequence is a full flow engine that runs JSON action lists with variables, branching, loops, and functions.
 
-> Full syntax reference for AI generation: [SEQUENCE-SYNTAX.md](SEQUENCE-SYNTAX.md)
+> Full syntax reference for AI generation: [docs/SEQUENCE-SYNTAX.md](docs/SEQUENCE-SYNTAX.md)
 
 ```bash
 pw sequence ./login-flow.json

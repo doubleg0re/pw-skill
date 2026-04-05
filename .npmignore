@@ -5,7 +5,6 @@ larry.png
 
 # Docs (not needed for npm package)
 docs/
-SEQUENCE-SYNTAX.md
 
 # Tests
 tests/

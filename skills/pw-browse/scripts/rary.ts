@@ -23,6 +23,50 @@ export interface LarryAction {
   description?: string;
 }
 
+/** Declaration of a protocol provided by an extension */
+export interface LarryProtocolProvider {
+  /**
+   * Transport name. Currently only "ws" is supported (via pw-ws-server).
+   * Extensions can expand this later (e.g. "ipc", "file").
+   */
+  transport?: string;
+  /**
+   * Path (relative to package dir) of the provider implementation.
+   * The module must export a default object matching the TransportProvider
+   * shape consumed by the transport (e.g. { channel, readSnapshot, subscribe }).
+   */
+  entry: string;
+}
+
+export interface LarryExtensionMeta {
+  /** Legacy scope hint */
+  scope?: string;
+  /**
+   * Runtime dependencies on other rary packages.
+   * Key is package name, value is install spec (same syntax as `pw rary get`):
+   *   "builtin:pw-monitor"
+   *   "owner/repo//subdir"
+   *   "./relative/path"
+   * Version range after `@` is accepted but currently ignored at resolve time.
+   */
+  dependencies?: Record<string, string>;
+  /**
+   * Domain protocols this extension provides.
+   * Key is a stable protocol identifier like "pw-monitor/v1".
+   */
+  provides?: {
+    protocols?: Record<string, LarryProtocolProvider>;
+  };
+  /**
+   * Domain protocols this extension consumes. Used for documentation
+   * and future validation — rary does not currently enforce that a
+   * provider is present, only that `dependencies` resolve.
+   */
+  consumes?: {
+    protocols?: string[];
+  };
+}
+
 export interface LarryManifest {
   name: string;
   version: string;
@@ -32,9 +76,7 @@ export interface LarryManifest {
   commands?: LarryCommand[];
   actions?: Record<string, LarryAction>;
   events?: Record<string, { entry: string }>;
-  extension?: {
-    scope?: string;
-  };
+  extension?: LarryExtensionMeta;
   hooks?: {
     load?: LarryHook;
     launch?: LarryHook;
@@ -226,8 +268,71 @@ export function validateLarryManifest(manifest: unknown, opts: { packageDir?: st
   if (manifest.extension !== undefined) {
     if (!isPlainObject(manifest.extension)) {
       issues.push('Invalid "extension" in larry.json: expected object');
-    } else if (manifest.extension.scope !== undefined && typeof manifest.extension.scope !== 'string') {
-      issues.push('Invalid extension scope in larry.json: expected string');
+    } else {
+      const ext = manifest.extension as Record<string, any>;
+      if (ext.scope !== undefined && typeof ext.scope !== 'string') {
+        issues.push('Invalid extension.scope in larry.json: expected string');
+      }
+      if (ext.dependencies !== undefined) {
+        if (!isPlainObject(ext.dependencies)) {
+          issues.push('Invalid "extension.dependencies": expected object { name: installSpec }');
+        } else {
+          for (const [depName, depSpec] of Object.entries(ext.dependencies)) {
+            if (!isNonEmptyString(depName)) {
+              issues.push('Invalid extension.dependencies key: expected non-empty string');
+              continue;
+            }
+            if (!isNonEmptyString(depSpec)) {
+              issues.push(`Invalid extension.dependencies spec for "${depName}": expected non-empty string`);
+            }
+          }
+        }
+      }
+      if (ext.provides !== undefined) {
+        if (!isPlainObject(ext.provides)) {
+          issues.push('Invalid "extension.provides": expected object');
+        } else if (ext.provides.protocols !== undefined) {
+          if (!isPlainObject(ext.provides.protocols)) {
+            issues.push('Invalid "extension.provides.protocols": expected object');
+          } else {
+            for (const [protoName, protoDef] of Object.entries(ext.provides.protocols)) {
+              if (!isNonEmptyString(protoName)) {
+                issues.push('Invalid extension.provides.protocols key: expected non-empty string');
+                continue;
+              }
+              if (!isPlainObject(protoDef)) {
+                issues.push(`Invalid extension.provides.protocols["${protoName}"]: expected object`);
+                continue;
+              }
+              validateEntryPath(
+                issues,
+                packageDir,
+                `Invalid provider entry for protocol "${protoName}"`,
+                (protoDef as any).entry,
+                (entryPath) => `Protocol provider entry not found: ${protoName} -> ${entryPath}`,
+              );
+              if ((protoDef as any).transport !== undefined && typeof (protoDef as any).transport !== 'string') {
+                issues.push(`Invalid extension.provides.protocols["${protoName}"].transport: expected string`);
+              }
+            }
+          }
+        }
+      }
+      if (ext.consumes !== undefined) {
+        if (!isPlainObject(ext.consumes)) {
+          issues.push('Invalid "extension.consumes": expected object');
+        } else if (ext.consumes.protocols !== undefined) {
+          if (!Array.isArray(ext.consumes.protocols)) {
+            issues.push('Invalid "extension.consumes.protocols": expected array of strings');
+          } else {
+            for (const [idx, proto] of ext.consumes.protocols.entries()) {
+              if (!isNonEmptyString(proto)) {
+                issues.push(`Invalid extension.consumes.protocols[${idx}]: expected non-empty string`);
+              }
+            }
+          }
+        }
+      }
     }
   }
 
