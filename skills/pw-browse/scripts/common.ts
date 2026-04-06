@@ -148,6 +148,18 @@ export function parseViewportSpec(viewportStr?: string): { width: number; height
   };
 }
 
+export function parseSizeSpec(sizeStr?: string): { width: number; height: number } | null {
+  if (!sizeStr) return null;
+  const match = sizeStr.trim().match(/^(\d+)[xX](\d+)$/);
+  if (!match) return null;
+
+  const width = parseInt(match[1], 10);
+  const height = parseInt(match[2], 10);
+  if (width <= 0 || height <= 0) return null;
+
+  return { width, height };
+}
+
 /**
  * Connect to an existing session's browser, or launch a new one.
  * Uses the global session manager for process tracking.

@@ -76,7 +76,7 @@ describe('pw chaining: buildChainStepArgs', () => {
 
 describe('pw chaining: CHAINABLE_ACTION_SET', () => {
   it('includes common browser actions', () => {
-    for (const action of ['navigate', 'click', 'fill', 'dump', 'screenshot', 'evaluate', 'console', 'network', 'dialog']) {
+    for (const action of ['navigate', 'resize', 'click', 'fill', 'dump', 'screenshot', 'evaluate', 'console', 'network', 'dialog']) {
       expect(CHAINABLE_ACTION_SET.has(action)).toBe(true);
     }
   });

@@ -13,7 +13,7 @@ import type { Step } from './sequence-types.js';
 // at validation time via `extraKnownActions`. Keep this list in sync with
 // actions.ts / the CLI dispatch table.
 const KNOWN_ACTIONS = new Set([
-  'navigate', 'nav', 'refresh', 'reload', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
+  'navigate', 'nav', 'refresh', 'reload', 'resize', 'click', 'dblclick', 'drag', 'fill', 'type', 'wait', 'hover',
   'scroll', 'select', 'sel', 'upload', 'attr', 'submit', 'fetch', 'screenshot', 'shot',
   'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'console', 'network', 'dialog', 'return', 'assert',
 ]);

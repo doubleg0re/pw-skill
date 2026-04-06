@@ -380,6 +380,7 @@ pw click <selector|text|x,y>
 pw fill <selector> <text>
 pw submit [selector] [--wait=/url]
 pw scroll <up|down|top|bottom|selector|px>
+pw resize <width>x<height>
 
 # Observation
 pw shot [selector|--full]         # (alias: screenshot)
@@ -392,6 +393,7 @@ pw wait <ms|selector|/url|HH:MM>
 pw fetch GET|POST|PUT|DELETE|PATCH <path> [body]
 
 # Automation
+pw run scripts/playwright/login.ts
 pw sequence <json-file>           # Flow engine — see Sequence Flow Engine below
 
 # Debugging capture
@@ -492,7 +494,7 @@ Extension hooks integrate with session lifecycle:
 
 ## Custom Scripts
 
-Write project-specific scripts in `scripts/playwright/`. They are auto-discovered by `pw`:
+Write project-specific scripts in `scripts/playwright/`. `pw run` checks that directory first for bare names:
 
 ```typescript
 // scripts/playwright/login.ts
@@ -511,10 +513,11 @@ console.log(JSON.stringify({ success: true, url: page.url() }));
 ```
 
 ```bash
-pw login  # auto-discovers scripts/playwright/login.ts
+pw run login.ts
+pw run scripts/playwright/login.ts --session=dev
 ```
 
-Local scripts in `scripts/playwright/` override global scripts with the same name.
+`pw run` looks in `scripts/playwright/` first for bare names like `login.ts`, but also accepts explicit relative or absolute paths.
 
 ## Architecture
 

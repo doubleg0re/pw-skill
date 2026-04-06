@@ -8,6 +8,7 @@ Full reference for every `pw` subcommand. For a short cheatsheet see the [README
 |---|---|
 | `pw nav\|navigate <url> [--screenshot]` | Go to URL |
 | `pw refresh\|reload [--screenshot]` | Reload current page |
+| `pw resize <width>x<height>` | Resize the current browser window when possible, otherwise fall back to viewport resize |
 
 ## Interaction
 
@@ -62,6 +63,7 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | Command | Description |
 |---|---|
 | `pw sequence <json-string\|file>` | Run action sequence (see [SEQUENCE-SYNTAX.md](SEQUENCE-SYNTAX.md)) |
+| `pw run <script.ts\|script.js> [args...]` | Run a custom project script, searching `scripts/playwright/` first for bare names |
 
 ## Session & Tabs
 

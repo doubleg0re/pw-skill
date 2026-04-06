@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments } from './chain-utils.js';
+import { buildRunScriptCandidates, resolveRunScriptPath } from './run-command.js';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
@@ -237,6 +238,7 @@ Package management (Larry's toybox):
 Browser actions:
   nav|navigate <url> [--screenshot]          Go to URL
   refresh|reload [--screenshot]              Reload current page
+  resize <width>x<height>                    Resize browser window/viewport
   shot|screenshot [selector] [--full]        Capture page or element
   click <target> [--mode=selector|text|coord] Click element
   dblclick <target> [--mode=...]             Double-click element
@@ -259,6 +261,7 @@ Browser actions:
   fetch <METHOD> <url> [body-json] [--auth=T] [--credentials=include|same-origin|omit] HTTP request with auth
   assert <selector> [--exists|--visible|--hidden|--count=N|--text=T|--contains=T|--attr=A --value=V] [--wait=ms] Assert element state
   eval|evaluate <js-expression>              Run JavaScript in page
+  run <script.ts|script.js> [args...]        Run a custom project script
   seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
   screenshots                               Default: current cwd/.playwright-state/screenshots
   sessions                                  pw launch --screenshot-path=dir pins screenshot output for that session
@@ -350,6 +353,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   nav:         { script: 'navigate.ts',    desc: 'Go to URL' },
   refresh:     { script: 'refresh.ts',     desc: 'Reload current page' },
   reload:      { script: 'refresh.ts',     desc: 'Reload current page' },
+  resize:      { script: 'resize.ts',      desc: 'Resize browser window/viewport' },
   screenshot:  { script: 'screenshot.ts',  desc: 'Capture page' },
   shot:        { script: 'screenshot.ts',  desc: 'Capture page' },
   click:       { script: 'click.ts',       desc: 'Click element' },
@@ -398,6 +402,27 @@ if (!command || command === 'help' || command === '--help') {
 if (command === 'sequence' && ['help', '--help', '-h'].includes(restArgs[0] || '')) {
   console.log(renderSequenceHelp());
   process.exit(0);
+}
+
+if (command === 'run') {
+  const scriptInput = restArgs[0];
+  if (!scriptInput) {
+    console.log(JSON.stringify({ success: false, error: 'Usage: pw run <script.ts|script.js> [args...]' }));
+    process.exit(1);
+  }
+
+  const scriptPath = resolveRunScriptPath(scriptInput, process.cwd());
+  if (!scriptPath) {
+    const tried = buildRunScriptCandidates(scriptInput, process.cwd()).map(path => path.replace(`${process.cwd()}/`, './'));
+    console.log(JSON.stringify({
+      success: false,
+      error: `Script "${scriptInput}" not found. Tried: ${tried.join(', ')}`,
+    }));
+    process.exit(1);
+  }
+
+  const result = spawnScript(scriptPath, restArgs.slice(1));
+  process.exit(result.status ?? 1);
 }
 
 // --- agent ---

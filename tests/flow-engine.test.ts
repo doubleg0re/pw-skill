@@ -626,6 +626,12 @@ describe('validateSteps', () => {
     ])).toEqual([]);
   });
 
+  it('accepts resize action', () => {
+    expect(validateSteps([
+      { action: 'resize', args: ['1440x900'] },
+    ])).toEqual([]);
+  });
+
   it('detects unknown action', () => {
     const errors = validateSteps([{ action: 'banana' }]);
     expect(errors[0]).toContain('unknown action');

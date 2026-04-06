@@ -68,7 +68,7 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | `--session=N` | `pw` only | Target a specific named session |
 | `--tab=N` | `pw` only | Target a specific tab (default: 0) |
 | `--headed` | `pw` and `pwi` | Show browser window |
-| `--viewport=WxH` | `pw` and `pwi` | Viewport size (default: `auto`, resolved from the current screen) |
+| `--viewport=auto\|WxH` | `pw` and `pwi` | Viewport size (default: `auto`, resolved from the current screen) |
 | `--video[=name]` | `pw` only | Enable video recording |
 | `--screenshot` | `pw` and `pwi` | Take screenshot after action |
 | `--no-restore` | `pw` only | Don't restore last URL on reconnect |
@@ -79,6 +79,13 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 ```bash
 npx tsx {script_path}/navigate.ts <url> [--screenshot] [--headed] [--viewport=WxH]
 ```
+
+### resize.ts — Resize the active browser
+```bash
+npx tsx {script_path}/resize.ts <width>x<height>
+```
+- Resizes the native browser window when CDP can control it
+- Falls back to Playwright viewport resizing otherwise
 
 ### screenshot.ts — Capture page
 ```bash
@@ -574,6 +581,7 @@ run(async ({ page }) => {
 ```
 
 Write temporary scripts in the project's `scripts/playwright/` directory.
+Run them with `pw run login.ts` or `pw run ./scripts/playwright/login.ts`.
 Clean up unnecessary temporary scripts when running `pw-close`.
 
 ## One-shot Mode (pwi)

@@ -1,6 +1,6 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
-import type { Page } from 'playwright';
-import { screenshotPath } from './common.js';
+import type { BrowserContext, Page } from 'playwright';
+import { parseSizeSpec, screenshotPath } from './common.js';
 
 /** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
 export interface ActionRuntime {
@@ -134,6 +134,74 @@ export async function actionNavigate(page: Page, a: ActionArgs): Promise<{ resul
 export async function actionRefresh(page: Page, _a?: ActionArgs): Promise<{ result?: any }> {
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
   return { result: { url: page.url(), title: await page.title(), reloaded: true } };
+}
+
+async function tryResizeWindow(page: Page, size: { width: number; height: number }): Promise<boolean> {
+  const context = page.context() as BrowserContext & {
+    newCDPSession?: (page: Page) => Promise<{ send(method: string, params?: any): Promise<any>; detach?(): Promise<void> }>;
+  };
+
+  if (typeof context.newCDPSession !== 'function') return false;
+
+  let client: { send(method: string, params?: any): Promise<any>; detach?(): Promise<void> } | null = null;
+
+  try {
+    client = await context.newCDPSession(page);
+    const frameDelta = await page.evaluate(() => ({
+      width: Math.max(0, window.outerWidth - window.innerWidth),
+      height: Math.max(0, window.outerHeight - window.innerHeight),
+    })).catch(() => ({ width: 0, height: 0 }));
+
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+    await client.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { windowState: 'normal' },
+    }).catch(() => {});
+    await client.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: {
+        width: size.width + frameDelta.width,
+        height: size.height + frameDelta.height,
+      },
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client?.detach?.().catch(() => {});
+  }
+}
+
+export async function actionResize(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const rawSize = String(getArg(a, 'size', 0) ?? getArg(a, 'viewport', 0) ?? '');
+  if (!rawSize) {
+    throw new Error('Size required. Usage: resize <width>x<height>');
+  }
+
+  const size = parseSizeSpec(rawSize);
+  if (!size) {
+    throw new Error(`Invalid size "${rawSize}". Use <width>x<height> like 1440x900.`);
+  }
+
+  const resizedWindow = await tryResizeWindow(page, size);
+  if (!resizedWindow) {
+    await page.setViewportSize(size);
+  }
+
+  const metrics = await page.evaluate(() => ({
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    window: { width: window.outerWidth, height: window.outerHeight },
+  })).catch(() => undefined);
+
+  return {
+    result: {
+      requested: `${size.width}x${size.height}`,
+      width: size.width,
+      height: size.height,
+      mode: resizedWindow ? 'window' : 'viewport',
+      ...(metrics || {}),
+    },
+  };
 }
 
 export async function actionClick(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
@@ -797,6 +865,7 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: Ac
   nav: actionNavigate,
   refresh: actionRefresh,
   reload: actionRefresh,
+  resize: actionResize,
   click: actionClick,
   dblclick: actionDblclick,
   drag: actionDrag,
