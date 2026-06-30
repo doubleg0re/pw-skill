@@ -1,8 +1,9 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
 import type { BrowserContext, Page } from 'playwright';
-import { mkdirSync } from 'fs';
+import { mkdirSync, readFileSync } from 'fs';
 import { dirname } from 'path';
 import { parseSizeSpec, screenshotPath } from './common.js';
+import { parsePngSize, isDegenerateCapture } from './screenshot-quality.js';
 
 /** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
 export interface ActionRuntime {
@@ -654,17 +655,45 @@ export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: Acti
     path = screenshotPath(parsed.name, runtime?.session);
   }
 
-  if (parsed.full) {
-    await page.screenshot({ path, fullPage: true });
-  } else if (target && String(target).match(/^\d+,\d+,\d+,\d+$/)) {
-    const [x, y, width, height] = String(target).split(',').map(Number);
-    await page.screenshot({ path, clip: { x, y, width, height } });
-  } else if (target) {
-    await page.locator(target).first().screenshot({ path });
-  } else {
-    await page.screenshot({ path });
+  const capture = async () => {
+    if (parsed.full) {
+      await page.screenshot({ path, fullPage: true });
+    } else if (target && String(target).match(/^\d+,\d+,\d+,\d+$/)) {
+      const [x, y, width, height] = String(target).split(',').map(Number);
+      await page.screenshot({ path, clip: { x, y, width, height } });
+    } else if (target) {
+      await page.locator(target).first().screenshot({ path });
+    } else {
+      await page.screenshot({ path });
+    }
+  };
+
+  await capture();
+  // Chrome can intermittently return a blank/solid image with correct dimensions
+  // and no error. Detect it and retry once before surfacing a warning, so the
+  // failure is never silent.
+  let quality = inspectCapture(path);
+  if (quality.degenerate) {
+    await capture();
+    quality = inspectCapture(path);
   }
-  return { result: { screenshot: path, ...(elementKey ? { elementKey } : {}) } };
+
+  return {
+    result: {
+      screenshot: path,
+      ...(elementKey ? { elementKey } : {}),
+      ...(quality.degenerate ? { warning: quality.reason } : {}),
+    },
+  };
+}
+
+function inspectCapture(path: string): { degenerate: boolean; reason?: string } {
+  try {
+    const buf = readFileSync(path);
+    return isDegenerateCapture(buf.length, parsePngSize(buf));
+  } catch {
+    return { degenerate: false };
+  }
 }
 
 export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
