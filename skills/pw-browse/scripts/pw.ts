@@ -28,7 +28,7 @@ const AGENT_SKILLS: Record<string, { title: string; summary: string; when: strin
       'pw refresh [--session=N]',
       'pw click <target> [--session=N]',
       'pw fill <selector> <text> [--session=N]',
-      'pw shot|screenshot [selector] [--full] [--session=N]',
+      'pw shot|screenshot [selector] [--full] [--out=path] [--session=N]',
     ],
     notes: [
       '`pwi` is the lightest entry point for one-shot work',
@@ -239,7 +239,7 @@ Browser actions:
   nav|navigate <url> [--screenshot]          Go to URL
   refresh|reload [--screenshot]              Reload current page
   resize <width>x<height>                    Resize browser window/viewport
-  shot|screenshot [selector] [--full]        Capture page or element
+  shot|screenshot [selector] [--full] [--out=path] Capture page or element (selector = CSS, not output path)
   click <target> [--mode=selector|text|coord] Click element
   dblclick <target> [--mode=...]             Double-click element
   hover <target> [--mode=...]                Hover over element

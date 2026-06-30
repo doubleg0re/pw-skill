@@ -40,7 +40,8 @@ Full reference for every `pw` subcommand. For a short cheatsheet see the [README
 | `pw shot\|screenshot --full` | Capture full page |
 | `pw shot\|screenshot <selector>` | Capture element |
 | `pw shot\|screenshot <x,y,w,h>` | Capture coordinate region |
-| `pw shot\|screenshot --name=login` | Custom screenshot filename |
+| `pw shot\|screenshot --out=<path>` | Write to an explicit file path (parent dirs created); positional arg is a CSS selector, not an output path |
+| `pw shot\|screenshot --name=login` | Custom filename within the screenshot dir |
 | `pw copy <selector> [--format=text\|html\|outer\|image]` | Copy text/HTML/image from element. `--format=image` copies element to clipboard as PNG + saves file. `--save-only` to skip clipboard. |
 | `pw find <selector> [--detail=tag\|class\|full]` | Query DOM elements |
 | `pw attr <selector> <name> [--set=value]` | Read/write DOM attribute |
@@ -110,7 +111,7 @@ All commands support these flags:
 --session=N         Target specific session
 --tab=N             Target specific tab (default: 0)
 --headed            Show browser window
---viewport=auto|WxH Viewport size (default: auto)
+--viewport=auto|WxH Viewport size (default: auto — follows the window; headless uses a 1440x900 default window)
 --video[=name]      Enable video recording
 --raw               Bypass truncation/masking in console/network dump
 ```

@@ -7,6 +7,7 @@
 //   --user-data-dir=DIR   Session-specific Chrome profile directory
 import { chromium } from 'playwright';
 import { createServer } from 'net';
+import { buildChromiumArgs } from './browser-args.js';
 
 const headless = process.argv.includes('--headless');
 const userDataDir = process.argv.find(a => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length) || '';
@@ -30,11 +31,7 @@ async function findFreePort(): Promise<number> {
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless,
     viewport: null,
-    args: [
-      '--no-first-run',
-      '--no-default-browser-check',
-      `--remote-debugging-port=${cdpPort}`,
-    ],
+    args: buildChromiumArgs(headless, cdpPort),
   });
 
   const pid = process.pid;

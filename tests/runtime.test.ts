@@ -27,6 +27,11 @@ describe('buildRuntime — context shape', () => {
     expect(typeof runtime.logger.error).toBe('function');
   });
 
+  it('exposes session.screenshotDir so per-step screenshots respect pinned dir', () => {
+    const runtime = buildRuntime({ session: fakeSession({ screenshotDir: '/pinned/shots' }) });
+    expect(runtime.session.screenshotDir).toBe('/pinned/shots');
+  });
+
   it('lazy accessors return provided objects', async () => {
     const fakePage = { url: () => 'http://test.com' };
     const runtime = buildRuntime({ session: fakeSession(), page: fakePage });

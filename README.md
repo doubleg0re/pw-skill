@@ -383,7 +383,7 @@ pw scroll <up|down|top|bottom|selector|px>
 pw resize <width>x<height>
 
 # Observation
-pw shot [selector|--full]         # (alias: screenshot)
+pw shot [selector] [--full] [--out=path]   # selector=CSS; --out=file path (alias: screenshot)
 pw find <selector>
 pw attr <selector> <name>
 pw eval '<js>'

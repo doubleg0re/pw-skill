@@ -68,7 +68,7 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | `--session=N` | `pw` only | Target a specific named session |
 | `--tab=N` | `pw` only | Target a specific tab (default: 0) |
 | `--headed` | `pw` and `pwi` | Show browser window |
-| `--viewport=auto\|WxH` | `pw` and `pwi` | Viewport size (default: `auto`, resolved from the current screen) |
+| `--viewport=auto\|WxH` | `pw` and `pwi` | Viewport size (default: `auto` — follows the browser window; headless has no real window so it uses a 1440×900 default. Pass `WxH` for an exact size) |
 | `--video[=name]` | `pw` only | Enable video recording |
 | `--screenshot` | `pw` and `pwi` | Take screenshot after action |
 | `--no-restore` | `pw` only | Don't restore last URL on reconnect |
@@ -89,13 +89,15 @@ npx tsx {script_path}/resize.ts <width>x<height>
 
 ### screenshot.ts — Capture page
 ```bash
-npx tsx {script_path}/screenshot.ts [target] [--full] [--name=filename] [--headed]
+npx tsx {script_path}/screenshot.ts [target] [--full] [--out=path] [--name=filename] [--headed]
 ```
 - No args: Capture current viewport
 - `--full`: Full-page scroll capture
-- `selector`: Capture a specific element (e.g., `#header`, `.card`)
+- `selector`: Capture a specific element (e.g., `#header`, `.card`) — a CSS selector, **not** an output path
 - `x,y,width,height`: Capture a coordinate region (e.g., `100,200,500,300`)
-- `--name=filename`: Custom screenshot filename (default: timestamp)
+- `--out=path`: Write to an explicit file path (absolute or relative); parent dirs are created
+- `--name=filename`: Custom filename within the screenshot dir (default: timestamp)
+- `--full`, `--out`, and `--name` behave identically in `pw shot`, `::` chains, and `seq` JSON
 
 ### click.ts — Click an element
 ```bash

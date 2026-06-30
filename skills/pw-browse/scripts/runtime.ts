@@ -16,6 +16,7 @@ export interface ExtensionRuntimeContext {
     cdpEndpoint?: string;
     wsEndpoint?: string;
     userDataDir?: string;
+    screenshotDir?: string;
   };
   browser?: any;
   context?: any;
@@ -121,6 +122,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ExtensionRuntimeContext
       pid: opts.session.pid,
       cdpEndpoint: opts.session.cdpEndpoint,
       wsEndpoint: opts.session.wsEndpoint,
+      screenshotDir: opts.session.screenshotDir,
     },
     browser: opts.browser,
     context: opts.context,

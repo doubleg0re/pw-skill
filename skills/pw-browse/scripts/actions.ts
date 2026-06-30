@@ -1,5 +1,7 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
 import type { BrowserContext, Page } from 'playwright';
+import { mkdirSync } from 'fs';
+import { dirname } from 'path';
 import { parseSizeSpec, screenshotPath } from './common.js';
 
 /** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
@@ -582,10 +584,51 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
   return { result: fetchResult };
 }
 
+/**
+ * Normalize screenshot args across the three entry points so they behave
+ * identically: object args (:: chain → { full: true }), array args
+ * (seq JSON → ["--full"]), and positional args (CLI → ["full"]).
+ */
+function parseScreenshotArgs(a: ActionArgs): { target?: string; name?: string; out?: string; full: boolean } {
+  let full = false;
+  let target: string | undefined;
+  let name: string | undefined;
+  let out: string | undefined;
+
+  if (Array.isArray(a)) {
+    const positionals: string[] = [];
+    for (const token of a) {
+      const s = String(token);
+      if (s === '--full' || s === '--fullPage') { full = true; continue; }
+      if (s.startsWith('--out=')) { out = s.slice('--out='.length); continue; }
+      if (s.startsWith('--path=')) { out = s.slice('--path='.length); continue; }
+      if (s.startsWith('--name=')) { name = s.slice('--name='.length); continue; }
+      positionals.push(s);
+    }
+    target = positionals[0];
+    if (name === undefined) name = positionals[1];
+  } else {
+    target = getArg(a, 'selector', 0) ?? getArg(a, 'target', 0);
+    name = getArg(a, 'name', 1) ?? getArg(a, 'filename', 1);
+    out = a.out ?? a.path;
+    full = a.full === true || a.fullPage === true;
+  }
+
+  // Positional "full" sentinel resolves to a full-page capture, not a selector.
+  if (target === 'full') { full = true; target = undefined; }
+
+  return { target, name, out, full };
+}
+
+/** A positional that looks like a filesystem path is a misplaced output path, not a CSS selector. */
+function looksLikeOutputPath(s: string): boolean {
+  return /^[/~]/.test(s) || /^\.\.?\//.test(s) || (s.includes('/') && /\.(png|jpe?g|webp|gif)$/i.test(s));
+}
+
 export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
-  const name = getArg(a, 'name', 1) || getArg(a, 'filename', 1);
+  const parsed = parseScreenshotArgs(a);
   const key = !Array.isArray(a) ? a.key : undefined;
-  let target = getArg(a, 'selector', 0) || getArg(a, 'target', 0);
+  let target = parsed.target;
   let elementKey: string | undefined;
 
   // Resolve --key for element screenshot
@@ -595,9 +638,23 @@ export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: Acti
     elementKey = resolved.elementKey;
   }
 
-  const path = screenshotPath(name, runtime?.session);
+  if (target && !parsed.out && looksLikeOutputPath(target)) {
+    throw new Error(
+      `Screenshot output path is not a positional argument. ` +
+      `Use --out=<path> for a full path, or --name=<filename> within the screenshot dir. ` +
+      `(Got "${target}", which looks like a file path, not a CSS selector.)`,
+    );
+  }
 
-  if (target === 'full') {
+  let path: string;
+  if (parsed.out) {
+    path = parsed.out;
+    mkdirSync(dirname(path), { recursive: true });
+  } else {
+    path = screenshotPath(parsed.name, runtime?.session);
+  }
+
+  if (parsed.full) {
     await page.screenshot({ path, fullPage: true });
   } else if (target && String(target).match(/^\d+,\d+,\d+,\d+$/)) {
     const [x, y, width, height] = String(target).split(',').map(Number);
