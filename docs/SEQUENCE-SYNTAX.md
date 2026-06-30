@@ -4,12 +4,23 @@ Minimal syntax reference for AI-generated `pw sequence` flows.
 
 ## Root
 
-Sequence input must be a JSON array of steps.
+Sequence input may be either a JSON array of steps or an object with `info` and `flow`.
 
 ```json
 [
   { "action": "navigate", "args": ["https://example.com"] }
 ]
+```
+
+```json
+{
+  "info": {
+    "parameters": ["baseUrl", "credentials"]
+  },
+  "flow": [
+    { "action": "navigate", "args": ["{{baseUrl}}/login"] }
+  ]
+}
 ```
 
 ## Step Shape
@@ -429,6 +440,22 @@ pw sequence flow.json --params ./params/site-a.json
 
 ```json
 { "action": "navigate", "args": ["{{url}}"] }
+```
+
+### Top-level parameter contract
+
+When the root object declares `info.parameters`, `--params` must provide exactly those keys.
+
+```json
+{
+  "info": {
+    "parameters": ["url", "credentials"]
+  },
+  "flow": [
+    { "action": "navigate", "args": ["{{url}}"] },
+    { "action": "fill", "args": ["#email", "{{credentials.email}}"] }
+  ]
+}
 ```
 
 ## Params File Syntax

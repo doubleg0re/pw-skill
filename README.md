@@ -427,6 +427,20 @@ pw sequence flow.json --params ./params/prod.json
 pw sequence flow.json --allow-shell --rary=pw-monitor
 ```
 
+Top-level flows can declare a parameter contract with `info.parameters`. When present, `--params` must provide exactly those keys.
+
+```json
+{
+  "info": {
+    "parameters": ["baseUrl", "credentials"]
+  },
+  "flow": [
+    { "action": "navigate", "args": ["{{baseUrl}}/login"] },
+    { "action": "fill", "args": ["#email", "{{credentials.email}}"] }
+  ]
+}
+```
+
 **Supported primitives**: `set`, `condition`, `each`, `loop`, `label` / `goto`, `def` / `call`, `try` / `catch` / `finally`, `wait` (time, observation, `user-action`, `user-alert`), `shell`, `log`, plus all browser actions.
 
 **Variables**: `out` stores action results; `{{var}}` interpolates them. Special registers include `{{$ret}}`, `{{$err}}`, `{{$code}}`, `{{$elem}}`, `{{$index}}`, `{{$key}}`, `{{$error}}`, `{{$errorType}}`.

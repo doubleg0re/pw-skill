@@ -25,7 +25,7 @@
 //   - Validators       → sequence-validate.ts
 //   - Step normalization + params loading → sequence-params.ts
 
-import { run, screenshotPath } from './common.js';
+import { parseFlag, run, screenshotPath } from './common.js';
 import { existsSync, readFileSync } from 'fs';
 import { ACTION_MAP } from './actions.js';
 import {
@@ -33,8 +33,12 @@ import {
   runSteps,
   evaluateCondition,
 } from './sequence-engine.js';
-import { validateSteps, validateRequiresRary } from './sequence-validate.js';
-import { normalizeStep, loadParams } from './sequence-params.js';
+import {
+  validateSteps,
+  validateRequiresRary,
+  validateFlowParameters,
+} from './sequence-validate.js';
+import { normalizeStep, loadParams, loadParamsData } from './sequence-params.js';
 import type {
   Step,
   StepResult,
@@ -60,15 +64,19 @@ export type {
 export { VarStore, runSteps, evaluateCondition, executeAction } from './sequence-engine.js';
 export type { DialogState, RunOptions } from './sequence-engine.js';
 
-export { validateSteps, validateRequiresRary } from './sequence-validate.js';
-export { normalizeStep, loadParams } from './sequence-params.js';
+export {
+  validateSteps,
+  validateRequiresRary,
+  validateFlowParameters,
+} from './sequence-validate.js';
+export { normalizeStep, loadParams, loadParamsData } from './sequence-params.js';
 
 // --- Entry point (only when run directly, not when imported) ---
 
 const isDirectRun = process.argv[1]?.replace(/\\/g, '/').endsWith('/sequence.ts')
   || process.argv[1]?.replace(/\\/g, '/').endsWith('/sequence.js');
 
-if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
+if (isDirectRun) run(async ({ page, args: cliArgs, rawArgs, session }) => {
   const input = cliArgs[0];
   if (!input) return { success: false, error: 'Usage: sequence.ts <json-string | json-file-path>' };
 
@@ -162,8 +170,20 @@ if (isDirectRun) run(async ({ page, args: cliArgs, session }) => {
   const vars = new VarStore();
 
   // --- --params: inject external parameters into VarStore ---
-  const paramsArg = cliArgs.find((a: string) => a.startsWith('--params='))?.slice('--params='.length)
-    || (cliArgs.indexOf('--params') >= 0 ? cliArgs[cliArgs.indexOf('--params') + 1] : undefined);
+  const paramsArg = parseFlag(rawArgs, 'params')
+    || (rawArgs.indexOf('--params') >= 0 ? rawArgs[rawArgs.indexOf('--params') + 1] : undefined);
+  const loadedParams = paramsArg
+    ? loadParamsData(paramsArg)
+    : { data: {} as Record<string, any> };
+
+  if (loadedParams.error) {
+    return { success: false, error: loadedParams.error };
+  }
+
+  const flowParametersError = validateFlowParameters(info, loadedParams.data || {});
+  if (flowParametersError) {
+    return { success: false, error: flowParametersError };
+  }
 
   if (paramsArg) {
     const paramsError = loadParams(vars, paramsArg);

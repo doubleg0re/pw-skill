@@ -221,3 +221,35 @@ export function validateRequiresRary(
 
   return `Flow requires rary extension(s): ${details.join(', ')}`;
 }
+
+export function validateFlowParameters(
+  info: any,
+  paramsData: Record<string, any>,
+): string | null {
+  if (info?.parameters === undefined) {
+    return null;
+  }
+
+  if (!Array.isArray(info.parameters) || !info.parameters.every((param: any) => typeof param === 'string' && param.length > 0)) {
+    return 'info.parameters must be an array of non-empty strings.';
+  }
+
+  const declared = info.parameters as string[];
+  const providedKeys = Object.keys(paramsData);
+  const missing = declared.filter((name) => !(name in paramsData));
+  const unknown = providedKeys.filter((name) => !declared.includes(name));
+
+  if (missing.length === 0 && unknown.length === 0) {
+    return null;
+  }
+
+  const issues: string[] = [];
+  if (missing.length > 0) {
+    issues.push(`missing required params: ${missing.join(', ')}`);
+  }
+  if (unknown.length > 0) {
+    issues.push(`unknown params: ${unknown.join(', ')}`);
+  }
+
+  return `Flow parameter contract mismatch (${issues.join('; ')}).`;
+}

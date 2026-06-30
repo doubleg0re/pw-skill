@@ -9,6 +9,7 @@
 // one, so the import is type-only and there is no runtime cycle.
 
 import { existsSync, readFileSync } from 'fs';
+import { dirname, resolve } from 'path';
 import type { VarStore } from './sequence-engine.js';
 
 // --- Step shorthand normalization ---
@@ -76,42 +77,69 @@ const FORBIDDEN_PARAM_KEYS = new Set([
   'finally', 'shell', 'return', 'flow', 'items', 'comment',
 ]);
 
-/** Load params from JSON string or file path into VarStore. Returns error string or null. */
-export function loadParams(vars: VarStore, paramsArg: string): string | null {
+export function loadParamsData(
+  paramsArg: string,
+  baseDir: string = process.cwd(),
+  seenPaths: Set<string> = new Set(),
+): { data?: Record<string, any>; error?: string } {
   let data: Record<string, any>;
+  let sourceDir = baseDir;
+
   try {
-    if (existsSync(paramsArg)) {
-      data = JSON.parse(readFileSync(paramsArg, 'utf-8'));
+    const candidatePath = resolve(baseDir, paramsArg);
+    if (existsSync(candidatePath)) {
+      if (seenPaths.has(candidatePath)) {
+        return { error: `Invalid --params: cyclic load detected for "${candidatePath}".` };
+      }
+
+      seenPaths.add(candidatePath);
+      data = JSON.parse(readFileSync(candidatePath, 'utf-8'));
+      sourceDir = dirname(candidatePath);
     } else {
       data = JSON.parse(paramsArg);
     }
   } catch {
-    return `Invalid --params: not valid JSON or file not found.`;
+    return { error: 'Invalid --params: not valid JSON or file not found.' };
   }
 
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return `--params must be a JSON object, not ${Array.isArray(data) ? 'array' : typeof data}.`;
+    return { error: `--params must be a JSON object, not ${Array.isArray(data) ? 'array' : typeof data}.` };
   }
 
   // Check forbidden keys
   const forbidden = Object.keys(data).filter(k => FORBIDDEN_PARAM_KEYS.has(k));
   if (forbidden.length > 0) {
-    return `--params contains forbidden keys: ${forbidden.join(', ')}. Params are data-only.`;
+    return { error: `--params contains forbidden keys: ${forbidden.join(', ')}. Params are data-only.` };
   }
 
-  // Load referenced param files ($id and load are metadata, skip them)
-  for (const [key, value] of Object.entries(data)) {
-    if (key === '$id' || key === 'load') continue;
-    vars.set(key, value);
-  }
+  const merged: Record<string, any> = {};
 
-  // Handle "load" — merge additional param files
+  // Load referenced param files first so the current source can override defaults.
   if (Array.isArray(data.load)) {
     for (const loadPath of data.load) {
       if (typeof loadPath !== 'string') continue;
-      const subError = loadParams(vars, loadPath);
-      if (subError) return subError;
+      const loaded = loadParamsData(loadPath, sourceDir, seenPaths);
+      if (loaded.error) return loaded;
+      Object.assign(merged, loaded.data);
     }
+  }
+
+  // Load current params ($id and load are metadata, skip them)
+  for (const [key, value] of Object.entries(data)) {
+    if (key === '$id' || key === 'load') continue;
+    merged[key] = value;
+  }
+
+  return { data: merged };
+}
+
+/** Load params from JSON string or file path into VarStore. Returns error string or null. */
+export function loadParams(vars: VarStore, paramsArg: string): string | null {
+  const loaded = loadParamsData(paramsArg);
+  if (loaded.error) return loaded.error;
+
+  for (const [key, value] of Object.entries(loaded.data || {})) {
+    vars.set(key, value);
   }
 
   return null;

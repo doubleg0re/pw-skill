@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { VarStore, runSteps, evaluateCondition, validateSteps, validateRequiresRary, loadParams, normalizeStep } from '../skills/pw-browse/scripts/sequence.js';
+import {
+  VarStore,
+  runSteps,
+  evaluateCondition,
+  validateSteps,
+  validateRequiresRary,
+  validateFlowParameters,
+  loadParams,
+  loadParamsData,
+  normalizeStep,
+} from '../skills/pw-browse/scripts/sequence.js';
 
 // Mock page object — only need methods that flow control actions use
 function mockPage(overrides: Record<string, any> = {}): any {
@@ -1195,6 +1205,55 @@ describe('loadParams', () => {
     expect(err).toBeNull();
     expect(vars.get('site')).toBe('https://example.com');
     rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('loads nested files relative to the params file', () => {
+    const { writeFileSync, mkdtempSync, rmSync, mkdirSync } = require('fs');
+    const { join } = require('path');
+    const tmpDir = mkdtempSync(join(require('os').tmpdir(), 'params-nested-test-'));
+    const nestedDir = join(tmpDir, 'env');
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(join(nestedDir, 'base.json'), '{"url":"https://example.com","region":"kr"}');
+    writeFileSync(join(tmpDir, 'params.json'), '{"load":["./env/base.json"],"region":"us"}');
+
+    const vars = new VarStore();
+    const err = loadParams(vars, join(tmpDir, 'params.json'));
+
+    expect(err).toBeNull();
+    expect(vars.get('url')).toBe('https://example.com');
+    expect(vars.get('region')).toBe('us');
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+describe('loadParamsData', () => {
+  it('returns merged params without metadata keys', () => {
+    const loaded = loadParamsData('{"$id":"demo","load":[],"url":"https://example.com"}');
+    expect(loaded.error).toBeUndefined();
+    expect(loaded.data).toEqual({ url: 'https://example.com' });
+  });
+});
+
+describe('validateFlowParameters', () => {
+  it('accepts matching top-level params', () => {
+    expect(validateFlowParameters(
+      { parameters: ['url', 'credentials'] },
+      { url: 'https://example.com', credentials: { email: 'a@test.com' } },
+    )).toBeNull();
+  });
+
+  it('rejects invalid info.parameters shape', () => {
+    expect(validateFlowParameters({ parameters: 'url' }, {})).toContain('array of non-empty strings');
+  });
+
+  it('rejects missing required params', () => {
+    expect(validateFlowParameters({ parameters: ['url', 'credentials'] }, { url: 'https://example.com' }))
+      .toContain('missing required params: credentials');
+  });
+
+  it('rejects unknown params', () => {
+    expect(validateFlowParameters({ parameters: ['url'] }, { url: 'https://example.com', extra: true }))
+      .toContain('unknown params: extra');
   });
 });
 
