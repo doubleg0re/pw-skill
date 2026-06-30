@@ -3,14 +3,34 @@
 // CDP port opened separately for context/page reconnection.
 //
 // Args:
-//   --headless            Run headless
-//   --user-data-dir=DIR   Session-specific Chrome profile directory
-import { chromium } from 'playwright';
+//   --headless              Run headless
+//   --user-data-dir=DIR     Session-specific Chrome profile directory
+//   --device=NAME           Playwright device preset to emulate (e.g. "iPhone 12")
+//   --device-viewport=WxH   Override the device preset's viewport
+import { chromium, type BrowserContextOptions } from 'playwright';
 import { createServer } from 'net';
 import { buildChromiumArgs } from './browser-args.js';
+import { resolveDevicePreset, buildDeviceContextOptions, isDevicePresetDisabled } from './device-presets.js';
 
 const headless = process.argv.includes('--headless');
 const userDataDir = process.argv.find(a => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length) || '';
+const deviceName = process.argv.find(a => a.startsWith('--device='))?.slice('--device='.length);
+const deviceViewport = process.argv.find(a => a.startsWith('--device-viewport='))?.slice('--device-viewport='.length);
+
+function parseViewport(spec?: string): { width: number; height: number } | undefined {
+  if (!spec) return undefined;
+  const [w, h] = spec.split('x').map(Number);
+  return Number.isFinite(w) && Number.isFinite(h) ? { width: w, height: h } : undefined;
+}
+
+// Device emulation is applied at context creation (native Playwright) so it
+// persists for every CDP-connected command — runtime CDP overrides do not
+// survive the session detach, hence --device is fixed at launch.
+function deviceContextOptions(): BrowserContextOptions {
+  if (!deviceName || isDevicePresetDisabled(deviceName)) return { viewport: null };
+  const preset = resolveDevicePreset(deviceName);
+  return buildDeviceContextOptions(preset, parseViewport(deviceViewport));
+}
 
 async function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -26,11 +46,19 @@ async function findFreePort(): Promise<number> {
 (async () => {
   const cdpPort = await findFreePort();
 
+  let deviceOptions: BrowserContextOptions;
+  try {
+    deviceOptions = deviceContextOptions();
+  } catch (err) {
+    process.stdout.write(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) + '\n');
+    process.exit(1);
+  }
+
   // launchPersistentContext: userDataDir is the FIRST parameter (not a Chrome arg)
   // This gives us a real persistent Chrome profile that survives restarts
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless,
-    viewport: null,
+    ...deviceOptions,
     args: buildChromiumArgs(headless, cdpPort),
   });
 

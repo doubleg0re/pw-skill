@@ -3,10 +3,12 @@ import { actionResize } from '../skills/pw-browse/scripts/actions.js';
 
 describe('actionResize', () => {
   it('resizes the browser window through CDP when available', async () => {
-    const send = vi.fn()
-      .mockResolvedValueOnce({ windowId: 7 })
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({});
+    const send = vi.fn(async (method: string) => {
+      if (method === 'Browser.getWindowForTarget') {
+        return { windowId: 7 };
+      }
+      return {};
+    });
     const detach = vi.fn().mockResolvedValue(undefined);
     const newCDPSession = vi.fn().mockResolvedValue({ send, detach });
     const evaluate = vi.fn()
@@ -26,12 +28,17 @@ describe('actionResize', () => {
     const { result } = await actionResize(page, ['1280x720']);
 
     expect(newCDPSession).toHaveBeenCalledWith(page);
-    expect(send).toHaveBeenNthCalledWith(1, 'Browser.getWindowForTarget');
-    expect(send).toHaveBeenNthCalledWith(3, 'Browser.setWindowBounds', {
+    expect(setViewportSize).toHaveBeenCalledWith({ width: 1280, height: 720 });
+    expect(send).toHaveBeenNthCalledWith(1, 'Emulation.clearDeviceMetricsOverride');
+    expect(send).toHaveBeenNthCalledWith(2, 'Emulation.setTouchEmulationEnabled', {
+      enabled: false,
+      maxTouchPoints: 0,
+    });
+    expect(send).toHaveBeenNthCalledWith(3, 'Browser.getWindowForTarget');
+    expect(send).toHaveBeenNthCalledWith(5, 'Browser.setWindowBounds', {
       windowId: 7,
       bounds: { width: 1296, height: 808 },
     });
-    expect(setViewportSize).not.toHaveBeenCalled();
     expect(detach).toHaveBeenCalled();
     expect(result).toMatchObject({
       requested: '1280x720',

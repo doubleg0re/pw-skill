@@ -16,6 +16,14 @@ import {
   bindSession,
   type SessionInfo,
 } from './session.js';
+import { applyViewportMode } from './viewport-utils.js';
+import {
+  applyViewportOverride,
+  findDevicePreset,
+  getDevicePresetWarning,
+  isDevicePresetDisabled,
+  resolveDevicePreset,
+} from './device-presets.js';
 
 // --- Local state directory (per project) ---
 
@@ -60,7 +68,9 @@ async function isWsAlive(wsEndpoint: string): Promise<boolean> {
 
 // --- Chromium CDP process management ---
 
-export async function launchBrowserServer(headless: boolean, userDataDir?: string): Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }> {
+export type DeviceLaunchSpec = { name: string; viewport?: { width: number; height: number } | null };
+
+export async function launchBrowserServer(headless: boolean, userDataDir?: string, device?: DeviceLaunchSpec): Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }> {
   const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
   return new Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }>((res, reject) => {
@@ -69,6 +79,8 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
       serverScript,
       ...(headless ? ['--headless'] : []),
       ...(userDataDir ? [`--user-data-dir=${userDataDir}`] : []),
+      ...(device?.name ? [`--device=${device.name}`] : []),
+      ...(device?.viewport ? [`--device-viewport=${device.viewport.width}x${device.viewport.height}`] : []),
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -89,6 +101,12 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
       for (const line of lines) {
         try {
           const data = JSON.parse(line.trim());
+          if (data.error) {
+            clearTimeout(timeout);
+            child.kill();
+            reject(new Error(data.error));
+            return;
+          }
           if (data.cdpEndpoint) {
             clearTimeout(timeout);
             const portMatch = data.cdpEndpoint.match(/:(\d+)\//);
@@ -129,6 +147,7 @@ interface ConnectOptions {
   video?: boolean;
   sessionName?: string;
   restoreUrl?: boolean; // restore lastUrl on reconnect (default: true)
+  device?: DeviceLaunchSpec; // device preset to emulate when launching a new session
 }
 
 const DEFAULT_VIEWPORT = null;
@@ -189,7 +208,7 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
       throw err;
     }
     // No active session and none specified — auto-launch
-    return launchNewSession({ headless, viewport, video, videoDir });
+    return launchNewSession({ headless, viewport, video, videoDir, device: options.device });
   }
 
   // Try connecting via CDP (preserves existing contexts/pages/DOM)
@@ -256,7 +275,7 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
   }
 
   // Session exists but port is dead — clean up and relaunch with same profile
-  return launchNewSession({ headless, viewport, video, videoDir, resumeName: session.name });
+  return launchNewSession({ headless, viewport, video, videoDir, resumeName: session.name, device: options.device });
 }
 
 async function launchNewSession(opts: {
@@ -267,11 +286,20 @@ async function launchNewSession(opts: {
   screenshotDir?: string;
   resumeName?: string;
   name?: string;
+  device?: DeviceLaunchSpec;
 }): Promise<{ browser: Browser; context: BrowserContext; page: Page; session: SessionInfo; warnings: string[] }> {
   const sessionName = opts.resumeName || opts.name || `s-${generateSessionId()}`;
   const userDataDir = sessionUserDataDir(sessionName);
 
-  const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir);
+  // Device emulation is fixed at context creation, so re-apply the persisted
+  // device when resuming a session whose browser is relaunched.
+  let device = opts.device;
+  if (!device && opts.resumeName) {
+    const prior = getSession(opts.resumeName);
+    if (prior?.device) device = { name: prior.device };
+  }
+
+  const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir, device);
 
   const session = createSession(
     sessionName,
@@ -283,6 +311,10 @@ async function launchNewSession(opts: {
   );
   if (cdpEndpoint) {
     updateSession(sessionName, { cdpEndpoint });
+  }
+  if (device) {
+    updateSession(sessionName, { device: device.name });
+    session.device = device.name;
   }
   bindSession(sessionName);
 
@@ -528,6 +560,7 @@ export async function run(
     context: BrowserContext;
     page: Page;
     args: string[];
+    rawArgs: string[];
     session: SessionInfo;
   }) => Promise<Result>,
 ): Promise<void> {
@@ -551,7 +584,13 @@ export async function run(
     const cliArgs = parseArgs();
     const headed = hasFlag(cliArgs, 'headed');
     const viewportStr = parseFlag(cliArgs, 'viewport');
+    const viewportRequested = viewportStr !== undefined;
     const viewport = parseViewportSpec(viewportStr);
+    const deviceStr = parseFlag(cliArgs, 'device');
+    const deviceRequested = deviceStr !== undefined;
+    const requestedDevice = deviceRequested && !isDevicePresetDisabled(deviceStr)
+      ? applyViewportOverride(resolveDevicePreset(deviceStr), viewportRequested ? viewport : undefined)
+      : null;
 
     const videoName = parseFlag(cliArgs, 'video');
     const videoEnabled = videoName !== undefined || hasFlag(cliArgs, 'video');
@@ -560,10 +599,11 @@ export async function run(
 
     const { browser, context, page: defaultPage, session, warnings: bindingWarnings } = await connectBrowser({
       headless: !headed,
-      viewport,
+      viewport: viewportRequested ? viewport : undefined,
       video: videoEnabled,
       sessionName,
       restoreUrl: !noRestore,
+      device: requestedDevice ? { name: requestedDevice.name, viewport: viewportRequested ? viewport : undefined } : undefined,
     });
 
     // Register dialog handler to prevent Playwright's internal auto-dismiss CDP race condition.
@@ -604,6 +644,30 @@ export async function run(
       }
     }
 
+    // Device emulation is applied natively at context creation (browser-server),
+    // so it is already active on a session launched with --device and inherited
+    // by every reconnecting command. It is fixed for the session's lifetime.
+    if (requestedDevice) {
+      if (session.device === requestedDevice.name) {
+        const warning = getDevicePresetWarning(requestedDevice);
+        if (warning) bindingWarnings.push(warning);
+      } else {
+        bindingWarnings.push(
+          `--device applies at launch and cannot be changed mid-session ` +
+          `(session "${session.name}" is using ${session.device ? `"${session.device}"` : 'no device'}). ` +
+          `Relaunch to change: pw close --session=${session.name} :: launch --device="${requestedDevice.name}".`,
+        );
+      }
+    } else if (viewportRequested) {
+      await applyViewportMode(page, viewport);
+    } else if (deviceRequested) {
+      if (session.device) {
+        bindingWarnings.push(`--device applies at launch; relaunch without --device to clear "${session.device}".`);
+      }
+    } else if (session.device && !findDevicePreset(session.device)) {
+      bindingWarnings.push(`Stored device preset "${session.device}" is no longer available.`);
+    }
+
     // Restore stable tab registry for the active session before runtime/hook work.
     const { restoreRegistry } = await import('./tab-registry.js');
     restoreRegistry(join(globalSessionDir(session.name), 'tabs.json'));
@@ -636,6 +700,7 @@ export async function run(
       context,
       page,
       args: cliArgs.filter(a => !a.startsWith('--')),
+      rawArgs: cliArgs,
       session,
     });
 

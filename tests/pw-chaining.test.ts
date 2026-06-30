@@ -7,7 +7,7 @@ import {
   buildChainStepArgs,
 } from '../skills/pw-browse/scripts/chain-utils.js';
 
-const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'video', 'no-restore']);
+const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore']);
 
 // --- Tests ---
 
@@ -51,6 +51,11 @@ describe('pw chaining: parseChainSegments', () => {
   it('extracts --viewport as global', () => {
     const { globalFlags } = parseChainSegments(['click', '#btn', '--viewport=800x600'], GLOBAL_FLAG_NAMES);
     expect(globalFlags).toContain('--viewport=800x600');
+  });
+
+  it('extracts --device as global', () => {
+    const { globalFlags } = parseChainSegments(['navigate', 'url', '--device=iPhone 12'], GLOBAL_FLAG_NAMES);
+    expect(globalFlags).toContain('--device=iPhone 12');
   });
 });
 

@@ -18,10 +18,17 @@ import {
   localStateDir,
 } from './session.js';
 import { autoRenameVideo } from './video-utils.js';
-import { launchBrowserServer } from './common.js';
+import { launchBrowserServer, parseViewportSpec } from './common.js';
 import { runHooks } from './rary.js';
 import { existsSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
+import { applyViewportMode } from './viewport-utils.js';
+import {
+  applyViewportOverride,
+  getDevicePresetWarning,
+  isDevicePresetDisabled,
+  resolveDevicePreset,
+} from './device-presets.js';
 
 // --- Helpers ---
 
@@ -41,6 +48,19 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   const url = args.filter(a => !a.startsWith('--'))[0];
   const name = parseFlag(args, 'name') || `s-${generateSessionId()}`;
   const resume = parseFlag(args, 'resume');
+  const viewportFlag = parseFlag(args, 'viewport');
+  const viewportRequested = viewportFlag !== undefined;
+  const viewport = parseViewportSpec(viewportFlag);
+  const deviceFlag = parseFlag(args, 'device');
+  const deviceRequested = deviceFlag !== undefined;
+  let devicePreset: ReturnType<typeof applyViewportOverride> | null = null;
+  try {
+    devicePreset = deviceRequested && !isDevicePresetDisabled(deviceFlag)
+      ? applyViewportOverride(resolveDevicePreset(deviceFlag), viewportRequested ? viewport : undefined)
+      : null;
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
   const screenshotPathFlag = parseFlag(args, 'screenshot-path');
   const headed = hasFlag(args, 'headed');
   const videoName = parseFlag(args, 'video');
@@ -53,9 +73,29 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   if (isSessionAlive(sessionName)) {
     const existing = getSession(sessionName)!;
     const previous = getBoundSession();
+    const warnings: string[] = [];
     if (screenshotPathFlag) {
       updateSession(sessionName, { screenshotDir });
       existing.screenshotDir = screenshotDir;
+    }
+    if (deviceRequested) {
+      // Device emulation is fixed at context creation; it cannot change on a running session.
+      if (devicePreset && existing.device !== devicePreset.name) {
+        warnings.push(`--device applies at launch and cannot be changed mid-session (session "${sessionName}" is using ${existing.device ? `"${existing.device}"` : 'no device'}). Relaunch to change: pw close --session=${sessionName} :: launch --device="${devicePreset.name}".`);
+      } else if (!devicePreset && existing.device) {
+        warnings.push(`--device applies at launch; relaunch without --device to clear "${existing.device}".`);
+      } else if (devicePreset) {
+        const warning = getDevicePresetWarning(devicePreset);
+        if (warning) warnings.push(warning);
+      }
+    } else if (viewportRequested) {
+      const browser = existing.cdpEndpoint
+        ? await chromium.connectOverCDP(existing.cdpEndpoint).catch(() => existing.wsEndpoint ? chromium.connect(existing.wsEndpoint) : Promise.reject(new Error('CDP connect failed')))
+        : await chromium.connect(existing.wsEndpoint);
+      const ctx = browser.contexts()[0] || await browser.newContext();
+      const pages = ctx.pages();
+      const page = pages.length > 0 ? pages[0] : await ctx.newPage();
+      await applyViewportMode(page, viewport);
     }
     bindSession(sessionName);
     return {
@@ -66,16 +106,30 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
         bound: true,
         ...(previous && previous !== sessionName ? { previous } : {}),
       },
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
 
   try {
     const userDataDir = sessionUserDataDir(sessionName);
-    const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(!headed, userDataDir);
+    const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(
+      !headed,
+      userDataDir,
+      devicePreset ? { name: devicePreset.name, viewport: viewportRequested ? viewport : undefined } : undefined,
+    );
     const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null), screenshotDir);
+    const warnings: string[] = [];
     if (cdpEndpoint) {
       updateSession(sessionName, { cdpEndpoint });
       (session as any).cdpEndpoint = cdpEndpoint;
+    }
+    if (devicePreset) {
+      updateSession(sessionName, { device: devicePreset.name });
+      session.device = devicePreset.name;
+      const warning = getDevicePresetWarning(devicePreset);
+      if (warning) warnings.push(warning);
+    } else if (viewportRequested) {
+      updateSession(sessionName, { device: undefined });
     }
 
     // Auto-bind to current project
@@ -86,8 +140,8 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
     const launchRuntime = buildRuntime({ session });
     const hookResult = await runHooks('launch', launchRuntime);
 
-    // Navigate to URL if provided
-    if (url) {
+    // Navigate to URL if provided, or apply explicit viewport to the initial page
+    if (url || viewportRequested || deviceRequested) {
       const browser = cdpEndpoint
         ? await chromium.connectOverCDP(cdpEndpoint).catch(() => chromium.connect(wsEndpoint))
         : await chromium.connect(wsEndpoint);
@@ -105,11 +159,20 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
         page = pages.length > 0 ? pages[0] : await ctx.newPage();
       }
 
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      const title = await page.title();
+      // devicePreset is applied natively by browser-server at context creation;
+      // only a plain --viewport (no device) needs a runtime resize here.
+      if (viewportRequested && !devicePreset) {
+        await applyViewportMode(page, viewport);
+      }
+
+      let title: string | undefined;
+      if (url) {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        title = await page.title();
+      }
 
       // Save lastUrl + storageState for reconnection
-      updateSession(sessionName, { lastUrl: url });
+      if (url) updateSession(sessionName, { lastUrl: url });
       const stateDir = localStateDir();
       if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
       await ctx.storageState({ path: join(stateDir, 'state.json') }).catch(() => {});
@@ -117,13 +180,14 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
       return {
         success: true,
         data: {
-          session: { ...session, lastUrl: url },
-          url,
-          title,
+          session: url ? { ...session, lastUrl: url } : session,
+          ...(url ? { url, title } : {}),
           resumed: !!resume,
           hooks: hookResult.ran.length > 0 ? hookResult : undefined,
         },
-        ...(hookResult.errors.length > 0 ? { warnings: hookResult.errors } : {}),
+        ...((warnings.length > 0 || hookResult.errors.length > 0)
+          ? { warnings: [...warnings, ...hookResult.errors] }
+          : {}),
       };
     }
 
@@ -134,7 +198,9 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
         resumed: !!resume,
         hooks: hookResult.ran.length > 0 ? hookResult : undefined,
       },
-      ...(hookResult.errors.length > 0 ? { warnings: hookResult.errors } : {}),
+      ...((warnings.length > 0 || hookResult.errors.length > 0)
+        ? { warnings: [...warnings, ...hookResult.errors] }
+        : {}),
     };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };

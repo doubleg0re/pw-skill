@@ -1,8 +1,9 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
-import type { BrowserContext, Page } from 'playwright';
+import type { Page } from 'playwright';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { parseSizeSpec, screenshotPath } from './common.js';
+import { applyViewportMode, resizeBrowserWindow } from './viewport-utils.js';
 
 /** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
 export interface ActionRuntime {
@@ -138,42 +139,6 @@ export async function actionRefresh(page: Page, _a?: ActionArgs): Promise<{ resu
   return { result: { url: page.url(), title: await page.title(), reloaded: true } };
 }
 
-async function tryResizeWindow(page: Page, size: { width: number; height: number }): Promise<boolean> {
-  const context = page.context() as BrowserContext & {
-    newCDPSession?: (page: Page) => Promise<{ send(method: string, params?: any): Promise<any>; detach?(): Promise<void> }>;
-  };
-
-  if (typeof context.newCDPSession !== 'function') return false;
-
-  let client: { send(method: string, params?: any): Promise<any>; detach?(): Promise<void> } | null = null;
-
-  try {
-    client = await context.newCDPSession(page);
-    const frameDelta = await page.evaluate(() => ({
-      width: Math.max(0, window.outerWidth - window.innerWidth),
-      height: Math.max(0, window.outerHeight - window.innerHeight),
-    })).catch(() => ({ width: 0, height: 0 }));
-
-    const { windowId } = await client.send('Browser.getWindowForTarget');
-    await client.send('Browser.setWindowBounds', {
-      windowId,
-      bounds: { windowState: 'normal' },
-    }).catch(() => {});
-    await client.send('Browser.setWindowBounds', {
-      windowId,
-      bounds: {
-        width: size.width + frameDelta.width,
-        height: size.height + frameDelta.height,
-      },
-    });
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await client?.detach?.().catch(() => {});
-  }
-}
-
 export async function actionResize(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const rawSize = String(getArg(a, 'size', 0) ?? getArg(a, 'viewport', 0) ?? '');
   if (!rawSize) {
@@ -185,10 +150,8 @@ export async function actionResize(page: Page, a: ActionArgs): Promise<{ result?
     throw new Error(`Invalid size "${rawSize}". Use <width>x<height> like 1440x900.`);
   }
 
-  const resizedWindow = await tryResizeWindow(page, size);
-  if (!resizedWindow) {
-    await page.setViewportSize(size);
-  }
+  await applyViewportMode(page, size);
+  const resizedWindow = await resizeBrowserWindow(page, size);
 
   const metrics = await page.evaluate(() => ({
     viewport: { width: window.innerWidth, height: window.innerHeight },

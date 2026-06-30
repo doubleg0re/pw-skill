@@ -278,6 +278,7 @@ Global flags:
   --tab=N        Target specific tab (default: 0)
   --headed       Show browser window
   --viewport=auto|WxH Viewport size (default: auto)
+  --device=name  Playwright device preset, applied at launch (example: "iPhone 12"; --device=none disables; relaunch to change)
   --video[=name] Enable video recording
 `.trim();
 }
@@ -315,7 +316,7 @@ if (args[0] === '--inline' || args[0] === '-i') {
 
 // :: chaining: build sequence JSON and run through full runtime (session-based)
 if (args.includes('::')) {
-  const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'video', 'no-restore']);
+  const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore']);
   const { segments, globalFlags } = parseChainSegments(args, GLOBAL_FLAG_NAMES);
 
   const rejected = segments.filter(s => !CHAINABLE_ACTION_SET.has(s.action)).map(s => s.action);
