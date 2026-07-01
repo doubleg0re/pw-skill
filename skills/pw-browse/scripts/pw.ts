@@ -1,7 +1,7 @@
 #!/usr/bin/env npx tsx
 // pw CLI — Playwright Skill unified command
 import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments } from './chain-utils.js';
@@ -193,6 +193,7 @@ pw — Playwright CLI Skill
 
 Usage: pw <command> [args...]
        pw help [seq|sequence]
+       pw --version
 
 Start here:
   pwi                                     Simplest path; one-shot browser work
@@ -305,6 +306,17 @@ function spawnScript(scriptPath: string, scriptArgs: string[]) {
     cwd: process.cwd(),
     env: process.env,
   });
+}
+
+// --version: print the package version
+if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
+  try {
+    const { version } = JSON.parse(readFileSync(resolve(SCRIPTS_DIR, '../../../package.json'), 'utf8'));
+    console.log(version);
+  } catch {
+    console.log('unknown');
+  }
+  process.exit(0);
 }
 
 // --inline mode: delegate to pwi

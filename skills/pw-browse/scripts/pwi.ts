@@ -10,6 +10,8 @@
 //   pwi navigate https://example.com --device="iPhone 12" --screenshot
 //   pwi dump --selector="h1" --text
 //   pwi navigate url :: click "#login" :: screenshot
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { chromium } from 'playwright';
 import { ACTION_MAP } from './actions.js';
 import { buildInlineStepArgs, parseChainSegments, CHAINABLE_ACTION_SET, handleDialogStep } from './chain-utils.js';
@@ -29,6 +31,17 @@ const EXCLUDED_ACTIONS = new Set([
 // --- Parse ---
 
 const rawArgs = process.argv.slice(2);
+
+if (rawArgs[0] === '--version' || rawArgs[0] === '-v' || rawArgs[0] === 'version') {
+  try {
+    const { version } = JSON.parse(readFileSync(resolve(import.meta.dirname!, '../../../package.json'), 'utf8'));
+    console.log(version);
+  } catch {
+    console.log('unknown');
+  }
+  process.exit(0);
+}
+
 const OPTION_FLAGS = new Set(['headed', 'screenshot', 'viewport', 'device']);
 const { segments: steps } = parseChainSegments(
   rawArgs.filter(a => !a.startsWith('--') || !OPTION_FLAGS.has(a.replace(/^--/, '').split('=')[0])),
