@@ -7,12 +7,20 @@
 // Usage:
 //   pwi navigate https://example.com
 //   pwi navigate https://example.com --screenshot
+//   pwi navigate https://example.com --device="iPhone 12" --screenshot
 //   pwi dump --selector="h1" --text
 //   pwi navigate url :: click "#login" :: screenshot
 import { chromium } from 'playwright';
 import { ACTION_MAP } from './actions.js';
 import { buildInlineStepArgs, parseChainSegments, CHAINABLE_ACTION_SET, handleDialogStep } from './chain-utils.js';
 import { parseViewportSpec } from './common.js';
+import {
+  applyViewportOverride,
+  buildDeviceContextOptions,
+  getDevicePresetWarning,
+  isDevicePresetDisabled,
+  resolveDevicePreset,
+} from './device-presets.js';
 
 const EXCLUDED_ACTIONS = new Set([
   'launch', 'close', 'use', 'sessions', 'analyze', 'clean', 'rary', 'sequence',
@@ -21,7 +29,7 @@ const EXCLUDED_ACTIONS = new Set([
 // --- Parse ---
 
 const rawArgs = process.argv.slice(2);
-const OPTION_FLAGS = new Set(['headed', 'screenshot', 'viewport']);
+const OPTION_FLAGS = new Set(['headed', 'screenshot', 'viewport', 'device']);
 const { segments: steps } = parseChainSegments(
   rawArgs.filter(a => !a.startsWith('--') || !OPTION_FLAGS.has(a.replace(/^--/, '').split('=')[0])),
 );
@@ -29,6 +37,10 @@ const headed = rawArgs.includes('--headed');
 const takeScreenshot = rawArgs.includes('--screenshot');
 const viewportFlag = rawArgs.find(a => a.startsWith('--viewport='));
 const viewport = parseViewportSpec(viewportFlag?.split('=')[1]);
+const deviceFlag = rawArgs.find(a => a.startsWith('--device='));
+const devicePreset = deviceFlag && !isDevicePresetDisabled(deviceFlag.split('=')[1])
+  ? applyViewportOverride(resolveDevicePreset(deviceFlag.split('=')[1]), viewportFlag ? viewport : undefined)
+  : null;
 
 if (steps.length === 0) {
   console.log(JSON.stringify({ success: false, error: 'Usage: pwi <action> [args...] [:: <action> [args...] ...]' }));
@@ -50,7 +62,9 @@ for (const step of steps) {
 
 async function main() {
   const browser = await chromium.launch({ headless: !headed });
-  const context = await browser.newContext({ viewport });
+  const context = await browser.newContext(
+    devicePreset ? buildDeviceContextOptions(devicePreset) : { viewport },
+  );
   const page = await context.newPage();
   let pendingDialog: import('playwright').Dialog | null = null;
   page.on('dialog', d => {
@@ -89,10 +103,13 @@ async function main() {
       await page.screenshot({ path: screenshotPath });
     }
 
+    const deviceWarning = devicePreset ? getDevicePresetWarning(devicePreset) : undefined;
+
     const output = {
       success: true,
       data: steps.length === 1 ? results[0].data : { results },
       ...(screenshotPath ? { screenshot: screenshotPath } : {}),
+      ...(deviceWarning ? { warnings: [deviceWarning] } : {}),
     };
 
     console.log(JSON.stringify(output));

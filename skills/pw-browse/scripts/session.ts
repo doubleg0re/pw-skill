@@ -21,6 +21,7 @@ export interface SessionInfo {
   video: string | null;
   lastUrl?: string;
   screenshotDir?: string;
+  device?: string;
   documentEpoch?: number;
 }
 
