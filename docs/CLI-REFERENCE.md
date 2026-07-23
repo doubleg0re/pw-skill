@@ -48,7 +48,8 @@ The guess only sets which is tried **first** — the other is tried right after,
 | `pw shot\|screenshot --full` | Capture full page |
 | `pw shot\|screenshot <selector>` | Capture element |
 | `pw shot\|screenshot <x,y,w,h>` | Capture coordinate region |
-| `pw shot\|screenshot --out=<path>` | Write to an explicit file path (parent dirs created); positional arg is a CSS selector, not an output path |
+| `pw shot\|screenshot --out=<path>` | Write to an explicit file path (parent dirs created) |
+| `pw shot\|screenshot <path>` | A positional that looks like a file path (`/…`, `./…`, `*.png`) is treated as `--out`, not a selector |
 | `pw shot\|screenshot --name=login` | Custom filename within the screenshot dir |
 | `pw copy <selector> [--format=text\|html\|outer\|image]` | Copy text/HTML/image from element. `--format=image` copies element to clipboard as PNG + saves file. `--save-only` to skip clipboard. |
 | `pw find <selector> [--detail=tag\|class\|full]` | Query DOM elements |

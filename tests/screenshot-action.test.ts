@@ -85,10 +85,18 @@ describe('actionScreenshot — output path (bug 3)', () => {
     expect(calls.page[0]?.fullPage).toBe(true);
   });
 
-  it('rejects a path-like selector with guidance toward --out', async () => {
-    const { page } = makeFakePage();
-    await expect(
-      actionScreenshot(page, ['/private/tmp/design-dashboard.png'], runtime as any),
-    ).rejects.toThrow(/--out/);
+  it('routes a path-like positional to --out instead of treating it as a selector', async () => {
+    const { page, calls } = makeFakePage();
+    const positional = join(tmpdir(), 'pw-shot-test', 'design-dashboard.png');
+    await actionScreenshot(page, [positional], runtime as any);
+    expect(calls.page[0]?.path).toBe(positional);
+    expect(calls.locator).toHaveLength(0);
+  });
+
+  it('routes a relative path-like positional too', async () => {
+    const { page, calls } = makeFakePage();
+    await actionScreenshot(page, ['./shots/hero.png'], runtime as any);
+    expect(calls.page[0]?.path).toBe('./shots/hero.png');
+    expect(calls.locator).toHaveLength(0);
   });
 });

@@ -634,6 +634,10 @@ function parseScreenshotArgs(a: ActionArgs): { target?: string; name?: string; o
   // Positional "full" sentinel resolves to a full-page capture, not a selector.
   if (target === 'full') { full = true; target = undefined; }
 
+  // A positional that looks like a filesystem path is an output path, not a CSS selector.
+  // dump and copy take their path positionally, so accept it here too rather than rejecting.
+  if (target && !out && looksLikeOutputPath(target)) { out = target; target = undefined; }
+
   return { target, name, out, full };
 }
 
@@ -653,14 +657,6 @@ export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: Acti
     const resolved = await resolveKeyOrSelector(page, a, 0, runtime);
     target = resolved.selector;
     elementKey = resolved.elementKey;
-  }
-
-  if (target && !parsed.out && looksLikeOutputPath(target)) {
-    throw new Error(
-      `Screenshot output path is not a positional argument. ` +
-      `Use --out=<path> for a full path, or --name=<filename> within the screenshot dir. ` +
-      `(Got "${target}", which looks like a file path, not a CSS selector.)`,
-    );
   }
 
   let path: string;
