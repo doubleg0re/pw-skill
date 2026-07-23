@@ -22,6 +22,7 @@ export interface ActionRuntime {
   };
   emitEvent?: (event: string, payload: any) => void;
   logger?: {
+    debug?(msg: string): void;
     info(msg: string): void;
     warn(msg: string): void;
     error(msg: string): void;

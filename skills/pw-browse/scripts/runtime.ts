@@ -32,6 +32,8 @@ export interface ExtensionRuntimeContext {
   emitEvent: (event: string, payload: any) => void;
   registerCleanup: (fn: () => Promise<void> | void) => void;
   logger: {
+    /** Routine per-command chatter — buffered, printed only under PW_LOG_DEBUG. */
+    debug(msg: string): void;
     info(msg: string): void;
     warn(msg: string): void;
     error(msg: string): void;
@@ -58,7 +60,7 @@ export interface BuildRuntimeOptions {
 }
 
 export interface LogEntry {
-  level: 'info' | 'warn' | 'error';
+  level: 'debug' | 'info' | 'warn' | 'error';
   message: string;
   source: string;
   timestamp: string;
@@ -66,13 +68,18 @@ export interface LogEntry {
 
 const logBuffer: LogEntry[] = [];
 
+/** Per-command chatter is buffered but not printed unless PW_LOG_DEBUG is set. */
+const isDebugPrinted = process.env.PW_LOG_DEBUG === '1' || process.env.PW_LOG_DEBUG === 'true';
+
 function createLog(level: LogEntry['level'], msg: string, source: string = 'pw') {
   const entry: LogEntry = { level, message: msg, source, timestamp: new Date().toISOString() };
   logBuffer.push(entry);
+  if (level === 'debug' && !isDebugPrinted) return; // still in the buffer, just not on stderr
   process.stderr.write(`[${source}:${level}] ${msg}\n`);
 }
 
 const defaultLogger = {
+  debug: (msg: string) => createLog('debug', msg),
   info: (msg: string) => createLog('info', msg),
   warn: (msg: string) => createLog('warn', msg),
   error: (msg: string) => createLog('error', msg),
@@ -93,6 +100,7 @@ export function clearLogBuffer(): void {
  */
 export function prefixedLogger(baseLogger: typeof defaultLogger, packageName: string) {
   return {
+    debug: (msg: string) => createLog('debug', msg, packageName),
     info: (msg: string) => createLog('info', msg, packageName),
     warn: (msg: string) => createLog('warn', msg, packageName),
     error: (msg: string) => createLog('error', msg, packageName),
