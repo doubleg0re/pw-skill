@@ -101,14 +101,16 @@ npx tsx {script_path}/screenshot.ts [target] [--full] [--out=path] [--name=filen
 
 ### click.ts — Click an element
 ```bash
-npx tsx {script_path}/click.ts <target> [--mode=selector|text|coord]
+npx tsx {script_path}/click.ts <target> [--mode=selector|text] [--timeout=ms]
 ```
-- Auto-detection: `#id` `.class` → selector, `350,200` → coord, otherwise → text
-- `--mode`: Explicitly specify mode
+- Auto-detection: `350,200` → coord; `#id` `.class` `[attr=v]` `button[aria-label=v]` `div#main` `a.link` `li:nth-child(2)` `text=` `//` `>>` → selector; otherwise → text
+- The guess picks which is tried first only — the other is tried right after, so text that looks like CSS still clicks
+- `--mode`: Skip detection and force one interpretation (then the full Playwright auto-wait applies, for elements that appear late)
+- `--timeout`: Total budget for resolving the target (default 5000ms). Unmatched targets fail within it and name both attempts
 
 ### dblclick.ts — Double-click an element
 ```bash
-npx tsx {script_path}/dblclick.ts <target> [--mode=selector|text|coord]
+npx tsx {script_path}/dblclick.ts <target> [--mode=selector|text] [--timeout=ms]
 ```
 - Same interface as click.ts, performs a double-click
 
@@ -132,7 +134,7 @@ npx tsx {script_path}/type.ts <text> [--delay=ms]
 
 ### hover.ts — Hover over an element
 ```bash
-npx tsx {script_path}/hover.ts <target> [--mode=selector|text|coord]
+npx tsx {script_path}/hover.ts <target> [--mode=selector|text] [--timeout=ms]
 ```
 - Same interface as click.ts, performs a hover
 

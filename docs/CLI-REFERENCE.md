@@ -15,7 +15,9 @@ Full reference for every `pw` subcommand. For a short cheatsheet see the [README
 | Command | Description |
 |---|---|
 | `pw click <selector\|text\|x,y>` | Click element |
-| `pw dblclick <selector\|text\|x,y>` | Double-click element |
+| `pw click <target> --mode=selector\|text` | Skip target detection and force one interpretation |
+| `pw click <target> --timeout=<ms>` | Budget for resolving the target (default 5000) |
+| `pw dblclick <selector\|text\|x,y>` | Double-click element (same target rules as `click`) |
 | `pw hover <selector\|text>` | Hover (tooltips, menus) |
 | `pw drag <source> <target>` | Drag and drop (selector or coordinates) |
 | `pw scroll <up\|down\|top\|bottom\|selector\|px>` | Scroll page |
@@ -31,6 +33,12 @@ Full reference for every `pw` subcommand. For a short cheatsheet see the [README
 | `pw paste` | Paste (Ctrl+V at current focus) |
 | `pw paste [selector] --text="hello"` | Set clipboard and paste text |
 | `pw paste [selector] --image=./photo.png` | Paste image |
+
+### How a click target is resolved
+
+`click`, `dblclick`, `download`, and `paste` all take a target that may be a CSS selector or the element's visible text. Sigil-led (`#id`, `.class`, `[attr=…]`), tag-qualified (`button[aria-label=…]`, `div#main`, `a.link`, `li:nth-child(2)`), and Playwright engine forms (`text=`, `//`, `>>`) are treated as selectors; anything else is treated as text.
+
+The guess only sets which is tried **first** — the other is tried right after, so link text that happens to look like CSS still works. If neither matches, the command fails within `--timeout` (5s total by default) and names both attempts, rather than spending Playwright's 30s auto-wait on a single guess. Use `--mode=selector|text` to skip resolution entirely; the action then waits the full Playwright timeout, which is what you want for an element that appears late.
 
 ## Observation
 

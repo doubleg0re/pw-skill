@@ -13,3 +13,6 @@ export const CONSOLE_LOG_ENTRY_LIMIT = 2000;
 
 /** Dump strict mode content limit (chars) */
 export const DUMP_STRICT_CONTENT_LIMIT = 50_000;
+
+/** Total budget for resolving a click target as either a selector or text (ms) */
+export const TARGET_RESOLVE_TIMEOUT_MS = 5000;

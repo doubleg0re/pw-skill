@@ -37,7 +37,7 @@ function mockPage(overrides: Record<string, any> = {}): any {
     mouse: { click: vi.fn(), move: vi.fn(), down: vi.fn(), up: vi.fn(), dblclick: vi.fn() },
     keyboard: { type: vi.fn(), press: vi.fn() },
     getByText: vi.fn(() => ({
-      first: vi.fn(() => ({ click: vi.fn() })),
+      first: vi.fn(() => ({ click: vi.fn(), waitFor: vi.fn() })),
     })),
     waitForTimeout: vi.fn(),
     waitForURL: vi.fn(),
@@ -711,7 +711,7 @@ describe('Flow Engine — def with type + items', () => {
     const results: any[] = [];
     const defs = emptyDefs();
     const page = mockPage({
-      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('fail')) })) })),
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ waitFor: vi.fn(), click: vi.fn().mockRejectedValue(new Error('fail')) })) })),
     });
 
     await runSteps(page, [
@@ -770,7 +770,7 @@ describe('Flow Engine — try/catch/finally', () => {
     const vars = new VarStore();
     const results: any[] = [];
     const page = mockPage({
-      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('Element not found')) })) })),
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ waitFor: vi.fn(), click: vi.fn().mockRejectedValue(new Error('Element not found')) })) })),
     });
 
     await runSteps(page, [{
@@ -804,7 +804,7 @@ describe('Flow Engine — try/catch/finally', () => {
     const vars = new VarStore();
     const results: any[] = [];
     const page = mockPage({
-      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('fail')) })) })),
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ waitFor: vi.fn(), click: vi.fn().mockRejectedValue(new Error('fail')) })) })),
     });
 
     await runSteps(page, [{
@@ -823,7 +823,7 @@ describe('Flow Engine — try/catch/finally', () => {
     const vars = new VarStore();
     const results: any[] = [];
     const page = mockPage({
-      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('Element not found')) })) })),
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ waitFor: vi.fn(), click: vi.fn().mockRejectedValue(new Error('Element not found')) })) })),
     });
 
     await runSteps(page, [{
@@ -841,7 +841,7 @@ describe('Flow Engine — try/catch/finally', () => {
     const vars = new VarStore();
     const results: any[] = [];
     const page = mockPage({
-      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('Timeout 30000ms exceeded')) })) })),
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ waitFor: vi.fn(), click: vi.fn().mockRejectedValue(new Error('Timeout 30000ms exceeded')) })) })),
     });
 
     await runSteps(page, [{
@@ -859,7 +859,7 @@ describe('Flow Engine — try/catch/finally', () => {
     const vars = new VarStore();
     const results: any[] = [];
     const page = mockPage({
-      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('boom')) })) })),
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ waitFor: vi.fn(), click: vi.fn().mockRejectedValue(new Error('boom')) })) })),
     });
 
     const outcome = await runSteps(page, [{
@@ -1032,7 +1032,7 @@ describe('Flow Engine — ephemeral registers', () => {
     const vars = new VarStore();
     const results: any[] = [];
     const page = mockPage({
-      locator: vi.fn(() => ({ first: vi.fn(() => ({ click: vi.fn().mockRejectedValue(new Error('boom')) })) })),
+      locator: vi.fn(() => ({ first: vi.fn(() => ({ waitFor: vi.fn(), click: vi.fn().mockRejectedValue(new Error('boom')) })) })),
     });
 
     await runSteps(page, [{

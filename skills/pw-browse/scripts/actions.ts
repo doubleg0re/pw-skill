@@ -5,6 +5,7 @@ import { dirname } from 'path';
 import { parseSizeSpec, screenshotPath } from './common.js';
 import { applyViewportMode, resizeBrowserWindow } from './viewport-utils.js';
 import { parsePngSize, isDegenerateCapture } from './screenshot-quality.js';
+import { isCoordinatePair, resolveClickTarget, type TargetMode } from './selector-utils.js';
 
 /** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
 export interface ActionRuntime {
@@ -170,31 +171,74 @@ export async function actionResize(page: Page, a: ActionArgs): Promise<{ result?
   };
 }
 
+/** Shared parsing for click-like actions: positional target plus --mode / --timeout. */
+function parseTargetArgs(a: ActionArgs): { target?: string; mode?: TargetMode; timeout?: number } {
+  let target: string | undefined;
+  let mode: string | undefined;
+  let rawTimeout: string | number | undefined;
+
+  if (Array.isArray(a)) {
+    const positionals: string[] = [];
+    for (const token of a) {
+      const s = String(token);
+      if (s.startsWith('--mode=')) { mode = s.slice('--mode='.length); continue; }
+      if (s.startsWith('--timeout=')) { rawTimeout = s.slice('--timeout='.length); continue; }
+      positionals.push(s);
+    }
+    target = positionals[0];
+  } else {
+    target = getArg(a, 'selector', 0) ?? getArg(a, 'target', 0);
+    mode = a.mode;
+    rawTimeout = a.timeout;
+  }
+
+  const timeout = rawTimeout === undefined ? undefined : Number(rawTimeout);
+  return {
+    target,
+    mode: mode === 'selector' || mode === 'text' ? mode : undefined,
+    timeout: timeout !== undefined && Number.isFinite(timeout) && timeout > 0 ? timeout : undefined,
+  };
+}
+
 export async function actionClick(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
   if (elementKey) {
     // Resolved from elementKey — always use locator (may contain >> nth=N)
     await page.locator(selector).first().click();
-  } else if (/^\d+,\d+$/.test(selector)) {
-    const [x, y] = selector.split(',').map(Number);
-    await page.mouse.click(x, y);
-  } else if (selector.startsWith('#') || selector.startsWith('.') || selector.startsWith('[')) {
-    await page.locator(selector).first().click();
-  } else {
-    await page.getByText(selector, { exact: false }).first().click();
+    return { result: { elementKey } };
   }
-  return elementKey ? { result: { elementKey } } : {};
+
+  const parsed = parseTargetArgs(a);
+  const target = parsed.target ?? selector;
+  if (isCoordinatePair(target)) {
+    const [x, y] = target.split(',').map(Number);
+    await page.mouse.click(x, y);
+    return {};
+  }
+
+  const locator = await resolveClickTarget(page, target, parsed);
+  await locator.click();
+  return {};
 }
 
 export async function actionDblclick(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
-  if (/^\d+,\d+$/.test(selector)) {
-    const [x, y] = selector.split(',').map(Number);
-    await page.mouse.dblclick(x, y);
-  } else {
+  if (elementKey) {
     await page.locator(selector).first().dblclick();
+    return { result: { elementKey } };
   }
-  return elementKey ? { result: { elementKey } } : {};
+
+  const parsed = parseTargetArgs(a);
+  const target = parsed.target ?? selector;
+  if (isCoordinatePair(target)) {
+    const [x, y] = target.split(',').map(Number);
+    await page.mouse.dblclick(x, y);
+    return {};
+  }
+
+  const locator = await resolveClickTarget(page, target, parsed);
+  await locator.dblclick();
+  return {};
 }
 
 export async function actionDrag(page: Page, a: ActionArgs): Promise<{ result?: any }> {
@@ -425,13 +469,22 @@ export async function actionWait(page: Page, a: ActionArgs, runtime?: ActionRunt
 
 export async function actionHover(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
-  if (/^\d+,\d+$/.test(selector)) {
-    const [x, y] = selector.split(',').map(Number);
-    await page.mouse.move(x, y);
-  } else {
+  if (elementKey) {
     await page.locator(selector).first().hover();
+    return { result: { elementKey } };
   }
-  return elementKey ? { result: { elementKey } } : {};
+
+  const parsed = parseTargetArgs(a);
+  const target = parsed.target ?? selector;
+  if (isCoordinatePair(target)) {
+    const [x, y] = target.split(',').map(Number);
+    await page.mouse.move(x, y);
+    return {};
+  }
+
+  const locator = await resolveClickTarget(page, target, parsed);
+  await locator.hover();
+  return {};
 }
 
 export async function actionScroll(page: Page, a: ActionArgs): Promise<{ result?: any }> {

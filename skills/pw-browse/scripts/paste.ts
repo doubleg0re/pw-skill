@@ -7,6 +7,7 @@
 //   pw paste --image=./screenshot.png       # Paste image from file (ClipboardEvent)
 //   pw paste "#editor" --image=./photo.png  # Click selector, paste image
 import { run, parseFlag, hasFlag } from './common.js';
+import { resolveClickTarget } from './selector-utils.js';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
@@ -17,11 +18,7 @@ run(async ({ page, args }) => {
 
   // Click target if provided
   if (selector) {
-    if (selector.startsWith('#') || selector.startsWith('.') || selector.startsWith('[')) {
-      await page.locator(selector).first().click();
-    } else {
-      await page.getByText(selector, { exact: false }).first().click();
-    }
+    await (await resolveClickTarget(page, selector)).click();
   }
 
   // --- Image paste ---

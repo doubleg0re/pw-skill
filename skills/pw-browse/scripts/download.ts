@@ -6,6 +6,7 @@
 //   pw download status                              # List pending/completed downloads
 //   pw download list                                # List saved files
 import { run, parseFlag, hasFlag, ensureStateDir } from './common.js';
+import { isCoordinatePair, resolveClickTarget } from './selector-utils.js';
 import { join, resolve } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, unlinkSync, statSync } from 'fs';
 
@@ -81,13 +82,11 @@ run(async ({ page, args }) => {
   const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
 
   // Click the target
-  if (/^\d+,\d+$/.test(target)) {
+  if (isCoordinatePair(target)) {
     const [x, y] = target.split(',').map(Number);
     await page.mouse.click(x, y);
-  } else if (target.startsWith('#') || target.startsWith('.') || target.startsWith('[')) {
-    await page.locator(target).first().click();
   } else {
-    await page.getByText(target, { exact: false }).first().click();
+    await (await resolveClickTarget(page, target)).click();
   }
 
   const download = await downloadPromise;
