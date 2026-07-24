@@ -263,6 +263,8 @@ Browser actions:
   fetch <METHOD> <url> [body-json] [--auth=T] [--credentials=include|same-origin|omit] HTTP request with auth
   assert <selector> [--exists|--visible|--hidden|--count=N|--text=T|--contains=T|--attr=A --value=V] [--wait=ms] Assert element state
   eval|evaluate <js-expression>              Run JavaScript in page
+  react <selector> [--limit=n]               Inspect React fiber tree (component chain, handlers, source)
+  react --pick | --pick-result [--clear]     Interactive component picker (inject overlay / read captures)
   run <script.ts|script.js> [args...]        Run a custom project script
   seq|sequence <json|file>                  Run action sequence (syntax: pw help seq)
   screenshots                               Default: current cwd/.playwright-state/screenshots
@@ -394,6 +396,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   evaluate:    { script: 'evaluate.ts',    desc: 'Run JavaScript' },
   eval:        { script: 'evaluate.ts',    desc: 'Run JavaScript' },
   assert:      { script: 'assert.ts',      desc: 'Assert element state' },
+  react:       { script: 'react.ts',       desc: 'Inspect React fiber tree' },
   sequence:    { script: 'sequence.ts',    desc: 'Run action sequence' },
   console:     { script: 'console.ts',     desc: 'Console logs' },
   network:     { script: 'network.ts',     desc: 'Network requests' },
