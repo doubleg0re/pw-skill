@@ -91,12 +91,28 @@ export interface ChainSegment {
   args: string[];
 }
 
+export function isGlobalFlagArg(arg: string, globalFlagNames: Set<string>): boolean {
+  return arg.startsWith('--') && globalFlagNames.has(arg.replace(/^--/, '').split('=')[0]);
+}
+
+// Peel leading global flags (e.g. `pw --session=x nav url`) off the front so the
+// command token is found regardless of flag position — matching the trailing-flag
+// and `::` chain paths, which already ignore flag position.
+export function splitLeadingGlobalFlags(
+  argv: string[],
+  globalFlagNames: Set<string>,
+): { leadingFlags: string[]; rest: string[] } {
+  let i = 0;
+  while (i < argv.length && isGlobalFlagArg(argv[i], globalFlagNames)) i++;
+  return { leadingFlags: argv.slice(0, i), rest: argv.slice(i) };
+}
+
 export function parseChainSegments(
   argv: string[],
   globalFlagNames?: Set<string>,
 ): { segments: ChainSegment[]; globalFlags: string[] } {
   const isGlobalFlag = globalFlagNames
-    ? (a: string) => a.startsWith('--') && globalFlagNames.has(a.replace(/^--/, '').split('=')[0])
+    ? (a: string) => isGlobalFlagArg(a, globalFlagNames)
     : undefined;
 
   const segments: ChainSegment[] = [];

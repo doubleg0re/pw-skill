@@ -4,12 +4,13 @@ import { spawnSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments } from './chain-utils.js';
+import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments, splitLeadingGlobalFlags } from './chain-utils.js';
 import { buildRunScriptCandidates, resolveRunScriptPath } from './run-command.js';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
+const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore']);
 
 const AGENT_SKILLS: Record<string, { title: string; summary: string; when: string[]; cli: string[]; notes?: string[] }> = {
   browse: {
@@ -328,7 +329,6 @@ if (args[0] === '--inline' || args[0] === '-i') {
 
 // :: chaining: build sequence JSON and run through full runtime (session-based)
 if (args.includes('::')) {
-  const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore']);
   const { segments, globalFlags } = parseChainSegments(args, GLOBAL_FLAG_NAMES);
 
   const rejected = segments.filter(s => !CHAINABLE_ACTION_SET.has(s.action)).map(s => s.action);
@@ -347,9 +347,12 @@ if (args.includes('::')) {
   process.exit(result.status ?? 1);
 }
 
-const rawCommand = args[0];
+// Peel leading global flags (`pw --session=x nav url`) so the command token is
+// found regardless of flag position; re-append them so sub-scripts still see them.
+const { leadingFlags: leadingGlobalFlags, rest: commandArgs } = splitLeadingGlobalFlags(args, GLOBAL_FLAG_NAMES);
+const rawCommand = commandArgs[0];
 const command = rawCommand === 'seq' ? 'sequence' : rawCommand;
-const restArgs = args.slice(1);
+const restArgs = [...commandArgs.slice(1), ...leadingGlobalFlags];
 
 // Parse --flag=value from restArgs
 function flag(name: string): string | undefined {
