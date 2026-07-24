@@ -2,11 +2,12 @@
 // Sessions live in {globalDir}/sessions/{name}/
 // Local project state lives in {localDir}/.playwright-state/
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { randomBytes } from 'crypto';
 import { atomicWriteJSON } from './file-utils.js';
 import { acquireLockOrThrow, releaseLock } from './lock.js';
+import { ensureStateDirGitExcluded } from './git-exclude.js';
 
 // --- Session Types ---
 
@@ -211,6 +212,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
     bindSession(name: string): void {
       ensureDir(opts.localDir);
       writeFileSync(join(opts.localDir, 'current-session.txt'), name);
+      ensureStateDirGitExcluded(dirname(opts.localDir));
     },
 
     unbindSession(): void {
