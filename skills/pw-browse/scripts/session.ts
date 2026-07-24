@@ -21,6 +21,8 @@ export interface SessionInfo {
   startedAt: string;
   video: string | null;
   lastUrl?: string;
+  /** Opt-in origin guard set by `pw launch/use --pin`; see pin-utils.ts. */
+  pinnedOrigin?: string;
   screenshotDir?: string;
   device?: string;
   documentEpoch?: number;

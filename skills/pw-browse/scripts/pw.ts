@@ -10,7 +10,7 @@ import { buildRunScriptCandidates, resolveRunScriptPath } from './run-command.js
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
-const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore']);
+const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore', 'no-pin-check']);
 
 const AGENT_SKILLS: Record<string, { title: string; summary: string; when: string[]; cli: string[]; notes?: string[] }> = {
   browse: {
@@ -218,8 +218,8 @@ Chaining:
   seq syntax                              Run pw help seq
 
 Session management:
-  launch [url] [--name=N] [--resume=N] [--screenshot-path=dir] Launch browser session
-  use <name>                                Bind session to project
+  launch [url] [--name=N] [--resume=N] [--pin] [--screenshot-path=dir] Launch browser session (--pin: lock to url origin)
+  use <name> [--pin]                        Bind session to project (--pin: lock to current origin)
   sessions                                  List all sessions
   close [--session=N] [--all]               Close session(s)
 
@@ -242,13 +242,14 @@ Browser actions:
   refresh|reload [--screenshot]              Reload current page
   resize <width>x<height>                    Resize browser window/viewport
   shot|screenshot [selector] [--full] [--out=path] Capture page or element (selector = CSS, not output path)
-  click <target> [--mode=selector|text|coord] Click element
+  click <target> [--mode=selector|text|coord] [--exact] [--within=<sel>] [--dblclick] Click element
   dblclick <target> [--mode=...]             Double-click element
   hover <target> [--mode=...]                Hover over element
   drag <source> <target> [--mode=...]        Drag and drop
   scroll <up|down|top|bottom|selector>       Scroll page
   fill <selector> <text>                     Fill input field
   type <text> [--delay=ms]                   Type on keyboard
+  press <key> [--delay=ms]                   Press a key/combo (Enter, Escape, Tab, ArrowDown, cmd+z)
   sel|select <selector> (--value=x|--label=x|--index=n) Select dropdown option
   upload <selector> <file-path...>           Upload file
   download <target> [--async] [--dir=path]   Download file
@@ -279,6 +280,7 @@ Debugging:
 
 Global flags:
   --session=N    Target specific session (name or ID)
+  --no-pin-check Bypass a session's origin pin for this command
   --tab=N        Target specific tab (default: 0)
   --headed       Show browser window
   --viewport=auto|WxH Viewport size (default: auto)
@@ -381,6 +383,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   scroll:      { script: 'scroll.ts',      desc: 'Scroll page' },
   fill:        { script: 'fill.ts',        desc: 'Fill input field' },
   type:        { script: 'type.ts',        desc: 'Type on keyboard' },
+  press:       { script: 'press.ts',       desc: 'Press a key or combo' },
   select:      { script: 'select.ts',      desc: 'Select dropdown option' },
   sel:         { script: 'select.ts',      desc: 'Select dropdown option' },
   upload:      { script: 'upload.ts',      desc: 'Upload file' },
@@ -522,7 +525,7 @@ if (command === 'launch') {
 if (command === 'use') {
   const { useSession } = await import('./session-commands.js');
   const name = restArgs.filter(a => !a.startsWith('--'))[0];
-  const result = await useSession(name);
+  const result = await useSession(name, { pin: restArgs.includes('--pin') });
   console.log(JSON.stringify(result));
   process.exit(result.success ? 0 : 1);
 }

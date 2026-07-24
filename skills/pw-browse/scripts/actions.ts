@@ -1,11 +1,12 @@
 // actions.ts — Shared action implementations used by both CLI scripts and sequence.ts
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { mkdirSync, readFileSync } from 'fs';
 import { dirname } from 'path';
 import { parseSizeSpec, screenshotPath } from './common.js';
 import { applyViewportMode, resizeBrowserWindow } from './viewport-utils.js';
 import { parsePngSize, isDegenerateCapture } from './screenshot-quality.js';
-import { isCoordinatePair, resolveClickTarget, type TargetMode } from './selector-utils.js';
+import { describeCandidates, isCoordinatePair, resolveClickTarget, type TargetMode } from './selector-utils.js';
+import { normalizeKey } from './key-utils.js';
 
 /** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
 export interface ActionRuntime {
@@ -177,6 +178,9 @@ function parseTargetArgs(a: ActionArgs): { target?: string; mode?: TargetMode; t
   let target: string | undefined;
   let mode: string | undefined;
   let rawTimeout: string | number | undefined;
+  let within: string | undefined;
+  let exact = false;
+  let dblclick = false;
 
   if (Array.isArray(a)) {
     const positionals: string[] = [];
@@ -184,6 +188,9 @@ function parseTargetArgs(a: ActionArgs): { target?: string; mode?: TargetMode; t
       const s = String(token);
       if (s.startsWith('--mode=')) { mode = s.slice('--mode='.length); continue; }
       if (s.startsWith('--timeout=')) { rawTimeout = s.slice('--timeout='.length); continue; }
+      if (s.startsWith('--within=')) { within = s.slice('--within='.length); continue; }
+      if (s === '--exact') { exact = true; continue; }
+      if (s === '--dblclick') { dblclick = true; continue; }
       positionals.push(s);
     }
     target = positionals[0];
@@ -191,6 +198,9 @@ function parseTargetArgs(a: ActionArgs): { target?: string; mode?: TargetMode; t
     target = getArg(a, 'selector', 0) ?? getArg(a, 'target', 0);
     mode = a.mode;
     rawTimeout = a.timeout;
+    within = a.within;
+    exact = a.exact === true || a.exact === 'true';
+    dblclick = a.dblclick === true || a.dblclick === 'true';
   }
 
   const timeout = rawTimeout === undefined ? undefined : Number(rawTimeout);
@@ -198,28 +208,65 @@ function parseTargetArgs(a: ActionArgs): { target?: string; mode?: TargetMode; t
     target,
     mode: mode === 'selector' || mode === 'text' ? mode : undefined,
     timeout: timeout !== undefined && Number.isFinite(timeout) && timeout > 0 ? timeout : undefined,
+    exact,
+    within,
+    dblclick,
   };
+}
+
+/**
+ * Run the click and, if it fails, say why it probably failed. A substring text match takes
+ * `.first()`, so the usual cause is that a different element matched first and was never
+ * clickable — which Playwright reports only as an actionability timeout.
+ */
+async function clickWithDiagnostics(
+  page: Page,
+  locator: Locator,
+  target: string,
+  parsed: { exact?: boolean; within?: string },
+  kind: 'click' | 'dblclick',
+): Promise<void> {
+  try {
+    if (kind === 'dblclick') await locator.dblclick();
+    else await locator.click();
+  } catch (cause) {
+    const candidates = await describeCandidates(page, target, parsed);
+    if (candidates.length === 0) throw cause;
+    throw new Error(
+      `${(cause as Error).message.split('\n')[0]}\n` +
+      `"${target}" matches ${candidates.length} elements as text and the first was used. ` +
+      `Narrow it with --exact, --within=<selector>, or --mode=selector.\nCandidates:\n` +
+      candidates.map(c => `  - ${c}`).join('\n'),
+    );
+  }
 }
 
 export async function actionClick(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
   const { selector, elementKey } = await resolveKeyOrSelector(page, a, 0, runtime);
+  const parsed = parseTargetArgs(a);
+  // `--dblclick` used to be silently dropped, so it behaved as a single click and made
+  // "the double click did nothing" look like an app bug. Honour it as an alias instead.
+  const kind = parsed.dblclick ? 'dblclick' : 'click';
+
   if (elementKey) {
     // Resolved from elementKey — always use locator (may contain >> nth=N)
-    await page.locator(selector).first().click();
-    return { result: { elementKey } };
+    const el = page.locator(selector).first();
+    if (kind === 'dblclick') await el.dblclick();
+    else await el.click();
+    return { result: { elementKey, ...(parsed.dblclick ? { dblclick: true } : {}) } };
   }
 
-  const parsed = parseTargetArgs(a);
   const target = parsed.target ?? selector;
   if (isCoordinatePair(target)) {
     const [x, y] = target.split(',').map(Number);
-    await page.mouse.click(x, y);
+    if (kind === 'dblclick') await page.mouse.dblclick(x, y);
+    else await page.mouse.click(x, y);
     return {};
   }
 
   const locator = await resolveClickTarget(page, target, parsed);
-  await locator.click();
-  return {};
+  await clickWithDiagnostics(page, locator, target, parsed, kind);
+  return parsed.dblclick ? { result: { dblclick: true } } : {};
 }
 
 export async function actionDblclick(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
@@ -238,7 +285,7 @@ export async function actionDblclick(page: Page, a: ActionArgs, runtime?: Action
   }
 
   const locator = await resolveClickTarget(page, target, parsed);
-  await locator.dblclick();
+  await clickWithDiagnostics(page, locator, target, parsed, 'dblclick');
   return {};
 }
 
@@ -272,6 +319,16 @@ export async function actionType(page: Page, a: ActionArgs): Promise<{ result?: 
   const delay = Number(getArg(a, 'delay', 1) || 0);
   await page.keyboard.type(String(text), { delay });
   return {};
+}
+
+// `type` sends literal characters, so "Enter" would be typed as five letters. This is the
+// path for actual key events — special keys and modifier combos alike.
+export async function actionPress(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const raw = getArg(a, 'key', 0);
+  const delay = Number(getArg(a, 'delay', 1) || 0);
+  const key = normalizeKey(String(raw));
+  await page.keyboard.press(key, delay ? { delay } : undefined);
+  return { result: { key, ...(String(raw) !== key ? { requested: String(raw) } : {}) } };
 }
 
 export async function actionWait(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
@@ -970,6 +1027,7 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: Ac
   drag: actionDrag,
   fill: actionFill,
   type: actionType,
+  press: actionPress,
   wait: actionWait,
   hover: actionHover,
   scroll: actionScroll,

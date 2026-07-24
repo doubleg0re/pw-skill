@@ -78,7 +78,7 @@ export function buildInlineStepArgs(args: string[], scope: Record<string, any>):
 
 export const CHAINABLE_ACTIONS = [
   'navigate', 'nav', 'refresh', 'reload', 'resize', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
-  'fill', 'type', 'select', 'sel', 'upload', 'submit',
+  'fill', 'type', 'press', 'select', 'sel', 'upload', 'submit',
   'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert', 'console', 'network', 'dialog',
 ] as const;
 

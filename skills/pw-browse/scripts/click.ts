@@ -8,7 +8,7 @@ run(async ({ page, args, session }) => {
   const key = parseFlag(argv, 'key');
   const target = args[0];
   if (!target && !key) {
-    return { success: false, error: 'Target required. Usage: click.ts <target> [--key=<elementKey>] [--mode=selector|text] [--timeout=<ms>]' };
+    return { success: false, error: 'Target required. Usage: click.ts <target> [--key=<elementKey>] [--mode=selector|text] [--exact] [--within=<selector>] [--dblclick] [--timeout=<ms>]' };
   }
 
   const actionArgs = key ? { key } : [target, ...targetFlags(argv)];

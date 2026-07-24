@@ -14,7 +14,9 @@ export function isCoordinatePair(target: string): boolean {
 
 /** Forward target-resolution flags from a CLI argv into the array form actions parse. */
 export function targetFlags(argv: string[]): string[] {
-  return argv.filter(arg => arg.startsWith('--mode=') || arg.startsWith('--timeout='));
+  return argv.filter(arg =>
+    arg.startsWith('--mode=') || arg.startsWith('--timeout=') ||
+    arg.startsWith('--within=') || arg === '--exact' || arg === '--dblclick');
 }
 
 const SIGIL_LED = /^[#.[]/;
@@ -46,11 +48,14 @@ export function looksLikeSelector(target: string): boolean {
 export async function resolveClickTarget(
   page: Page,
   target: string,
-  opts: { mode?: TargetMode; timeout?: number } = {},
+  opts: { mode?: TargetMode; timeout?: number; exact?: boolean; within?: string } = {},
 ): Promise<Locator> {
   const budget = opts.timeout ?? TARGET_RESOLVE_TIMEOUT_MS;
-  const asSelector = () => page.locator(target).first();
-  const asText = () => page.getByText(target, { exact: false }).first();
+  // --within narrows both interpretations to a subtree, which is the reliable way out
+  // of a short label matching unrelated copy elsewhere on the page.
+  const scope: any = opts.within ? page.locator(opts.within) : page;
+  const asSelector = () => scope.locator(target).first();
+  const asText = () => scope.getByText(target, { exact: opts.exact ?? false }).first();
 
   if (opts.mode === 'selector') return asSelector();
   if (opts.mode === 'text') return asText();
@@ -76,6 +81,39 @@ export async function resolveClickTarget(
     `(waited ${budget}ms total). Force one with --mode=selector|text, or raise --timeout=<ms>.\n` +
     failures.join('\n'),
   );
+}
+
+/**
+ * List the elements a text target matches, for error messages. Text matching is substring
+ * by default and resolution takes `.first()`, so a short label like "저장" can silently
+ * select "자동 저장됨" and then fail as a 30s actionability timeout. Surfacing the
+ * candidates turns that into an obvious mis-selection instead of a mystery hang.
+ */
+export async function describeCandidates(
+  page: Page,
+  target: string,
+  opts: { within?: string; exact?: boolean; limit?: number } = {},
+): Promise<string[]> {
+  try {
+    const scope: any = opts.within ? page.locator(opts.within) : page;
+    const matches = scope.getByText(target, { exact: opts.exact ?? false });
+    const count = await matches.count();
+    if (count <= 1) return [];
+
+    const shown = Math.min(count, opts.limit ?? 5);
+    const out: string[] = [];
+    for (let i = 0; i < shown; i++) {
+      const info = await matches.nth(i).evaluate((n: any) => {
+        const text = (n.innerText || n.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+        return `${n.tagName.toLowerCase()}${n.id ? '#' + n.id : ''} «${text}»`;
+      }).catch(() => null);
+      if (info) out.push(info);
+    }
+    if (count > shown) out.push(`… and ${count - shown} more`);
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /** Wait for one interpretation to appear. A miss carries its cause so neither is swallowed. */

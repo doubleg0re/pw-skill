@@ -17,6 +17,7 @@ import {
   type SessionInfo,
 } from './session.js';
 import { applyViewportMode } from './viewport-utils.js';
+import { pinViolation } from './pin-utils.js';
 import {
   applyViewportOverride,
   findDevicePreset,
@@ -605,6 +606,21 @@ export async function run(
       restoreUrl: !noRestore,
       device: requestedDevice ? { name: requestedDevice.name, viewport: viewportRequested ? viewport : undefined } : undefined,
     });
+
+    // Origin pin gate. Opt-in per session (`pw launch/use --pin`); a pinned session refuses
+    // to act once the page has drifted to another app, which is how a shared session
+    // previously wrote blank data into the wrong project.
+    if (!hasFlag(cliArgs, 'no-pin-check')) {
+      const violation = pinViolation(session.pinnedOrigin, defaultPage.url());
+      if (violation) {
+        console.log(JSON.stringify({
+          success: false,
+          error: `Session "${session.name}": ${violation}`,
+          context: { session: session.name, url: defaultPage.url(), pinnedOrigin: session.pinnedOrigin },
+        }));
+        process.exit(1);
+      }
+    }
 
     // Register dialog handler to prevent Playwright's internal auto-dismiss CDP race condition.
     // For standalone commands, auto-accept beforeunload and dismiss others.

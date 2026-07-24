@@ -23,6 +23,7 @@ import { runHooks } from './rary.js';
 import { existsSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 import { applyViewportMode } from './viewport-utils.js';
+import { originOf } from './pin-utils.js';
 import {
   applyViewportOverride,
   getDevicePresetWarning,
@@ -172,7 +173,8 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
       }
 
       // Save lastUrl + storageState for reconnection
-      if (url) updateSession(sessionName, { lastUrl: url });
+      const pinnedOrigin = hasFlag(args, 'pin') && url ? originOf(url) ?? undefined : undefined;
+      if (url) updateSession(sessionName, { lastUrl: url, ...(pinnedOrigin ? { pinnedOrigin } : {}) });
       const stateDir = localStateDir();
       if (!existsSync(stateDir)) mkdirSync(stateDir, { recursive: true });
       await ctx.storageState({ path: join(stateDir, 'state.json') }).catch(() => {});
@@ -180,8 +182,9 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
       return {
         success: true,
         data: {
-          session: url ? { ...session, lastUrl: url } : session,
+          session: url ? { ...session, lastUrl: url, ...(pinnedOrigin ? { pinnedOrigin } : {}) } : session,
           ...(url ? { url, title } : {}),
+          ...(pinnedOrigin ? { pinnedOrigin } : {}),
           resumed: !!resume,
           hooks: hookResult.ran.length > 0 ? hookResult : undefined,
         },
@@ -209,7 +212,7 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
 
 // --- Use ---
 
-export async function useSession(name?: string): Promise<{ success: boolean; data?: any; error?: string }> {
+export async function useSession(name?: string, opts?: { pin?: boolean }): Promise<{ success: boolean; data?: any; error?: string }> {
   if (!name) {
     // Show current binding
     const bound = getBoundSession();
@@ -230,11 +233,23 @@ export async function useSession(name?: string): Promise<{ success: boolean; dat
 
   const previous = getBoundSession();
   bindSession(name);
+
+  // --pin freezes the session to whatever origin it is currently on.
+  let pinnedOrigin: string | undefined;
+  if (opts?.pin) {
+    pinnedOrigin = originOf(session.lastUrl || '') ?? undefined;
+    if (!pinnedOrigin) {
+      return { success: false, error: `Cannot pin "${name}": no navigable page yet (session is at ${session.lastUrl || 'about:blank'}). Navigate first, then re-run with --pin.` };
+    }
+    updateSession(name, { pinnedOrigin });
+  }
+
   return {
     success: true,
     data: {
       session: name,
       bound: true,
+      ...(pinnedOrigin ? { pinnedOrigin } : {}),
       ...(previous && previous !== name ? { previous } : {}),
     },
   };
