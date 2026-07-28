@@ -19,7 +19,11 @@ Full reference for every `pw` subcommand. For a short cheatsheet see the [README
 | `pw click <target> --timeout=<ms>` | Budget for resolving the target (default 5000) |
 | `pw dblclick <selector\|text\|x,y>` | Double-click element (same target rules as `click`) |
 | `pw hover <selector\|text>` | Hover (tooltips, menus) |
-| `pw drag <source> <target>` | Drag and drop (selector or coordinates) |
+| `pw drag <source> <target>` | Drag and drop; each side is a CSS selector or a viewport `x,y` (mix freely, e.g. element→`x,y`) |
+| `pw drag <source> <target> --grab=<anchor\|x,y>` | Grip point on the **source** element (default `center`; ignored if source is a coordinate) |
+| `pw drag <source> <target> --drop=<anchor\|x,y>` | Drop point on the **target** element (default `center`; ignored if target is a coordinate) |
+| `pw drag <source> <target> --steps=<n>` | Intermediate mouse moves for the pointer path (default 10) |
+| `pw drag <source> <target> --mouse` | Force the pointer path even for element→element (for pointer-based DnD libs); native HTML5 drag-and-drop is best served by the default `dragTo` path |
 | `pw scroll <up\|down\|top\|bottom\|selector\|px>` | Scroll page |
 | `pw fill <selector> <text>` | Click + fill input |
 | `pw type <text> [--delay=ms]` | Type on keyboard |
@@ -39,6 +43,14 @@ Full reference for every `pw` subcommand. For a short cheatsheet see the [README
 `click`, `dblclick`, `download`, and `paste` all take a target that may be a CSS selector or the element's visible text. Sigil-led (`#id`, `.class`, `[attr=…]`), tag-qualified (`button[aria-label=…]`, `div#main`, `a.link`, `li:nth-child(2)`), and Playwright engine forms (`text=`, `//`, `>>`) are treated as selectors; anything else is treated as text.
 
 The guess only sets which is tried **first** — the other is tried right after, so link text that happens to look like CSS still works. If neither matches, the command fails within `--timeout` (5s total by default) and names both attempts, rather than spending Playwright's 30s auto-wait on a single guess. Use `--mode=selector|text` to skip resolution entirely; the action then waits the full Playwright timeout, which is what you want for an element that appears late.
+
+### Drag grips and coordinates
+
+`drag <source> <target>` accepts a CSS selector **or** a viewport coordinate `x,y` on each side independently, so element→element, element→coordinate, coordinate→element, and coordinate→coordinate all work. Coordinate detection is lenient: `100,200`, `100, 200`, `-5,10`, and `12.5,4` all parse.
+
+`--grab` / `--drop` set which point of the **source** / **target** element is grabbed and dropped (default `center`; ignored when that side is a coordinate). Values are a named anchor — `center`, `top-left`, `top`, `top-right`, `left`, `right`, `bottom-left`, `bottom`, `bottom-right` — or an explicit `x,y` pixel offset from the element's top-left. Named edge/corner anchors land a few px inside the element: the exact corner sits on the border (outside a rounded shape entirely), where hit-testing resolves to a parent and the drag misses. Pass an explicit `x,y` when you need a literal corner.
+
+Pure element→element drags use Playwright's native `dragTo` (the right choice for HTML5 drag-and-drop). Any coordinate side, or `--mouse`, switches to a `mouse.move → down → move(steps) → up` pointer path, where `--steps=<n>` controls the intermediate moves (default 10) — needed by pointer-based DnD libraries.
 
 ## Observation
 

@@ -95,6 +95,16 @@ export function isGlobalFlagArg(arg: string, globalFlagNames: Set<string>): bool
   return arg.startsWith('--') && globalFlagNames.has(arg.replace(/^--/, '').split('=')[0]);
 }
 
+/**
+ * Does the post-command argument list ask for help? Intercepted at dispatch so
+ * `pw <action> --help` prints usage instead of running the action (a defaulted
+ * action like `scroll` would otherwise absorb `--help` as its target and
+ * silently execute against the bound session's page).
+ */
+export function wantsHelp(args: string[]): boolean {
+  return args.some(a => a === '--help' || a === '-h');
+}
+
 // Peel leading global flags (e.g. `pw --session=x nav url`) off the front so the
 // command token is found regardless of flag position — matching the trailing-flag
 // and `::` chain paths, which already ignore flag position.

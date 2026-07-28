@@ -4,7 +4,7 @@ import { spawnSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments, splitLeadingGlobalFlags } from './chain-utils.js';
+import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments, splitLeadingGlobalFlags, wantsHelp } from './chain-utils.js';
 import { buildRunScriptCandidates, resolveRunScriptPath } from './run-command.js';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
@@ -245,7 +245,7 @@ Browser actions:
   click <target> [--mode=selector|text|coord] [--exact] [--within=<sel>] [--dblclick] Click element
   dblclick <target> [--mode=...]             Double-click element
   hover <target> [--mode=...]                Hover over element
-  drag <source> <target> [--mode=...]        Drag and drop
+  drag <source|x,y> <target|x,y> [--grab=A] [--drop=A] [--steps=n] [--mouse] Drag/drop; each side is a selector or viewport x,y. A=grip anchor (center,top-left,top,top-right,left,right,bottom-left,bottom,bottom-right) or x,y offset. --mouse forces the pointer path (native HTML5 DnD uses the default).
   scroll <up|down|top|bottom|selector>       Scroll page
   fill <selector> <text>                     Fill input field
   type <text> [--delay=ms]                   Type on keyboard
@@ -287,6 +287,20 @@ Global flags:
   --device=name  Playwright device preset, applied at launch (example: "iPhone 12"; --device=none disables; relaunch to change)
   --video[=name] Enable video recording
 `.trim();
+}
+
+/**
+ * Usage for a single command, for `pw <command> --help`. Reuses the signature +
+ * description line from the main help (single source of truth); falls back to the
+ * full help when no per-command line exists.
+ */
+function renderCommandUsage(command: string): string {
+  const line = renderMainHelp().split('\n').find(raw => {
+    const trimmed = raw.trim();
+    const firstToken = trimmed.split(/\s+/)[0];
+    return firstToken.split('|').includes(command);
+  });
+  return line ? `pw ${line.trim()}` : renderMainHelp();
 }
 
 function resolveTsxCli(): string {
@@ -423,6 +437,15 @@ if (!command || command === 'help' || command === '--help') {
 
 if (command === 'sequence' && ['help', '--help', '-h'].includes(restArgs[0] || '')) {
   console.log(renderSequenceHelp());
+  process.exit(0);
+}
+
+// `pw <command> --help|-h`: print usage and exit *before* any action dispatch, so a
+// help request never spawns the action script (a defaulted action like `scroll` would
+// otherwise run against the bound session's page). Global `pw help`/`pw --help` are
+// handled above and never reach here.
+if (wantsHelp(restArgs)) {
+  console.log(renderCommandUsage(command));
   process.exit(0);
 }
 

@@ -7,6 +7,16 @@ import { applyViewportMode, resizeBrowserWindow } from './viewport-utils.js';
 import { parsePngSize, isDegenerateCapture } from './screenshot-quality.js';
 import { describeCandidates, isCoordinatePair, resolveClickTarget, type TargetMode } from './selector-utils.js';
 import { normalizeKey } from './key-utils.js';
+import {
+  ANCHOR_NAMES,
+  CENTER_GRIP,
+  gripToAbsolute,
+  gripToPosition,
+  isNonCenter,
+  parseGrip,
+  parseViewportPoint,
+  type Grip,
+} from './drag-utils.js';
 
 /** Typed runtime context for actions — replaces `runtime?: ActionRuntime` */
 export interface ActionRuntime {
@@ -289,21 +299,108 @@ export async function actionDblclick(page: Page, a: ActionArgs, runtime?: Action
   return {};
 }
 
-export async function actionDrag(page: Page, a: ActionArgs): Promise<{ result?: any }> {
-  const source = getArg(a, 'source', 0);
-  const target = getArg(a, 'target', 1);
-
-  if (/^\d+,\d+$/.test(source) && /^\d+,\d+$/.test(target)) {
-    const [sx, sy] = source.split(',').map(Number);
-    const [tx, ty] = target.split(',').map(Number);
-    await page.mouse.move(sx, sy);
-    await page.mouse.down();
-    await page.mouse.move(tx, ty, { steps: 10 });
-    await page.mouse.up();
-  } else {
-    await page.locator(source).first().dragTo(page.locator(target).first());
+/** Parse drag positionals plus --grab/--drop/--steps/--mouse from either arg form. */
+function parseDragArgs(a: ActionArgs): {
+  source?: string;
+  target?: string;
+  grab?: string;
+  drop?: string;
+  steps?: number;
+  mouse: boolean;
+} {
+  if (Array.isArray(a)) {
+    const positionals: string[] = [];
+    let grab: string | undefined;
+    let drop: string | undefined;
+    let steps: number | undefined;
+    let mouse = false;
+    for (const token of a) {
+      const s = String(token);
+      if (s.startsWith('--grab=')) { grab = s.slice('--grab='.length); continue; }
+      if (s.startsWith('--drop=')) { drop = s.slice('--drop='.length); continue; }
+      if (s.startsWith('--steps=')) { steps = Number(s.slice('--steps='.length)); continue; }
+      if (s === '--mouse') { mouse = true; continue; }
+      positionals.push(s);
+    }
+    return { source: positionals[0], target: positionals[1], grab, drop, steps, mouse };
   }
-  return {};
+  return {
+    source: getArg(a, 'source', 0),
+    target: getArg(a, 'target', 1),
+    grab: a.grab,
+    drop: a.drop,
+    steps: a.steps !== undefined ? Number(a.steps) : undefined,
+    mouse: a.mouse === true || a.mouse === 'true',
+  };
+}
+
+function resolveGrip(spec: string | undefined, flag: string): Grip {
+  if (!spec) return CENTER_GRIP;
+  const grip = parseGrip(spec);
+  if (!grip) {
+    throw new Error(`Invalid --${flag} "${spec}". Use an anchor (${ANCHOR_NAMES.join(', ')}) or an x,y pixel offset.`);
+  }
+  return grip;
+}
+
+/** Absolute viewport point for an element side of a drag, gripped at `grip`. */
+async function dragElementPoint(page: Page, selector: string, grip: Grip, side: string): Promise<{ x: number; y: number }> {
+  const box = await page.locator(selector).first().boundingBox();
+  if (!box) throw new Error(`drag ${side} "${selector}" has no bounding box (not visible or not attached).`);
+  return gripToAbsolute(grip, box);
+}
+
+/**
+ * Drag from source to target. Each side may be a CSS selector or a viewport
+ * coordinate `x,y` (so element↔coordinate mixes work). `--grab`/`--drop` pick the
+ * grip point on the respective element (ignored for a coordinate side). Native
+ * `dragTo` is used for pure element→element (best for HTML5 DnD); any coordinate
+ * or `--mouse` switches to the pointer path.
+ */
+export async function actionDrag(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  const parsed = parseDragArgs(a);
+  const { source, target } = parsed;
+  if (!source || !target) {
+    throw new Error('drag requires <source> and <target>. Usage: drag <source|x,y> <target|x,y> [--grab=<anchor|x,y>] [--drop=<anchor|x,y>] [--steps=n] [--mouse]');
+  }
+
+  const sourcePoint = parseViewportPoint(source);
+  const targetPoint = parseViewportPoint(target);
+  const grabGrip = resolveGrip(parsed.grab, 'grab');
+  const dropGrip = resolveGrip(parsed.drop, 'drop');
+  const steps = parsed.steps !== undefined && Number.isFinite(parsed.steps) && parsed.steps > 0
+    ? Math.floor(parsed.steps)
+    : 10;
+
+  const anyCoordinate = !!sourcePoint || !!targetPoint;
+
+  // Pure element→element with default (or explicit) grips and no --mouse: native dragTo.
+  if (!anyCoordinate && !parsed.mouse) {
+    const sourceLoc = page.locator(source).first();
+    const targetLoc = page.locator(target).first();
+    const opts: { sourcePosition?: { x: number; y: number }; targetPosition?: { x: number; y: number } } = {};
+    if (isNonCenter(grabGrip)) {
+      const box = await sourceLoc.boundingBox();
+      if (!box) throw new Error(`drag source "${source}" has no bounding box (not visible or not attached).`);
+      opts.sourcePosition = gripToPosition(grabGrip, box);
+    }
+    if (isNonCenter(dropGrip)) {
+      const box = await targetLoc.boundingBox();
+      if (!box) throw new Error(`drag target "${target}" has no bounding box (not visible or not attached).`);
+      opts.targetPosition = gripToPosition(dropGrip, box);
+    }
+    await sourceLoc.dragTo(targetLoc, opts);
+    return { result: { mode: 'dragTo', source, target } };
+  }
+
+  // Mouse path: resolve each side to an absolute viewport point.
+  const from = sourcePoint ?? await dragElementPoint(page, source, grabGrip, 'source');
+  const to = targetPoint ?? await dragElementPoint(page, target, dropGrip, 'target');
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps });
+  await page.mouse.up();
+  return { result: { mode: 'mouse', source, target, steps } };
 }
 
 export async function actionFill(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
