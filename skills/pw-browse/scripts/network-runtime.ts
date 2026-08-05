@@ -78,6 +78,32 @@ if (!window.__PW_NETWORK_PATCHED) {
     const ts = Date.now();
     try {
       const res = await origFetch(input, init);
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      // Streaming responses (SSE): reading a clone with .text()/.json() would block
+      // until the stream ends and can hang the page, so tee the body — one branch
+      // back to the page, one drained into the log. The record is mutated live as
+      // the stream fills, so a mid-stream 'pw network dump' sees partial content.
+      if (ct.indexOf('text/event-stream') !== -1 && res.body && typeof res.body.tee === 'function') {
+        const rec = { type: 'fetch', method, url, status: res.status, reqBody, resBody: '', streaming: true, partial: true, ts };
+        window.__PW_NETWORK.push(rec);
+        const branches = res.body.tee();
+        (async () => {
+          const reader = branches[1].getReader();
+          const decoder = new TextDecoder();
+          const LIMIT = 100000;
+          let text = '';
+          try {
+            while (true) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              if (text.length < LIMIT) { text += decoder.decode(chunk.value, { stream: true }); rec.resBody = text; }
+              else { rec.truncated = true; }
+            }
+            rec.partial = false;
+          } catch (e) { rec.error = String(e && e.message || e); }
+        })();
+        return new Response(branches[0], { status: res.status, statusText: res.statusText, headers: res.headers });
+      }
       const clone = res.clone();
       let resBody = null;
       try { resBody = await clone.json(); } catch { try { resBody = await clone.text(); } catch {} }
