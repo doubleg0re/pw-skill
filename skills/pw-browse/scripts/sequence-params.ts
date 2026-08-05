@@ -36,9 +36,16 @@ const EXPLICIT_STEP_KEYS = new Set([
 export function normalizeStep(step: any): any {
   if (!step || typeof step !== 'object' || Array.isArray(step)) return step;
 
-  // Already explicit form
+  // `steps` is an accepted alias for `items` on block steps (try/loop/each/def).
+  if (Array.isArray(step.steps) && step.items === undefined) {
+    step = { ...step, items: step.steps };
+    delete step.steps;
+  }
+
+  // Explicit form → still normalize its nested step arrays (items/then/else/finally)
+  // so shorthand works inside blocks, not only at the top level.
   const keys = Object.keys(step);
-  if (keys.some(k => EXPLICIT_STEP_KEYS.has(k))) return step;
+  if (keys.some(k => EXPLICIT_STEP_KEYS.has(k))) return normalizeNested(step);
 
   // Comment-only step
   if (keys.length === 1 && keys[0] === 'comment') return step;
@@ -68,6 +75,28 @@ export function normalizeStep(step: any): any {
   // Multiple non-comment, non-explicit keys → ambiguous, reject
   // (could be shorthand + metadata, which is not allowed)
   return step;
+}
+
+/**
+ * Recurse shorthand normalization into a step's nested step arrays, so
+ * `{ "click": "x" }` works inside try/loop/each/def bodies and then/else/finally
+ * — not just at the top level. Skips condition-def items (ConditionNode[]) and
+ * `set`'s object items (not an array).
+ */
+function normalizeNested(step: any): any {
+  const isConditionDef = step.action === 'def' && step.type === 'condition';
+  const nonEmpty = (v: any) => Array.isArray(v) && v.length > 0;
+  const hasNestedSteps =
+    (nonEmpty(step.items) && !isConditionDef) ||
+    nonEmpty(step.then) || nonEmpty(step.else) || nonEmpty(step.finally);
+  if (!hasNestedSteps) return step; // nothing to normalize → keep the same reference
+
+  const out = { ...step };
+  if (Array.isArray(out.items) && !isConditionDef) out.items = out.items.map(normalizeStep);
+  for (const key of ['then', 'else', 'finally'] as const) {
+    if (Array.isArray(out[key])) out[key] = out[key].map(normalizeStep);
+  }
+  return out;
 }
 
 // --- Params loading ---

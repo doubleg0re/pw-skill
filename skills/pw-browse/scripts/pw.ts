@@ -161,6 +161,8 @@ Step forms:
   shorthand                               {"fill":["#email","me@example.com"]}
   note                                    Shorthand must be a single-key action object
   note                                    Do not mix shorthand with metadata like out, label, or comment
+  note                                    Shorthand also works inside nested blocks (try/loop/each items, condition then/else)
+  note                                    Block bodies use "items" ("steps" is accepted as an alias)
 
 Args:
   optional in syntax                      Only some steps are meaningful without args
