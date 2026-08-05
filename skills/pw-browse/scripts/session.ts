@@ -23,6 +23,10 @@ export interface SessionInfo {
   lastUrl?: string;
   /** Opt-in origin guard set by `pw launch/use --pin`; see pin-utils.ts. */
   pinnedOrigin?: string;
+  /** Real browser this session drives (Brave/Chrome/Edge/…), if not bundled Chromium. */
+  browser?: string;
+  /** Opt-in: launched with --stealth (automation fingerprint navigator.webdriver hidden). */
+  stealth?: boolean;
   screenshotDir?: string;
   device?: string;
   documentEpoch?: number;

@@ -16,6 +16,11 @@ const headless = process.argv.includes('--headless');
 const userDataDir = process.argv.find(a => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length) || '';
 const deviceName = process.argv.find(a => a.startsWith('--device='))?.slice('--device='.length);
 const deviceViewport = process.argv.find(a => a.startsWith('--device-viewport='))?.slice('--device-viewport='.length);
+// Drive a real Chromium-family browser instead of the bundled one (see browser-resolve.ts).
+const executablePath = process.argv.find(a => a.startsWith('--executable='))?.slice('--executable='.length);
+const channel = process.argv.find(a => a.startsWith('--channel='))?.slice('--channel='.length);
+// Hide the automation fingerprint (navigator.webdriver) that trips anti-bot sign-in blocks.
+const stealth = process.argv.includes('--stealth');
 
 function parseViewport(spec?: string): { width: number; height: number } | undefined {
   if (!spec) return undefined;
@@ -58,8 +63,13 @@ async function findFreePort(): Promise<number> {
   // This gives us a real persistent Chrome profile that survives restarts
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless,
+    ...(executablePath ? { executablePath } : {}),
+    ...(channel ? { channel } : {}),
     ...deviceOptions,
-    args: buildChromiumArgs(headless, cdpPort),
+    args: [
+      ...buildChromiumArgs(headless, cdpPort),
+      ...(stealth ? ['--disable-blink-features=AutomationControlled'] : []),
+    ],
   });
 
   const pid = process.pid;

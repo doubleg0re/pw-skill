@@ -16,6 +16,7 @@ import {
   bindSession,
   type SessionInfo,
 } from './session.js';
+import { browserSpecFromLabel } from './browser-resolve.js';
 import { applyViewportMode } from './viewport-utils.js';
 import { pinViolation } from './pin-utils.js';
 import {
@@ -71,7 +72,9 @@ async function isWsAlive(wsEndpoint: string): Promise<boolean> {
 
 export type DeviceLaunchSpec = { name: string; viewport?: { width: number; height: number } | null };
 
-export async function launchBrowserServer(headless: boolean, userDataDir?: string, device?: DeviceLaunchSpec): Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }> {
+export type BrowserLaunchSpec = { executablePath?: string; channel?: string };
+
+export async function launchBrowserServer(headless: boolean, userDataDir?: string, device?: DeviceLaunchSpec, browser?: BrowserLaunchSpec, stealth?: boolean): Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }> {
   const serverScript = join(resolve(import.meta.dirname || __dirname), 'browser-server.ts');
 
   return new Promise<{ wsEndpoint: string; cdpEndpoint: string; pid: number; port: number }>((res, reject) => {
@@ -82,6 +85,9 @@ export async function launchBrowserServer(headless: boolean, userDataDir?: strin
       ...(userDataDir ? [`--user-data-dir=${userDataDir}`] : []),
       ...(device?.name ? [`--device=${device.name}`] : []),
       ...(device?.viewport ? [`--device-viewport=${device.viewport.width}x${device.viewport.height}`] : []),
+      ...(browser?.executablePath ? [`--executable=${browser.executablePath}`] : []),
+      ...(browser?.channel ? [`--channel=${browser.channel}`] : []),
+      ...(stealth ? ['--stealth'] : []),
     ], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
@@ -300,7 +306,18 @@ async function launchNewSession(opts: {
     if (prior?.device) device = { name: prior.device };
   }
 
-  const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir, device);
+  // Resumed dead sessions keep their real browser (Brave/Chrome/…) and --stealth via the persisted record.
+  let browserLaunch: BrowserLaunchSpec | undefined;
+  let priorBrowserLabel: string | undefined;
+  let priorStealth = false;
+  if (opts.resumeName) {
+    const prior = getSession(opts.resumeName);
+    priorBrowserLabel = prior?.browser;
+    browserLaunch = browserSpecFromLabel(priorBrowserLabel);
+    priorStealth = !!prior?.stealth;
+  }
+
+  const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(opts.headless, userDataDir, device, browserLaunch, priorStealth);
 
   const session = createSession(
     sessionName,
@@ -316,6 +333,14 @@ async function launchNewSession(opts: {
   if (device) {
     updateSession(sessionName, { device: device.name });
     session.device = device.name;
+  }
+  if (priorBrowserLabel) {
+    updateSession(sessionName, { browser: priorBrowserLabel });
+    session.browser = priorBrowserLabel;
+  }
+  if (priorStealth) {
+    updateSession(sessionName, { stealth: true });
+    session.stealth = true;
   }
   bindSession(sessionName);
 

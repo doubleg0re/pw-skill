@@ -219,8 +219,12 @@ Chaining:
 
 Session management:
   launch [url] [--name=N] [--resume=N] [--pin] [--screenshot-path=dir] Launch browser session (--pin: lock to url origin)
+  launch --browser=brave|chrome|edge [--restart]   Drive the real browser binary in a dedicated profile (--restart: kill & relaunch if already running)
+  launch --executable=<path> | --channel=<c>       Point at a specific Chromium binary / Playwright channel
+  launch --stealth                                 Hide the automation fingerprint (navigator.webdriver); opt-in — defeats site bot-detection, use only where you must sign in
   use <name> [--pin]                        Bind session to project (--pin: lock to current origin)
   sessions                                  List all sessions
+  browsers                                  List installed browsers + their profiles (discovery)
   close [--session=N] [--all]               Close session(s)
 
 Diagnostics:
@@ -558,6 +562,13 @@ if (command === 'sessions') {
   const { listSessionsCommand } = await import('./session-commands.js');
   const result = listSessionsCommand();
   console.log(JSON.stringify(result));
+  process.exit(0);
+}
+
+// --- browsers ---
+if (command === 'browsers') {
+  const { listBrowsersCommand } = await import('./browsers-command.js');
+  console.log(JSON.stringify(listBrowsersCommand()));
   process.exit(0);
 }
 

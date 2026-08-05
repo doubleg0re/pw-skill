@@ -30,6 +30,7 @@ import {
   isDevicePresetDisabled,
   resolveDevicePreset,
 } from './device-presets.js';
+import { resolveBrowserSpec, type ResolvedBrowser } from './browser-resolve.js';
 
 // --- Helpers ---
 
@@ -70,11 +71,27 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
 
   const sessionName = resume || name;
 
+  // --restart: kill an already-running instance and relaunch fresh. The browser
+  // server closes its context on SIGTERM, releasing the profile lock before the
+  // new launch. Without --restart, a live session just reconnects (below).
+  if (hasFlag(args, 'restart') && isSessionAlive(sessionName)) {
+    const existing = getSession(sessionName)!;
+    try { process.kill(existing.pid, 'SIGTERM'); } catch { /* already gone */ }
+    const deadline = Date.now() + 5000;
+    while (isProcessAlive(existing.pid) && Date.now() < deadline) {
+      await new Promise(res => setTimeout(res, 100));
+    }
+    deleteSession(sessionName, true);
+  }
+
   // Check if session already running
   if (isSessionAlive(sessionName)) {
     const existing = getSession(sessionName)!;
     const previous = getBoundSession();
     const warnings: string[] = [];
+    if (parseFlag(args, 'browser') || parseFlag(args, 'executable') || parseFlag(args, 'channel')) {
+      warnings.push(`Session "${sessionName}" is already running (${existing.browser || 'bundled Chromium'}); --browser/--executable/--channel apply only at launch. Pass --restart to kill it and relaunch with the requested browser.`);
+    }
     if (screenshotPathFlag) {
       updateSession(sessionName, { screenshotDir });
       existing.screenshotDir = screenshotDir;
@@ -111,14 +128,35 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
     };
   }
 
+  let browserSpec: ResolvedBrowser | null;
+  try {
+    browserSpec = resolveBrowserSpec({
+      browser: parseFlag(args, 'browser'),
+      executable: parseFlag(args, 'executable'),
+      channel: parseFlag(args, 'channel'),
+    });
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
   try {
     const userDataDir = sessionUserDataDir(sessionName);
     const { wsEndpoint, cdpEndpoint, pid, port } = await launchBrowserServer(
       !headed,
       userDataDir,
       devicePreset ? { name: devicePreset.name, viewport: viewportRequested ? viewport : undefined } : undefined,
+      browserSpec ? { executablePath: browserSpec.executablePath, channel: browserSpec.channel } : undefined,
+      hasFlag(args, 'stealth'),
     );
     const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null), screenshotDir);
+    if (browserSpec) {
+      updateSession(sessionName, { browser: browserSpec.label });
+      session.browser = browserSpec.label;
+    }
+    if (hasFlag(args, 'stealth')) {
+      updateSession(sessionName, { stealth: true });
+      session.stealth = true;
+    }
     const warnings: string[] = [];
     if (cdpEndpoint) {
       updateSession(sessionName, { cdpEndpoint });

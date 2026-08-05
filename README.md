@@ -101,6 +101,18 @@ pw console dump
 pw close --session=dev
 ```
 
+### Real browser (Brave / Chrome / Edge)
+
+Drive your **real** browser in a dedicated, persistent profile instead of the bundled Chromium — log in once (headed) and it sticks:
+
+```bash
+pw browsers                                       # installed browsers + their profiles
+pw --headed launch --name=work --browser=brave    # real Brave, dedicated profile
+pw --headed launch --name=work --browser=brave --stealth   # + hide navigator.webdriver (opt-in; for sign-ins that block automation)
+```
+
+`--stealth` defeats site bot-detection, so it's off by default — see the [CLI reference](docs/CLI-REFERENCE.md) for the security notes.
+
 ## Choose Your Lane
 
 If you just want to do something quickly, use `pwi`.
