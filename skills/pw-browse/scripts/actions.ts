@@ -7,6 +7,7 @@ import { applyViewportMode, resizeBrowserWindow } from './viewport-utils.js';
 import { parsePngSize, isDegenerateCapture } from './screenshot-quality.js';
 import { describeCandidates, isCoordinatePair, resolveClickTarget, type TargetMode } from './selector-utils.js';
 import { normalizeKey } from './key-utils.js';
+import { isSafeMode, isSchemeAllowed, assertAllowedInSafeMode, isPathWithinRoot } from './safe-mode.js';
 import {
   ANCHOR_NAMES,
   CENTER_GRIP,
@@ -144,6 +145,9 @@ async function resolveKeyOrSelector(
 
 export async function actionNavigate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const url = getArg(a, 'url', 0);
+  if (isSafeMode() && !isSchemeAllowed(url)) {
+    throw new Error(`Navigation to "${url}" is blocked in safe mode (http/https only). Relaunch pw without safe mode to allow other schemes.`);
+  }
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   return { result: { url, title: await page.title() } };
 }
@@ -682,6 +686,12 @@ export async function actionSelect(page: Page, a: ActionArgs): Promise<{ result?
 export async function actionUpload(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   const selector = getArg(a, 'selector', 0);
   const files = Array.isArray(a) ? a.slice(1) : (Array.isArray(a.files) ? a.files : [a.files]);
+  if (isSafeMode()) {
+    const root = localStateDir();
+    for (const f of files) {
+      if (!isPathWithinRoot(String(f), root)) throw new Error(`upload source "${f}" is outside the allowed root in safe mode (${root}).`);
+    }
+  }
   await page.locator(selector).first().setInputFiles(files);
   return {};
 }
@@ -864,6 +874,7 @@ function inspectCapture(path: string): { degenerate: boolean; reason?: string } 
 }
 
 export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
+  assertAllowedInSafeMode('eval');
   const expression = getArg(a, 'expression', 0) || getArg(a, 'js', 0);
   const evalResult = await page.evaluate(expression);
   return { result: evalResult };

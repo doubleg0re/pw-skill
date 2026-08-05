@@ -5,12 +5,13 @@ import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments, splitLeadingGlobalFlags, wantsHelp } from './chain-utils.js';
+import { isSafeMode, safeModeReason } from './safe-mode.js';
 import { buildRunScriptCandidates, resolveRunScriptPath } from './run-command.js';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
-const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore', 'no-pin-check']);
+const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore', 'no-pin-check', 'safe']);
 
 const AGENT_SKILLS: Record<string, { title: string; summary: string; when: string[]; cli: string[]; notes?: string[] }> = {
   browse: {
@@ -235,6 +236,9 @@ Diagnostics:
   profiles [--size]                         List pw profiles (active/dormant) + the browser each uses
   clean <dead|stale|orphans|profiles|all> [--all]  Safe cleanup (profiles: dormant dirs, --all incl. named)
 
+Safe mode (delegate pw to agents):
+  PW_SAFE=1  |  --safe                      Restrict to browser verbs; block eval/run/rary/file:// (see docs/CLI-REFERENCE)
+
 Package management (Larry's toybox):
   rary get|yoink <repo|path>                Fetch a toy into the toybox
   rary toybox                               List installed packages
@@ -340,6 +344,7 @@ if (args[0] === '--version' || args[0] === '-v' || args[0] === 'version') {
   try {
     const { version } = JSON.parse(readFileSync(resolve(SCRIPTS_DIR, '../../../package.json'), 'utf8'));
     console.log(version);
+    if (isSafeMode()) console.log(`mode: safe (${safeModeReason()})`);
   } catch {
     console.log('unknown');
   }
@@ -458,6 +463,10 @@ if (wantsHelp(restArgs)) {
 }
 
 if (command === 'run') {
+  if (isSafeMode()) {
+    console.log(JSON.stringify({ success: false, error: 'pw run is unavailable in safe mode (PW_SAFE) — it executes arbitrary local scripts.' }));
+    process.exit(1);
+  }
   const scriptInput = restArgs[0];
   if (!scriptInput) {
     console.log(JSON.stringify({ success: false, error: 'Usage: pw run <script.ts|script.js> [args...]' }));

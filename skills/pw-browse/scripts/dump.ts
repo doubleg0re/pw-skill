@@ -11,6 +11,8 @@
 //   pw dump --save=./page --append          # append to existing
 import { run, parseFlag, hasFlag } from './common.js';
 import { existsSync, writeFileSync, appendFileSync } from 'fs';
+import { isSafeMode, isPathWithinRoot } from './safe-mode.js';
+import { localStateDir } from './session.js';
 import { resolve, extname } from 'path';
 import { resolveRedactionLevel } from './settings.js';
 import { headTruncate } from './dump-utils.js';
@@ -43,6 +45,9 @@ run(async ({ page }) => {
   }
   if ((doReplace || doAppend) && !savePath) {
     return { success: false, error: '--replace/--append requires --save.' };
+  }
+  if (savePath && isSafeMode() && !isPathWithinRoot(savePath, localStateDir())) {
+    return { success: false, error: `--save path "${savePath}" is outside the allowed root in safe mode (${localStateDir()}).` };
   }
 
   let target: string;

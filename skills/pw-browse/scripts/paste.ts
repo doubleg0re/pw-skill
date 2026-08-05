@@ -10,6 +10,8 @@ import { run, parseFlag, hasFlag } from './common.js';
 import { resolveClickTarget } from './selector-utils.js';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import { isSafeMode, isPathWithinRoot } from './safe-mode.js';
+import { localStateDir } from './session.js';
 
 run(async ({ page, args }) => {
   const selector = args[0];
@@ -24,6 +26,9 @@ run(async ({ page, args }) => {
   // --- Image paste ---
   if (imagePath) {
     const absPath = resolve(imagePath);
+    if (isSafeMode() && !isPathWithinRoot(absPath, localStateDir())) {
+      return { success: false, error: `--image path "${imagePath}" is outside the allowed root in safe mode (${localStateDir()}).` };
+    }
     if (!existsSync(absPath)) return { success: false, error: `Image not found: ${absPath}` };
 
     const imageBuffer = readFileSync(absPath);

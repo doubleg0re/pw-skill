@@ -138,6 +138,27 @@ A dedicated profile remembers its browser: after `pw close`, `pw launch --name=<
 
 **`pw doctor`** (alias of `pw analyze`) reports dormant profiles among the other health items. Reclaim disk with **`pw clean profiles`** — by default it removes only the auto-generated throwaway `s-<hex>` profiles, never your named ones or the bound one. `pw clean profiles --all` also removes dormant **named** profiles, which deletes their logins — use deliberately.
 
+## Safe mode (delegating pw to agents)
+
+`pw` is built for a trusted operator. Handing it to an **agent** exposes escape hatches — `eval`, `nav file://`, `rary` (clones + runs code), `pw run`, `seq` shell — that together amount to a shell + filesystem reader. **Safe mode** keeps the browser verbs and drops those.
+
+Turn it on with **`PW_SAFE=1`** (env) or **`--safe`** (flag). It is resolved once at startup and **not overridable mid-session** — an agent driving pw cannot lift it. Set `PW_SAFE=1` in the agent's environment; the flag is for manual use.
+
+```bash
+PW_SAFE=1 pw nav https://localhost:5180   # ok
+PW_SAFE=1 pw nav file:///app/src/x.ts     # blocked (http/https only)
+PW_SAFE=1 pw eval "document.title"        # blocked, fails loud
+pw --version                              # prints a "mode: safe (env)" line under PW_SAFE
+```
+
+In safe mode:
+- **Navigation**: `http`/`https`/`about` only — no `file://`, `chrome://`, `data:`.
+- **Disabled (fail loud)**: `eval`, `pw run`, `rary get/yoink/put/rolling`, and `seq` shell (even with `--allow-shell`).
+- **Path-confined to `.playwright-state/`**: `dump --save`, `upload`, `paste --image` reject paths outside it.
+- Read/drive verbs (`click`, `type`, `dump`, `shot`, `read`, `react`, …) work normally — driving the app is the point.
+
+> Enforcement is the operator's environment — the same trust model as spawning a subagent with a fixed toolset. If you also hand the agent a shell it can unset the env, so pair safe mode with OS-level sandboxing there.
+
 ## Debugging
 
 | Command | Description |

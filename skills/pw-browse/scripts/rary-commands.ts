@@ -1,6 +1,7 @@
 // rary-commands.ts — CLI handlers for pw rary subcommands
 // Accepts a RaryStore for testability. Production uses default store.
 import { spawnSync } from 'child_process';
+import { isSafeMode } from './safe-mode.js';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { join, resolve, basename } from 'path';
 import {
@@ -714,6 +715,10 @@ export function createRaryCommands(store: RaryStore) {
   async function router(args: string[]): Promise<Result> {
     const subcommand = args[0];
     const rest = args.slice(1);
+
+    if (isSafeMode() && ['get', 'yoink', 'put', 'rolling'].includes(subcommand)) {
+      return { success: false, error: `rary ${subcommand} is unavailable in safe mode (PW_SAFE) — it fetches, installs, or activates arbitrary code.` };
+    }
 
     switch (subcommand) {
       case 'get':          return get(rest);

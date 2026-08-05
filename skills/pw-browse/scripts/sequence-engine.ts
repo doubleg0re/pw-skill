@@ -17,6 +17,7 @@
 import { existsSync, readFileSync } from 'fs';
 import type { Page } from 'playwright';
 import { ACTION_MAP } from './actions.js';
+import { isSafeMode } from './safe-mode.js';
 import { screenshotPath } from './common.js';
 import type {
   ConditionNode,
@@ -705,8 +706,11 @@ export async function runSteps(
 
       // --- shell ---
       if (step.action === 'shell') {
-        if (!options.allowShell) {
-          results.push({ step: stepIndex, action: 'shell', success: false, error: 'Sequence contains shell action. Re-run with --allow-shell to enable local command execution.' });
+        if (isSafeMode() || !options.allowShell) {
+          const shellError = isSafeMode()
+            ? 'shell is unavailable in safe mode (PW_SAFE).'
+            : 'Sequence contains shell action. Re-run with --allow-shell to enable local command execution.';
+          results.push({ step: stepIndex, action: 'shell', success: false, error: shellError });
           return { success: false, failedAt: stepIndex };
         }
 
