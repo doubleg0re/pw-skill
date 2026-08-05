@@ -23,6 +23,7 @@ export interface AnalyzeResult {
   dead: AnalyzeItem[];
   stale: AnalyzeItem[];
   orphaned: AnalyzeItem[];
+  dormantProfiles: AnalyzeItem[];
   broken: AnalyzeItem[];
   activeLocks: AnalyzeItem[];
   staleLocks: AnalyzeItem[];
@@ -36,6 +37,7 @@ export function analyze(cwd?: string): AnalyzeResult {
     dead: [],
     stale: [],
     orphaned: [],
+    dormantProfiles: [],
     broken: [],
     activeLocks: [],
     staleLocks: [],
@@ -147,6 +149,22 @@ export function analyze(cwd?: string): AnalyzeResult {
       if (lockStatus.status === 'active') result.activeLocks.push(item);
       else if (lockStatus.status === 'stale') result.staleLocks.push(item);
       else if (lockStatus.status === 'uncertain') result.uncertainLocks.push(item);
+    }
+  }
+
+  // --- Dormant profiles (closed but persisted on disk) ---
+  // sessions/<name>/ with a user-data dir but no session.json = a profile that
+  // `pw close` left behind; invisible to `pw sessions`. Surface it so `pw clean
+  // profiles` can reclaim the disk (or the user can relaunch it by name).
+  if (existsSync(globalSessions)) {
+    for (const entry of readdirSync(globalSessions, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dir = join(globalSessions, entry.name);
+      const hasSession = existsSync(join(dir, 'session.json'));
+      const hasUserData = existsSync(join(dir, 'user-data'));
+      if (!hasSession && hasUserData) {
+        result.dormantProfiles.push({ name: entry.name, path: dir, reason: 'Closed profile (no session.json) — reusable by name or removable' });
+      }
     }
   }
 

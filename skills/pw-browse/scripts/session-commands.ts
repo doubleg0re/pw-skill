@@ -16,6 +16,8 @@ import {
   cleanupDeadSessions,
   sessionUserDataDir,
   localStateDir,
+  readProfileMeta,
+  writeProfileMeta,
 } from './session.js';
 import { autoRenameVideo } from './video-utils.js';
 import { launchBrowserServer, parseViewportSpec } from './common.js';
@@ -30,7 +32,7 @@ import {
   isDevicePresetDisabled,
   resolveDevicePreset,
 } from './device-presets.js';
-import { resolveBrowserSpec, type ResolvedBrowser } from './browser-resolve.js';
+import { resolveBrowserSpec, browserSpecFromLabel, type ResolvedBrowser } from './browser-resolve.js';
 
 // --- Helpers ---
 
@@ -48,8 +50,18 @@ function hasFlag(args: string[], name: string): boolean {
 
 export async function launchSession(args: string[]): Promise<{ success: boolean; data?: any; error?: string }> {
   const url = args.filter(a => !a.startsWith('--'))[0];
-  const name = parseFlag(args, 'name') || `s-${generateSessionId()}`;
+  const nameFlag = parseFlag(args, 'name');
   const resume = parseFlag(args, 'resume');
+  // A real browser (--browser/--executable/--channel) creates a dedicated profile
+  // worth reusing, so it must be named. Bundled Chromium keeps the existing auto-name.
+  const wantsRealBrowser = !!(parseFlag(args, 'browser') || parseFlag(args, 'executable') || parseFlag(args, 'channel'));
+  if (wantsRealBrowser && !nameFlag && !resume) {
+    return {
+      success: false,
+      error: 'Launching a real browser (--browser/--executable/--channel) requires --name=<name> so the dedicated profile is reusable (login persists across close/relaunch). Example: pw launch --name=work --browser=brave',
+    };
+  }
+  const name = nameFlag || `s-${generateSessionId()}`;
   const viewportFlag = parseFlag(args, 'viewport');
   const viewportRequested = viewportFlag !== undefined;
   const viewport = parseViewportSpec(viewportFlag);
@@ -128,16 +140,26 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
     };
   }
 
+  const flagBrowser = parseFlag(args, 'browser');
+  const flagExecutable = parseFlag(args, 'executable');
+  const flagChannel = parseFlag(args, 'channel');
+  const noBrowserFlag = !flagBrowser && !flagExecutable && !flagChannel;
+
   let browserSpec: ResolvedBrowser | null;
   try {
-    browserSpec = resolveBrowserSpec({
-      browser: parseFlag(args, 'browser'),
-      executable: parseFlag(args, 'executable'),
-      channel: parseFlag(args, 'channel'),
-    });
+    browserSpec = resolveBrowserSpec({ browser: flagBrowser, executable: flagExecutable, channel: flagChannel });
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+
+  // Restore browser + stealth from durable profile.json when the CLI said nothing, so
+  // `pw launch --name=X` re-opens a known profile as the browser it was created with.
+  const priorMeta = readProfileMeta(sessionName);
+  if (!browserSpec && noBrowserFlag && priorMeta?.browser) {
+    const restored = browserSpecFromLabel(priorMeta.browser);
+    if (restored) browserSpec = { ...restored, label: priorMeta.browser };
+  }
+  const stealth = hasFlag(args, 'stealth') || (noBrowserFlag && !!priorMeta?.stealth);
 
   try {
     const userDataDir = sessionUserDataDir(sessionName);
@@ -146,17 +168,19 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
       userDataDir,
       devicePreset ? { name: devicePreset.name, viewport: viewportRequested ? viewport : undefined } : undefined,
       browserSpec ? { executablePath: browserSpec.executablePath, channel: browserSpec.channel } : undefined,
-      hasFlag(args, 'stealth'),
+      stealth,
     );
     const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null), screenshotDir);
     if (browserSpec) {
       updateSession(sessionName, { browser: browserSpec.label });
       session.browser = browserSpec.label;
     }
-    if (hasFlag(args, 'stealth')) {
+    if (stealth) {
       updateSession(sessionName, { stealth: true });
       session.stealth = true;
     }
+    // Durable record (survives pw close) for `pw profiles` + next-launch restore.
+    writeProfileMeta(sessionName, { browser: browserSpec?.label, stealth: stealth || undefined, lastUsedAt: new Date().toISOString() });
     const warnings: string[] = [];
     if (cdpEndpoint) {
       updateSession(sessionName, { cdpEndpoint });

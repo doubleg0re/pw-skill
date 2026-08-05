@@ -92,7 +92,7 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | Command | Description |
 |---|---|
 | `pw launch [url] [--name=N] [--resume=N] [--screenshot-path=dir]` | Launch browser session |
-| `pw launch --browser=brave\|chrome\|edge [--restart]` | Drive the real browser binary in a dedicated profile |
+| `pw launch --browser=brave\|chrome\|edge --name=N [--restart]` | Real browser in a dedicated profile (`--name` required) |
 | `pw launch --executable=<path> \| --channel=<c>` | Point at a specific Chromium binary / Playwright channel |
 | `pw launch --stealth` | Hide the automation fingerprint (`navigator.webdriver`) — opt-in, see below |
 | `pw use <name>` | Bind session to project (freely switches, returns previous binding if any) |
@@ -122,6 +122,14 @@ pw --headed launch --name=work --browser=brave --restart   # kill & relaunch tha
 **`--stealth`** hides the automation fingerprint (`navigator.webdriver`, which pw's CDP control otherwise exposes). Some sign-in flows (e.g. Google) block browsers that report it, even for a login you type by hand. It flips only that JS-visible flag — pw's control channel is unaffected — and persists on the session (survives `pw close`/relaunch). **It is off by default and opt-in**: hiding the flag defeats the bot-detection sites rely on and can violate their terms, so enable it only on sessions where you actually need to sign in.
 
 > Your browser's **existing** profiles (the ones in `pw browsers`) can't be driven directly — Chromium 136+ blocks remote debugging on the default profile, and all profiles share one running instance. pw uses a dedicated profile instead. To reuse an existing login, log into the dedicated profile once.
+
+### Listing & cleaning profiles
+
+Each `--name` is a separate dedicated profile at `~/.playwright-state/sessions/<name>/`. **`pw profiles`** lists them all — **active**, **dead** (registered but the process died), and **dormant** (closed with `pw close`; invisible to `pw sessions`) — with the browser + stealth each was created with and when it was last used. Add `--size` for on-disk usage.
+
+A dedicated profile remembers its browser: after `pw close`, `pw launch --name=<x>` (no `--browser`) re-opens it as the same browser (and stealth). This is backed by a durable `profile.json` that survives close.
+
+**`pw doctor`** (alias of `pw analyze`) reports dormant profiles among the other health items. Reclaim disk with **`pw clean profiles`** — by default it removes only the auto-generated throwaway `s-<hex>` profiles, never your named ones or the bound one. `pw clean profiles --all` also removes dormant **named** profiles, which deletes their logins — use deliberately.
 
 ## Debugging
 

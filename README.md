@@ -109,9 +109,10 @@ Drive your **real** browser in a dedicated, persistent profile instead of the bu
 pw browsers                                       # installed browsers + their profiles
 pw --headed launch --name=work --browser=brave    # real Brave, dedicated profile
 pw --headed launch --name=work --browser=brave --stealth   # + hide navigator.webdriver (opt-in; for sign-ins that block automation)
+pw profiles                                       # list dedicated profiles (active/dormant) + their browser
 ```
 
-`--stealth` defeats site bot-detection, so it's off by default — see the [CLI reference](docs/CLI-REFERENCE.md) for the security notes.
+`--stealth` defeats site bot-detection, so it's off by default (see the [CLI reference](docs/CLI-REFERENCE.md) for security notes). `pw profiles` / `pw doctor` / `pw clean profiles` inventory and reclaim dedicated profiles.
 
 ## Choose Your Lane
 

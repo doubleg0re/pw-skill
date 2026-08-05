@@ -356,3 +356,50 @@ export function getDocumentEpoch(sessionName: string): number {
   const session = defaultStore.getSession(sessionName);
   return session?.documentEpoch ?? 0;
 }
+
+// --- Durable per-profile metadata ---
+// profile.json is separate from the ephemeral session.json: it survives `pw close`
+// (which deletes session.json but keeps the profile dir), so a dormant profile
+// remembers its browser + stealth choice. Lets `pw launch --name=X` restore them
+// and `pw profiles` list closed profiles.
+
+export interface ProfileMeta {
+  browser?: string;
+  stealth?: boolean;
+  createdAt?: string;
+  lastUsedAt?: string;
+}
+
+function profileMetaPath(name: string): string {
+  return join(defaultStore.globalSessionDir(name), 'profile.json');
+}
+
+export function readProfileMeta(name: string): ProfileMeta | null {
+  const p = profileMetaPath(name);
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, 'utf-8')) as ProfileMeta;
+  } catch {
+    return null;
+  }
+}
+
+export function writeProfileMeta(name: string, patch: Partial<ProfileMeta>): void {
+  const dir = defaultStore.globalSessionDir(name);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const next: ProfileMeta = { ...(readProfileMeta(name) || {}), ...patch };
+  if (!next.createdAt) next.createdAt = new Date().toISOString();
+  atomicWriteJSON(profileMetaPath(name), next);
+}
+
+/** All on-disk profile directory names under the global sessions dir. */
+export function listProfileNames(): string[] {
+  const dir = join(defaultStore.globalDir, 'sessions');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
+}
+
+/** Absolute path to a profile's persistent browser user-data dir, if present. */
+export function profileUserDataDir(name: string): string {
+  return join(defaultStore.globalSessionDir(name), 'user-data');
+}

@@ -18,6 +18,7 @@ export interface CleanResult {
     orphaned: string[];
     staleLocks: string[];
     orphanLocks: string[];
+    dormantProfiles: string[];
   };
 }
 
@@ -85,6 +86,33 @@ export function cleanOrphanLocks(cwd?: string): string[] {
   return cleaned;
 }
 
+/** Auto-generated throwaway session names (`pw launch` without --name): s-<8 hex>. */
+export function isEphemeralProfileName(name: string): boolean {
+  return /^s-[0-9a-f]{8}$/.test(name);
+}
+
+/**
+ * Remove dormant profiles (closed dirs with user-data but no session.json). By
+ * default only the auto-generated throwaway `s-<hex>` profiles go — named profiles
+ * are intentional and may hold logins. Pass { all: true } to also remove named
+ * ones. Never removes the (stale-)bound profile.
+ */
+export function cleanDormantProfiles(opts: { all?: boolean; cwd?: string } = {}): string[] {
+  const cleaned: string[] = [];
+  const bound = getBoundSession(opts.cwd);
+  for (const item of analyze(opts.cwd).dormantProfiles) {
+    if (item.name === bound) continue;
+    if (!opts.all && !isEphemeralProfileName(item.name)) continue;
+    if (item.path && existsSync(item.path)) {
+      try {
+        rmSync(item.path, { recursive: true, force: true });
+        cleaned.push(item.name);
+      } catch { /* leave it; surfaced again next analyze */ }
+    }
+  }
+  return cleaned;
+}
+
 export function cleanAll(cwd?: string): CleanResult {
   return {
     cleaned: {
@@ -93,6 +121,7 @@ export function cleanAll(cwd?: string): CleanResult {
       orphaned: cleanOrphans(cwd),
       staleLocks: cleanStaleLocks(cwd),
       orphanLocks: cleanOrphanLocks(cwd),
+      dormantProfiles: cleanDormantProfiles({ cwd }),
     },
   };
 }

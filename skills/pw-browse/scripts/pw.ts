@@ -219,7 +219,7 @@ Chaining:
 
 Session management:
   launch [url] [--name=N] [--resume=N] [--pin] [--screenshot-path=dir] Launch browser session (--pin: lock to url origin)
-  launch --browser=brave|chrome|edge [--restart]   Drive the real browser binary in a dedicated profile (--restart: kill & relaunch if already running)
+  launch --browser=brave|chrome|edge --name=N [--restart]  Real browser in a dedicated profile (--name required; --restart: kill & relaunch if running)
   launch --executable=<path> | --channel=<c>       Point at a specific Chromium binary / Playwright channel
   launch --stealth                                 Hide the automation fingerprint (navigator.webdriver); opt-in — defeats site bot-detection, use only where you must sign in
   use <name> [--pin]                        Bind session to project (--pin: lock to current origin)
@@ -228,8 +228,9 @@ Session management:
   close [--session=N] [--all]               Close session(s)
 
 Diagnostics:
-  analyze                                   Diagnose sessions, bindings, artifacts
-  clean <dead|stale|orphans|all>             Safe cleanup (broken pkgs → pw rary kick)
+  analyze | doctor                          Diagnose sessions, bindings, artifacts, dormant profiles
+  profiles [--size]                         List pw profiles (active/dormant) + the browser each uses
+  clean <dead|stale|orphans|profiles|all> [--all]  Safe cleanup (profiles: dormant dirs, --all incl. named)
 
 Package management (Larry's toybox):
   rary get|yoink <repo|path>                Fetch a toy into the toybox
@@ -502,18 +503,25 @@ if (command === 'agent') {
   process.exit(0);
 }
 
-// --- analyze ---
-if (command === 'analyze') {
+// --- analyze (alias: doctor) ---
+if (command === 'analyze' || command === 'doctor') {
   const { analyze } = await import('./analyze.js');
   const result = analyze();
   console.log(JSON.stringify({ success: true, data: result }));
   process.exit(0);
 }
 
+// --- profiles ---
+if (command === 'profiles') {
+  const { listProfilesCommand } = await import('./profiles-command.js');
+  console.log(JSON.stringify(listProfilesCommand({ size: restArgs.includes('--size') })));
+  process.exit(0);
+}
+
 // --- clean ---
 if (command === 'clean') {
   const target = restArgs.filter(a => !a.startsWith('--'))[0];
-  const { cleanDead, cleanStale, cleanOrphans, cleanStaleLocks, cleanOrphanLocks, cleanAll } = await import('./clean.js');
+  const { cleanDead, cleanStale, cleanOrphans, cleanStaleLocks, cleanOrphanLocks, cleanDormantProfiles, cleanAll } = await import('./clean.js');
 
   let result;
   switch (target) {
@@ -522,9 +530,10 @@ if (command === 'clean') {
     case 'orphans':       result = { cleaned: { orphaned: cleanOrphans() } }; break;
     case 'stale-locks':   result = { cleaned: { staleLocks: cleanStaleLocks() } }; break;
     case 'orphan-locks':  result = { cleaned: { orphanLocks: cleanOrphanLocks() } }; break;
+    case 'profiles':      result = { cleaned: { dormantProfiles: cleanDormantProfiles({ all: restArgs.includes('--all') }) } }; break;
     case 'all':           result = cleanAll(); break;
     default:
-      console.log(JSON.stringify({ success: false, error: 'Usage: pw clean <dead|stale|orphans|stale-locks|orphan-locks|all>' }));
+      console.log(JSON.stringify({ success: false, error: 'Usage: pw clean <dead|stale|orphans|stale-locks|orphan-locks|profiles|all> [--all]' }));
       process.exit(1);
   }
 
