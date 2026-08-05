@@ -16,7 +16,7 @@ import {
   bindSession,
   type SessionInfo,
 } from './session.js';
-import { browserSpecFromLabel } from './browser-resolve.js';
+import { browserSpecFromStored } from './browser-resolve.js';
 import { applyViewportMode } from './viewport-utils.js';
 import { pinViolation } from './pin-utils.js';
 import {
@@ -313,7 +313,7 @@ async function launchNewSession(opts: {
   if (opts.resumeName) {
     const prior = getSession(opts.resumeName);
     priorBrowserLabel = prior?.browser;
-    browserLaunch = browserSpecFromLabel(priorBrowserLabel);
+    browserLaunch = browserSpecFromStored(priorBrowserLabel);
     priorStealth = !!prior?.stealth;
   }
 

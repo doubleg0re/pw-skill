@@ -92,12 +92,14 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | Command | Description |
 |---|---|
 | `pw launch [url] [--name=N] [--resume=N] [--screenshot-path=dir]` | Launch browser session |
-| `pw launch --browser=brave\|chrome\|edge --name=N [--restart]` | Real browser in a dedicated profile (`--name` required) |
+| `pw launch --browser=<name> --name=N [--restart]` | Launch a **registered** real browser in a dedicated profile |
 | `pw launch --executable=<path> \| --channel=<c>` | Point at a specific Chromium binary / Playwright channel |
 | `pw launch --stealth` | Hide the automation fingerprint (`navigator.webdriver`) — opt-in, see below |
+| `pw browser register <name> <path> [--name=D] [--label=L] [--global]` | Register a browser binary for `--browser=<name>` |
+| `pw browser list \| search [query] \| remove <name>` | List / search / remove registered browsers |
 | `pw use <name>` | Bind session to project (freely switches, returns previous binding if any) |
 | `pw sessions` | List all sessions |
-| `pw browsers` | List installed Chromium-family browsers + their profiles |
+| `pw browsers` | Alias for `pw browser list` |
 | `pw close [--session=N] [--all]` | Close session(s) |
 | `pw tab new [url]` | Open new tab |
 | `pw tab list` | List open tabs |
@@ -106,22 +108,27 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 
 > **Caution for AI agents:** Unless the user explicitly asks to close every session, avoid using `--all`. Other agents or background tasks may have active sessions you do not know about. Prefer plain `pw close` to safely terminate the current bound session.
 
-### Real browsers (Brave / Chrome / Edge)
+### Real browsers (via the registry)
 
-By default `pw` launches its bundled Chromium. `--browser=brave|chrome|edge` (or `--executable=<path>` / `--channel=<c>`) launches the **real** installed browser binary instead, in a **dedicated pw-managed profile** — separate from your everyday profile, so pw never touches your working browser. Log in once (headed) and the profile persists across `pw close` / relaunch, just like a normal pw session.
+By default `pw` launches its bundled Chromium. To drive a **real** installed browser (Brave/Chrome/Edge/…), register its binary once, then launch by name:
 
 ```bash
-pw browsers                                            # see what's installed + each browser's profiles
-pw --headed launch https://admin.example.com --name=work --browser=brave
+pw browser search brave                                # find the binary under /Applications
+pw browser register brave "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" --name=work
+pw --headed launch --browser=brave                     # opens session "work" (the registered default)
 # log in by hand once; from then on `pw --session=work ...` stays logged in
-pw --headed launch --name=work --browser=brave --restart   # kill & relaunch that session
 ```
 
-`--restart` kills an already-running pw session and relaunches it fresh (releasing the profile lock first); without it, a live session reconnects. Launching with `--browser` while the session is already up returns a warning telling you to pass `--restart`.
+The browser runs in a **dedicated pw-managed profile** (`~/.playwright-state/sessions/<name>/`), separate from your everyday profile — pw never touches your working browser. The profile persists across `pw close` / relaunch.
 
-**`--stealth`** hides the automation fingerprint (`navigator.webdriver`, which pw's CDP control otherwise exposes). Some sign-in flows (e.g. Google) block browsers that report it, even for a login you type by hand. It flips only that JS-visible flag — pw's control channel is unaffected — and persists on the session (survives `pw close`/relaunch). **It is off by default and opt-in**: hiding the flag defeats the bot-detection sites rely on and can violate their terms, so enable it only on sessions where you actually need to sign in.
+- `--browser=<name>` resolves against the registry (`pw browser register`). `--executable=<path>` or `--channel=<c>` bypass the registry for a one-off binary / Playwright channel.
+- Registrations are **local** (`.playwright-state/browsers.json`, per project) by default and override a shared **`--global`** registry (`~/.playwright-state/browsers.json`).
+- `register --name=<session>` sets a **default session name**, so `pw launch --browser=<name>` works without `--name`. Otherwise a real-browser launch requires `--name` (the dedicated profile must be reusable).
+- `--restart` kills an already-running pw session and relaunches it fresh; without it a live session reconnects (and passing `--browser` to a running session warns to use `--restart`).
 
-> Your browser's **existing** profiles (the ones in `pw browsers`) can't be driven directly — Chromium 136+ blocks remote debugging on the default profile, and all profiles share one running instance. pw uses a dedicated profile instead. To reuse an existing login, log into the dedicated profile once.
+**`--stealth`** hides the automation fingerprint (`navigator.webdriver`, which pw's CDP control otherwise exposes). Some sign-in flows (e.g. Google) block browsers that report it, even for a login you type by hand. It flips only that JS-visible flag — pw's control channel is unaffected — and persists on the session. **It is off by default and opt-in**: hiding the flag defeats the bot-detection sites rely on and can violate their terms, so enable it only where you must sign in.
+
+> Note: a browser's *existing* profiles can't be driven directly — Chromium 136+ blocks remote debugging on the default profile, and all profiles share one running instance — so pw always uses a dedicated profile. To reuse a login, sign into the dedicated profile once.
 
 ### Listing & cleaning profiles
 

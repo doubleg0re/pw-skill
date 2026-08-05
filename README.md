@@ -101,18 +101,19 @@ pw console dump
 pw close --session=dev
 ```
 
-### Real browser (Brave / Chrome / Edge)
+### Real browser (registry)
 
-Drive your **real** browser in a dedicated, persistent profile instead of the bundled Chromium — log in once (headed) and it sticks:
+Register your **real** browser binary once, then drive it in a dedicated, persistent profile instead of the bundled Chromium — log in once (headed) and it sticks:
 
 ```bash
-pw browsers                                       # installed browsers + their profiles
-pw --headed launch --name=work --browser=brave    # real Brave, dedicated profile
-pw --headed launch --name=work --browser=brave --stealth   # + hide navigator.webdriver (opt-in; for sign-ins that block automation)
-pw profiles                                       # list dedicated profiles (active/dormant) + their browser
+pw browser search brave                                   # find the binary
+pw browser register brave "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" --name=work
+pw --headed launch --browser=brave                        # real Brave in dedicated profile "work"; log in once
+pw --headed launch --browser=brave --stealth              # + hide navigator.webdriver (opt-in; for sign-ins that block automation)
+pw profiles                                               # list dedicated profiles (active/dormant) + their browser
 ```
 
-`--stealth` defeats site bot-detection, so it's off by default (see the [CLI reference](docs/CLI-REFERENCE.md) for security notes). `pw profiles` / `pw doctor` / `pw clean profiles` inventory and reclaim dedicated profiles.
+`--browser=<name>` resolves against the registry (local `.playwright-state/browsers.json`, or `--global`); `register --name=<session>` sets a default session so you can omit `--name`. `--stealth` defeats site bot-detection so it's off by default (see the [CLI reference](docs/CLI-REFERENCE.md)). `pw profiles` / `pw doctor` / `pw clean profiles` inventory and reclaim dedicated profiles.
 
 ## Choose Your Lane
 

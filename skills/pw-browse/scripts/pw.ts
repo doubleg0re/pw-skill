@@ -219,12 +219,13 @@ Chaining:
 
 Session management:
   launch [url] [--name=N] [--resume=N] [--pin] [--screenshot-path=dir] Launch browser session (--pin: lock to url origin)
-  launch --browser=brave|chrome|edge --name=N [--restart]  Real browser in a dedicated profile (--name required; --restart: kill & relaunch if running)
+  launch --browser=<name> --name=N [--restart]     Real browser (registered via pw browser register) in a dedicated profile
   launch --executable=<path> | --channel=<c>       Point at a specific Chromium binary / Playwright channel
   launch --stealth                                 Hide the automation fingerprint (navigator.webdriver); opt-in — defeats site bot-detection, use only where you must sign in
   use <name> [--pin]                        Bind session to project (--pin: lock to current origin)
   sessions                                  List all sessions
-  browsers                                  List installed browsers + their profiles (discovery)
+  browser register <name> <path> [--name=D] [--global]  Register a browser binary (used by --browser=<name>)
+  browser list | search [query] | remove <name>  List / search / remove registered browsers
   close [--session=N] [--all]               Close session(s)
 
 Diagnostics:
@@ -574,9 +575,17 @@ if (command === 'sessions') {
   process.exit(0);
 }
 
-// --- browsers ---
+// --- browser (registry: register|list|remove|find) ---
+if (command === 'browser') {
+  const { browserRouter } = await import('./browser-command.js');
+  const result = browserRouter(restArgs);
+  console.log(JSON.stringify(result));
+  process.exit(result.success ? 0 : 1);
+}
+
+// --- browsers (alias: pw browser list) ---
 if (command === 'browsers') {
-  const { listBrowsersCommand } = await import('./browsers-command.js');
+  const { listBrowsersCommand } = await import('./browser-command.js');
   console.log(JSON.stringify(listBrowsersCommand()));
   process.exit(0);
 }

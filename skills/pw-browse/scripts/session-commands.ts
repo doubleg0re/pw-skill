@@ -32,7 +32,7 @@ import {
   isDevicePresetDisabled,
   resolveDevicePreset,
 } from './device-presets.js';
-import { resolveBrowserSpec, browserSpecFromLabel, type ResolvedBrowser } from './browser-resolve.js';
+import { resolveBrowserSpec, browserSpecFromStored, type ResolvedBrowser } from './browser-resolve.js';
 
 // --- Helpers ---
 
@@ -52,16 +52,28 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
   const url = args.filter(a => !a.startsWith('--'))[0];
   const nameFlag = parseFlag(args, 'name');
   const resume = parseFlag(args, 'resume');
-  // A real browser (--browser/--executable/--channel) creates a dedicated profile
-  // worth reusing, so it must be named. Bundled Chromium keeps the existing auto-name.
-  const wantsRealBrowser = !!(parseFlag(args, 'browser') || parseFlag(args, 'executable') || parseFlag(args, 'channel'));
-  if (wantsRealBrowser && !nameFlag && !resume) {
+  const flagBrowser = parseFlag(args, 'browser');
+  const flagExecutable = parseFlag(args, 'executable');
+  const flagChannel = parseFlag(args, 'channel');
+  const noBrowserFlag = !flagBrowser && !flagExecutable && !flagChannel;
+
+  let browserSpec: ResolvedBrowser | null;
+  try {
+    browserSpec = resolveBrowserSpec({ browser: flagBrowser, executable: flagExecutable, channel: flagChannel });
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  // A real browser makes a dedicated, reusable profile, so it needs a name: an
+  // explicit --name/--resume, or a default from its registry entry. Bundled
+  // Chromium keeps the existing auto-name.
+  if (!noBrowserFlag && !nameFlag && !resume && !browserSpec?.defaultName) {
     return {
       success: false,
-      error: 'Launching a real browser (--browser/--executable/--channel) requires --name=<name> so the dedicated profile is reusable (login persists across close/relaunch). Example: pw launch --name=work --browser=brave',
+      error: `Launching a real browser requires --name=<name>, or register a default: pw browser register ${flagBrowser ?? '<name>'} <path> --name=<session>. The dedicated profile then persists login across close/relaunch.`,
     };
   }
-  const name = nameFlag || `s-${generateSessionId()}`;
+  const name = nameFlag || browserSpec?.defaultName || `s-${generateSessionId()}`;
   const viewportFlag = parseFlag(args, 'viewport');
   const viewportRequested = viewportFlag !== undefined;
   const viewport = parseViewportSpec(viewportFlag);
@@ -140,24 +152,12 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
     };
   }
 
-  const flagBrowser = parseFlag(args, 'browser');
-  const flagExecutable = parseFlag(args, 'executable');
-  const flagChannel = parseFlag(args, 'channel');
-  const noBrowserFlag = !flagBrowser && !flagExecutable && !flagChannel;
-
-  let browserSpec: ResolvedBrowser | null;
-  try {
-    browserSpec = resolveBrowserSpec({ browser: flagBrowser, executable: flagExecutable, channel: flagChannel });
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
-  }
-
-  // Restore browser + stealth from durable profile.json when the CLI said nothing, so
-  // `pw launch --name=X` re-opens a known profile as the browser it was created with.
+  // Restore browser + stealth from durable profile.json when the CLI said nothing,
+  // so `pw launch --name=X` re-opens a known profile as its recorded browser.
   const priorMeta = readProfileMeta(sessionName);
   if (!browserSpec && noBrowserFlag && priorMeta?.browser) {
-    const restored = browserSpecFromLabel(priorMeta.browser);
-    if (restored) browserSpec = { ...restored, label: priorMeta.browser };
+    const restored = browserSpecFromStored(priorMeta.browser);
+    if (restored) browserSpec = { ...restored, name: priorMeta.browser, label: priorMeta.browser };
   }
   const stealth = hasFlag(args, 'stealth') || (noBrowserFlag && !!priorMeta?.stealth);
 
@@ -172,15 +172,15 @@ export async function launchSession(args: string[]): Promise<{ success: boolean;
     );
     const session = createSession(sessionName, port, pid, wsEndpoint, videoName || (videoEnabled ? sessionName : null), screenshotDir);
     if (browserSpec) {
-      updateSession(sessionName, { browser: browserSpec.label });
-      session.browser = browserSpec.label;
+      updateSession(sessionName, { browser: browserSpec.name });
+      session.browser = browserSpec.name;
     }
     if (stealth) {
       updateSession(sessionName, { stealth: true });
       session.stealth = true;
     }
     // Durable record (survives pw close) for `pw profiles` + next-launch restore.
-    writeProfileMeta(sessionName, { browser: browserSpec?.label, stealth: stealth || undefined, lastUsedAt: new Date().toISOString() });
+    writeProfileMeta(sessionName, { browser: browserSpec?.name, stealth: stealth || undefined, lastUsedAt: new Date().toISOString() });
     const warnings: string[] = [];
     if (cdpEndpoint) {
       updateSession(sessionName, { cdpEndpoint });
