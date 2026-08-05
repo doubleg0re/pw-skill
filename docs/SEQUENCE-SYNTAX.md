@@ -59,6 +59,8 @@ Common fields:
 - `focus`
 - `idle`
 
+A step is either a normal step (`action` + fields) or a comment-only step (`comment` only): a step **cannot carry both `comment` and `action`** (`step cannot have both "comment" and "action"`). To annotate a step, use a separate comment-only step next to it.
+
 ## Variables
 
 ### Store action result
@@ -95,6 +97,31 @@ Common fields:
 { "action": "log", "text": "done" }
 { "action": "goto", "label": "start" }
 ```
+
+## evaluate
+
+With no extra args, `args[0]` is a JS **expression** run in the page:
+
+```json
+{ "action": "evaluate", "args": ["document.title"], "out": "title" }
+```
+
+Interpolated `{{params}}` are substituted as **raw text into the expression**, so a value containing quotes or newlines breaks the source (page-side `SyntaxError`). Instead, make `args[0]` a **function** and pass values as **additional args** — they arrive as serialized data (verbatim), never pasted into source:
+
+```json
+{ "action": "evaluate", "args": ["(sel) => document.querySelector(sel)?.textContent", "{{selector}}"], "out": "text" }
+{ "action": "evaluate", "args": ["(a, b) => a + b", 2, 3] }
+```
+
+The caller passes `{{selector}}` / values verbatim — no quoting decision anywhere.
+
+## return
+
+```json
+{ "action": "return", "value": "{{me.id}}" }
+```
+
+`return` takes a **`value`** (a `ref` is rejected: `return requires "value"`). It is usually unnecessary — a flow already yields its **last step's data** as `{{$ret}}`, so add `return` only to exit early or to return something other than the last step's result.
 
 ## set
 

@@ -876,7 +876,18 @@ function inspectCapture(path: string): { degenerate: boolean; reason?: string } 
 export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   assertAllowedInSafeMode('eval');
   const expression = getArg(a, 'expression', 0) || getArg(a, 'js', 0);
-  const evalResult = await page.evaluate(expression);
+  // With extra args, treat `expression` as a page function and call it with the
+  // args passed as *serialized data* (never pasted into the expression source),
+  // so parameterized values with quotes/newlines can't break it. A string passed
+  // to page.evaluate is an expression and ignores args, so we reconstruct the
+  // function in-page and apply the args. No extra args → unchanged bare expression.
+  const extra = Array.isArray(a) ? a.slice(1) : (a.arg !== undefined ? [a.arg] : []);
+  const evalResult = extra.length === 0
+    ? await page.evaluate(expression)
+    : await page.evaluate(
+        ([fnStr, fnArgs]: [string, any[]]) => (0, eval)('(' + fnStr + ')')(...fnArgs),
+        [expression, extra] as [string, any[]],
+      );
   return { result: evalResult };
 }
 
