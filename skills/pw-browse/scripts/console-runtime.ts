@@ -131,7 +131,13 @@ export async function runConsoleCommand(
 
       return {
         success: true,
-        data: { dumped: logs.length, file: LOG_FILE, ...(raw ? { warnings: ['Raw mode: log entries written without truncation'] } : {}) },
+        data: {
+          dumped: logs.length,
+          capturing: patched,
+          file: LOG_FILE,
+          ...(!patched ? { hint: 'Console capture was not running until now — run `pw console inject` before the actions you want to capture.' } : {}),
+          ...(raw ? { warnings: ['Raw mode: log entries written without truncation'] } : {}),
+        },
       };
     }
 
@@ -142,12 +148,14 @@ export async function runConsoleCommand(
     }
 
     case 'tail': {
-      if (!existsSync(LOG_FILE)) return { success: true, data: { lines: [] } };
+      const patched = await page.evaluate('!!window.__PW_CONSOLE_PATCHED') as boolean;
+      const capture = { capturing: patched, ...(!patched ? { hint: 'Console capture is not running — run `pw console inject` first.' } : {}) };
+      if (!existsSync(LOG_FILE)) return { success: true, data: { lines: [], ...capture } };
       const content = readFileSync(LOG_FILE, 'utf-8');
       const allLines = content.trim().split('\n').filter(Boolean);
       const filtered = filterLines(allLines, filters);
       const last20 = filtered.slice(-20);
-      return { success: true, data: { total: filtered.length, lines: last20 } };
+      return { success: true, data: { total: filtered.length, lines: last20, ...capture } };
     }
 
     default:

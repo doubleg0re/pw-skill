@@ -206,7 +206,14 @@ export async function runNetworkCommand(
 
       return {
         success: true,
-        data: { dumped: logs.length, file: LOG_FILE, redactionLevel: level, ...(raw ? { warnings: ['Raw mode: sensitive data may be written to disk unmasked'] } : {}) },
+        data: {
+          dumped: logs.length,
+          capturing: patched,
+          file: LOG_FILE,
+          redactionLevel: level,
+          ...(!patched ? { hint: 'Network capture was not running until now — run `pw network inject` before the requests you want to capture.' } : {}),
+          ...(raw ? { warnings: ['Raw mode: sensitive data may be written to disk unmasked'] } : {}),
+        },
       };
     }
 
