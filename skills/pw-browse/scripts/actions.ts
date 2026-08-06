@@ -873,21 +873,29 @@ function inspectCapture(path: string): { degenerate: boolean; reason?: string } 
   }
 }
 
+/**
+ * Does this string read as a function literal (an arrow or a `function`), i.e.
+ * meant to be *called* rather than evaluated as a bare expression?
+ */
+export function looksLikeFunction(src: string): boolean {
+  return /^\s*(async\s+)?(function\b|(\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>)/.test(src);
+}
+
 export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   assertAllowedInSafeMode('eval');
   const expression = getArg(a, 'expression', 0) || getArg(a, 'js', 0);
-  // With extra args, treat `expression` as a page function and call it with the
-  // args passed as *serialized data* (never pasted into the expression source),
-  // so parameterized values with quotes/newlines can't break it. A string passed
-  // to page.evaluate is an expression and ignores args, so we reconstruct the
-  // function in-page and apply the args. No extra args → unchanged bare expression.
   const extra = Array.isArray(a) ? a.slice(1) : (a.arg !== undefined ? [a.arg] : []);
-  const evalResult = extra.length === 0
-    ? await page.evaluate(expression)
-    : await page.evaluate(
+  // A function literal is meant to be *called*: handing it to page.evaluate as a
+  // string evaluates it to a (non-serializable) function object and returns null,
+  // never running the body. So reconstruct + apply it in-page — with any extra
+  // args passed as serialized data (verbatim), and no args → a zero-arg call.
+  // A bare expression (not a function) is evaluated as-is.
+  const evalResult = looksLikeFunction(String(expression))
+    ? await page.evaluate(
         ([fnStr, fnArgs]: [string, any[]]) => (0, eval)('(' + fnStr + ')')(...fnArgs),
         [expression, extra] as [string, any[]],
-      );
+      )
+    : await page.evaluate(expression);
   return { result: evalResult };
 }
 

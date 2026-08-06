@@ -113,7 +113,7 @@ Interpolated `{{params}}` are substituted as **raw text into the expression**, s
 { "action": "evaluate", "args": ["(a, b) => a + b", 2, 3] }
 ```
 
-The caller passes `{{selector}}` / values verbatim — no quoting decision anywhere.
+The caller passes `{{selector}}` / values verbatim — no quoting decision anywhere. A lone function literal (`() => …`) with no extra args is **called** (not returned as an unusable function object), so its body runs.
 
 ## return
 
@@ -121,7 +121,7 @@ The caller passes `{{selector}}` / values verbatim — no quoting decision anywh
 { "action": "return", "value": "{{me.id}}" }
 ```
 
-`return` takes a **`value`** (a `ref` is rejected: `return requires "value"`). It is usually unnecessary — a flow already yields its **last step's data** as `{{$ret}}`, so add `return` only to exit early or to return something other than the last step's result.
+`return` takes a **`value`** (a `ref` is rejected: `return requires "value"`) and is **only allowed inside a `def type="flow"` subflow** (`return is only allowed inside def type="flow" subflows`). A **standalone flow cannot use `return`** — it already yields its **last step's data** as `{{$ret}}`, so deliver a result by making it the last step.
 
 ## set
 
@@ -270,6 +270,22 @@ Pause execution and show an overlay with action buttons. The clicked button valu
 ```json
 { "action": "call", "name": "login", "args": { "email": "admin@test.com", "pass": "secret" } }
 ```
+
+### Flow definition (external subflow)
+
+`def type="flow"` loads a flow from another file by `path` (resolved from the current flow's directory):
+
+```json
+{ "action": "def", "name": "composer", "type": "flow", "path": "./composer.json" }
+```
+
+The **callee file must declare `info.type: "subflow"`** (otherwise `Subflow info.type must be "subflow"`); a plain standalone flow will not load as a subflow:
+
+```json
+{ "info": { "type": "subflow", "parameters": ["text"] }, "flow": [ ... ] }
+```
+
+Relative paths inside the subflow resolve from the subflow's own directory, and `return` is allowed here (unlike a standalone flow).
 
 ### Condition definition
 
