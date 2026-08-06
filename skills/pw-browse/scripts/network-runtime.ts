@@ -80,29 +80,32 @@ if (!window.__PW_NETWORK_PATCHED) {
       const res = await origFetch(input, init);
       const ct = (res.headers.get('content-type') || '').toLowerCase();
       // Streaming responses (SSE): reading a clone with .text()/.json() would block
-      // until the stream ends and can hang the page, so tee the body — one branch
-      // back to the page, one drained into the log. The record is mutated live as
-      // the stream fills, so a mid-stream 'pw network dump' sees partial content.
-      if (ct.indexOf('text/event-stream') !== -1 && res.body && typeof res.body.tee === 'function') {
+      // until the stream ends and can hang the page, so we wrap the body in a
+      // passthrough that logs each chunk as the page reads it. The record is mutated
+      // live, so a mid-stream 'pw network dump' sees the partial content so far.
+      if (ct.indexOf('text/event-stream') !== -1 && res.body) {
         const rec = { type: 'fetch', method, url, status: res.status, reqBody, resBody: '', streaming: true, partial: true, ts };
         window.__PW_NETWORK.push(rec);
-        const branches = res.body.tee();
-        (async () => {
-          const reader = branches[1].getReader();
-          const decoder = new TextDecoder();
-          const LIMIT = 100000;
-          let text = '';
-          try {
-            while (true) {
-              const chunk = await reader.read();
-              if (chunk.done) break;
-              if (text.length < LIMIT) { text += decoder.decode(chunk.value, { stream: true }); rec.resBody = text; }
+        // Passthrough: ONE reader drives both the page and the log, so the log
+        // captures exactly what the page consumes. (tee() with a second reader
+        // could truncate when the page cancels early or reads at a different rate.)
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        const LIMIT = 100000;
+        let text = '';
+        const stream = new ReadableStream({
+          async pull(controller) {
+            try {
+              const r = await reader.read();
+              if (r.done) { rec.partial = false; controller.close(); return; }
+              if (text.length < LIMIT) { text += decoder.decode(r.value, { stream: true }); rec.resBody = text; }
               else { rec.truncated = true; }
-            }
-            rec.partial = false;
-          } catch (e) { rec.error = String(e && e.message || e); }
-        })();
-        return new Response(branches[0], { status: res.status, statusText: res.statusText, headers: res.headers });
+              controller.enqueue(r.value);
+            } catch (e) { rec.error = String(e && e.message || e); controller.error(e); }
+          },
+          cancel(reason) { try { reader.cancel(reason); } catch (e) {} },
+        });
+        return new Response(stream, { status: res.status, statusText: res.statusText, headers: res.headers });
       }
       const clone = res.clone();
       let resBody = null;
@@ -179,8 +182,9 @@ export async function runNetworkCommand(
         const resStr = entry.resBody ? JSON.stringify(entry.resBody) : '';
         const res = resStr ? ` res=${formatBody(resStr)}` : '';
         const err = entry.error ? ` error=${entry.error}` : '';
+        const stream = entry.streaming ? ` [stream${entry.partial ? ':partial' : ':done'}${entry.truncated ? ':truncated' : ''}]` : '';
         const headers = entry.headers ? ` headers=${JSON.stringify(raw ? entry.headers : maskHeaders(entry.headers))}` : '';
-        return `[${new Date(entry.ts).toISOString()}] [${entry.type.toUpperCase()}] ${entry.method} ${entry.url} -> ${entry.status}${req}${res}${headers}${err}`;
+        return `[${new Date(entry.ts).toISOString()}] [${entry.type.toUpperCase()}] ${entry.method} ${entry.url} -> ${entry.status}${stream}${req}${res}${headers}${err}`;
       }).join('\n');
 
       if (lines) writeFileSync(LOG_FILE, lines + '\n', { flag: 'a' });
