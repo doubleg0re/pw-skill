@@ -417,7 +417,9 @@ describe('Flow Engine — out (variable capture)', () => {
       { action: 'log', ref: 'sum' },
     ], vars, results, emptyDefs());
 
-    expect(page.evaluate).toHaveBeenCalledWith('1 + 1');
+    // eval now hands page.evaluate a wrapper fn + [expression, extra-args] so it
+    // can call a function value or return a plain value (see actionEvaluate).
+    expect(page.evaluate).toHaveBeenCalledWith(expect.any(Function), ['1 + 1', []]);
     expect(vars.get('sum')).toBe(2);
     const logs = results.filter(r => r.action === 'log');
     expect(logs[0].data).toBe(2);

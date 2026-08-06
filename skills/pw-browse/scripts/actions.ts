@@ -873,29 +873,22 @@ function inspectCapture(path: string): { degenerate: boolean; reason?: string } 
   }
 }
 
-/**
- * Does this string read as a function literal (an arrow or a `function`), i.e.
- * meant to be *called* rather than evaluated as a bare expression?
- */
-export function looksLikeFunction(src: string): boolean {
-  return /^\s*(async\s+)?(function\b|(\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>)/.test(src);
-}
-
 export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ result?: any }> {
   assertAllowedInSafeMode('eval');
   const expression = getArg(a, 'expression', 0) || getArg(a, 'js', 0);
   const extra = Array.isArray(a) ? a.slice(1) : (a.arg !== undefined ? [a.arg] : []);
-  // A function literal is meant to be *called*: handing it to page.evaluate as a
-  // string evaluates it to a (non-serializable) function object and returns null,
-  // never running the body. So reconstruct + apply it in-page — with any extra
-  // args passed as serialized data (verbatim), and no args → a zero-arg call.
-  // A bare expression (not a function) is evaluated as-is.
-  const evalResult = looksLikeFunction(String(expression))
-    ? await page.evaluate(
-        ([fnStr, fnArgs]: [string, any[]]) => (0, eval)('(' + fnStr + ')')(...fnArgs),
-        [expression, extra] as [string, any[]],
-      )
-    : await page.evaluate(expression);
+  // Decide function-vs-value from the *evaluated result*, not the source shape:
+  // if args[0] evaluates to a function it is called with the extra args (a lone
+  // `() => {}` runs; params receive serialized values verbatim); otherwise the
+  // value is returned as-is. This handles bare expressions, object literals, and
+  // IIFEs (already a call, so a value) alike.
+  const evalResult = await page.evaluate(
+    ([src, fnArgs]: [string, any[]]) => {
+      const v = (0, eval)('(' + src + ')');
+      return typeof v === 'function' ? v(...fnArgs) : v;
+    },
+    [String(expression), extra] as [string, any[]],
+  );
   return { result: evalResult };
 }
 
