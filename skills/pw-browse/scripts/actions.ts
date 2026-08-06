@@ -877,17 +877,21 @@ export async function actionEvaluate(page: Page, a: ActionArgs): Promise<{ resul
   assertAllowedInSafeMode('eval');
   const expression = getArg(a, 'expression', 0) || getArg(a, 'js', 0);
   const extra = Array.isArray(a) ? a.slice(1) : (a.arg !== undefined ? [a.arg] : []);
+  // Strip a trailing statement terminator before wrapping: a value-producing
+  // expression in parens can't end with `;` (`(foo;)` is a SyntaxError), and
+  // scripts pasted from a file — IIFEs ending `})();` — routinely do.
+  const src = String(expression).trim().replace(/;+$/, '');
   // Decide function-vs-value from the *evaluated result*, not the source shape:
   // if args[0] evaluates to a function it is called with the extra args (a lone
   // `() => {}` runs; params receive serialized values verbatim); otherwise the
   // value is returned as-is. This handles bare expressions, object literals, and
   // IIFEs (already a call, so a value) alike.
   const evalResult = await page.evaluate(
-    ([src, fnArgs]: [string, any[]]) => {
-      const v = (0, eval)('(' + src + ')');
+    ([source, fnArgs]: [string, any[]]) => {
+      const v = (0, eval)('(' + source + ')');
       return typeof v === 'function' ? v(...fnArgs) : v;
     },
-    [String(expression), extra] as [string, any[]],
+    [src, extra] as [string, any[]],
   );
   return { result: evalResult };
 }
