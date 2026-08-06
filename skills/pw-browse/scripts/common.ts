@@ -14,6 +14,9 @@ import {
   globalSessionDir,
   generateSessionId,
   bindSession,
+  getBoundSession,
+  listSessions,
+  isProcessAlive,
   type SessionInfo,
 } from './session.js';
 import { browserSpecFromStored } from './browser-resolve.js';
@@ -214,7 +217,19 @@ export async function connectBrowser(options: ConnectOptions = {}): Promise<{
     if (options.sessionName) {
       throw err;
     }
-    // No active session and none specified — auto-launch
+    // A binding that points at a dead/missing session is stale — surface it
+    // instead of silently launching a new anonymous session (which lands on
+    // about:blank and buries the real problem).
+    const bound = getBoundSession();
+    if (bound && !isSessionAlive(bound)) {
+      throw new Error(`Bound session "${bound}" is not running. Run \`pw use <name>\` to bind a live session, or \`pw launch --name=${bound}\` to (re)start it.`);
+    }
+    // Sessions exist but none is selected (ambiguous) — surface that rather than
+    // piling up yet another anonymous session.
+    if (listSessions().some(s => isProcessAlive(s.pid))) {
+      throw err;
+    }
+    // Genuinely no sessions and no binding — cold start, auto-launch.
     return launchNewSession({ headless, viewport, video, videoDir, device: options.device });
   }
 
