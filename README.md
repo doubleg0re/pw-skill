@@ -95,6 +95,7 @@ pw wait /dashboard
 
 # Observe
 pw screenshot --full
+pw pdf --out=dashboard.pdf
 pw console dump
 
 # Close when done
