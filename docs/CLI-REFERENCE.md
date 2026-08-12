@@ -63,6 +63,12 @@ Pure element→element drags use Playwright's native `dragTo` (the right choice 
 | `pw shot\|screenshot --out=<path>` | Write to an explicit file path (parent dirs created) |
 | `pw shot\|screenshot <path>` | A positional that looks like a file path (`/…`, `./…`, `*.png`) is treated as `--out`, not a selector |
 | `pw shot\|screenshot --name=login` | Custom filename within the screenshot dir |
+| `pw pdf [--out=<path>]` | Save the page as PDF — print media and backgrounds on by default |
+| `pw pdf --format=A4\|Letter\|… [--landscape]` | Page size (default `A4`) and orientation |
+| `pw pdf --prefer-css-page-size` | Let the page's `@page` rule decide the size (ignores `--format`) |
+| `pw pdf --margin=1cm\|1cm,2cm\|…` | Margins in CSS shorthand order |
+| `pw pdf --pages=1-3 [--scale=0.1-2]` | Page range and scale |
+| `pw pdf --no-background \| --screen-media` | Opt out of printed backgrounds / print-media emulation |
 | `pw copy <selector> [--format=text\|html\|outer\|image]` | Copy text/HTML/image from element. `--format=image` copies element to clipboard as PNG + saves file. `--save-only` to skip clipboard. |
 | `pw find <selector> [--detail=tag\|class\|full]` | Query DOM elements |
 | `pw attr <selector> <name> [--set=value]` | Read/write DOM attribute |
@@ -70,9 +76,11 @@ Pure element→element drags use Playwright's native `dragTo` (the right choice 
 | `pw wait <ms\|HH:MM\|/url\|selector>` | Wait for condition |
 | `pw wait <selector> --attr=textContent --value=Done` | Wait for attribute value |
 
-Screenshots default to `./.playwright-state/screenshots` under the current working directory. For session-based work, `pw launch --screenshot-path=dir` pins the screenshot directory in session metadata so later commands keep writing there even if `cwd` changes.
+Screenshots default to `./.playwright-state/screenshots` under the current working directory. For session-based work, `pw launch --screenshot-path=dir` pins the screenshot directory in session metadata so later commands keep writing there even if `cwd` changes. `pw pdf` writes to the same directory when `--out` is omitted.
 
 A misspelled flag is rejected rather than ignored: `screenshot --fullpage` used to return a viewport capture as a success, which reads exactly like a verified full-page one.
+
+`pw pdf` needs a **headless chromium** session — `page.pdf()` is unavailable in a headed browser and outside Chromium. It fails with that message instead of falling back to something that looks right but is not.
 
 ## HTTP
 

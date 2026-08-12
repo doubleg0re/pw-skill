@@ -30,6 +30,7 @@ const AGENT_SKILLS: Record<string, { title: string; summary: string; when: strin
       'pw click <target> [--session=N]',
       'pw fill <selector> <text> [--session=N]',
       'pw shot|screenshot [selector] [--full] [--out=path] [--session=N]',
+      'pw pdf [--out=path] [--format=A4] [--landscape] [--pages=1-3]',
     ],
     notes: [
       '`pwi` is the lightest entry point for one-shot work',
@@ -253,6 +254,8 @@ Browser actions:
   refresh|reload [--screenshot]              Reload current page
   resize <width>x<height>                    Resize browser window/viewport
   shot|screenshot [selector] [--full] [--out=path] Capture page or element (selector = CSS, not output path)
+  pdf [--out=path] [--format=A4] [--landscape]  Save page as PDF — print media + backgrounds on by default
+      [--scale=0.1-2] [--margin=css] [--pages=1-3] [--prefer-css-page-size] [--no-background] [--screen-media]
   click <target> [--mode=selector|text|coord] [--exact] [--within=<sel>] [--dblclick] Click element
   dblclick <target> [--mode=...]             Double-click element
   hover <target> [--mode=...]                Hover over element
@@ -402,6 +405,7 @@ const COMMANDS: Record<string, { script: string; desc: string }> = {
   resize:      { script: 'resize.ts',      desc: 'Resize browser window/viewport' },
   screenshot:  { script: 'screenshot.ts',  desc: 'Capture page' },
   shot:        { script: 'screenshot.ts',  desc: 'Capture page' },
+  pdf:         { script: 'pdf.ts',         desc: 'Save page as PDF (headless chromium only)' },
   click:       { script: 'click.ts',       desc: 'Click element' },
   dblclick:    { script: 'dblclick.ts',    desc: 'Double-click element' },
   hover:       { script: 'hover.ts',       desc: 'Hover over element' },

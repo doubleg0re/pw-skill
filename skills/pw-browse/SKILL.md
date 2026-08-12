@@ -101,6 +101,17 @@ npx tsx {script_path}/screenshot.ts [target] [--full] [--out=path] [--name=filen
 - `--full`, `--out`, and `--name` behave identically in `pw shot`, `::` chains, and `seq` JSON
 - An unrecognized flag is an error. A capture that silently ignored `--full-page` and returned the viewport was indistinguishable from a correct one
 
+### pdf.ts — Save page as PDF
+```bash
+npx tsx {script_path}/pdf.ts [--out=path] [--format=A4] [--landscape] [--pages=1-3]
+```
+- Requires a **headless chromium** session; `page.pdf()` does not work headed or on firefox/webkit
+- Print-media emulation and printed backgrounds are on by default — a print job that drops them just gets re-run
+- `--format=A4|Letter|…` (default `A4`), `--landscape`, `--scale=0.1-2`, `--margin=<css>`, `--pages=1-3`
+- `--prefer-css-page-size`: honour the page's `@page` rule instead of `--format`
+- `--no-background` / `--screen-media`: opt out of the defaults
+- Without `--out`, writes into the session screenshot dir
+
 ### click.ts — Click an element
 ```bash
 npx tsx {script_path}/click.ts <target> [--mode=selector|text] [--timeout=ms]

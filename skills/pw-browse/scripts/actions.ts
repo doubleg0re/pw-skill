@@ -2,7 +2,7 @@
 import type { Locator, Page } from 'playwright';
 import { mkdirSync, readFileSync } from 'fs';
 import { dirname } from 'path';
-import { parseSizeSpec, screenshotPath } from './common.js';
+import { parseSizeSpec, pdfPath, screenshotPath } from './common.js';
 import { applyViewportMode, resizeBrowserWindow } from './viewport-utils.js';
 import { parsePngSize, isDegenerateCapture } from './screenshot-quality.js';
 import { describeCandidates, isCoordinatePair, resolveClickTarget, type TargetMode } from './selector-utils.js';
@@ -911,6 +911,146 @@ export async function actionScreenshot(page: Page, a: ActionArgs, runtime?: Acti
   };
 }
 
+// --- pdf ---
+
+interface PdfOptions {
+  format?: string;
+  landscape?: boolean;
+  scale?: number;
+  pageRanges?: string;
+  margin?: { top: string; right: string; bottom: string; left: string };
+  printBackground: boolean;
+  preferCSSPageSize?: boolean;
+}
+
+export interface PdfPlan {
+  out?: string;
+  name?: string;
+  options: PdfOptions;
+  printMedia: boolean;
+}
+
+const PDF_FLAG_NAMES = new Set([
+  'out', 'path', 'name',
+  'format', 'landscape', 'scale', 'margin', 'pages',
+  'background', 'no-background', 'screen-media', 'print-media', 'prefer-css-page-size',
+]);
+
+/** CSS shorthand order: 1 value = all, 2 = block/inline, 3 = top/inline/bottom, 4 = clockwise. */
+function parsePdfMargin(raw: string): { top: string; right: string; bottom: string; left: string } {
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0 || parts.length > 4) {
+    throw new Error(`Invalid --margin=${raw}. Use 1-4 comma-separated CSS lengths, e.g. --margin=1cm or --margin=1cm,2cm.`);
+  }
+  const [top, right = top, bottom = top, left = right] = parts;
+  return { top, right, bottom, left };
+}
+
+/**
+ * Normalize pdf args across the same three entry points as screenshot: object
+ * args (:: chain), array args (seq JSON), and CLI tokens.
+ */
+export function parsePdfArgs(a: ActionArgs): PdfPlan {
+  const flags: Record<string, string | true> = {};
+
+  if (Array.isArray(a)) {
+    for (const token of a) {
+      const s = String(token);
+      if (!s.startsWith('--')) continue; // pdf takes no positional target
+      const eq = s.indexOf('=');
+      const flag = eq > 0 ? s.slice(2, eq) : s.slice(2);
+      if (!PDF_FLAG_NAMES.has(flag)) throw new Error(unknownPdfFlag(flag));
+      flags[flag] = eq > 0 ? s.slice(eq + 1) : true;
+    }
+  } else {
+    for (const [key, value] of Object.entries(a)) {
+      if (/^\d+$/.test(key)) continue;
+      if (!PDF_FLAG_NAMES.has(key)) throw new Error(unknownPdfFlag(key));
+      flags[key] = value === true ? true : String(value);
+    }
+  }
+
+  const valueOf = (flag: string): string | undefined => {
+    const value = flags[flag];
+    if (value === undefined) return undefined;
+    if (value === true) throw new Error(`--${flag} needs a value: write --${flag}=<value>`);
+    return value;
+  };
+
+  const out = valueOf('out') ?? valueOf('path');
+  const name = valueOf('name');
+  const printBackground = flags['no-background'] === undefined;
+  // --print-media is the default because a print job that silently drops print
+  // styles just gets re-run.
+  const printMedia = flags['screen-media'] === undefined;
+  const preferCssPageSize = flags['prefer-css-page-size'] !== undefined;
+
+  const options: PdfOptions = { printBackground };
+  // preferCSSPageSize takes precedence in Chromium, so keeping a format here
+  // would only pretend to apply.
+  if (preferCssPageSize) options.preferCSSPageSize = true;
+  else options.format = valueOf('format') ?? 'A4';
+
+  if (flags.landscape !== undefined) options.landscape = true;
+  const pages = valueOf('pages');
+  if (pages) options.pageRanges = pages;
+  const margin = valueOf('margin');
+  if (margin) options.margin = parsePdfMargin(margin);
+
+  const scaleRaw = valueOf('scale');
+  if (scaleRaw !== undefined) {
+    const scale = Number(scaleRaw);
+    if (!Number.isFinite(scale) || scale < 0.1 || scale > 2) {
+      throw new Error(`Invalid --scale=${scaleRaw}. Chromium accepts a scale between 0.1 and 2.`);
+    }
+    options.scale = scale;
+  }
+
+  return { out, name, options, printMedia };
+}
+
+function unknownPdfFlag(flag: string): string {
+  return (
+    `Unknown pdf flag --${flag}. Supported: --out=<path>, --format=<A4|Letter|…>, --landscape, ` +
+    `--scale=<0.1-2>, --margin=<css>, --pages=<1-3>, --no-background, --screen-media, --prefer-css-page-size`
+  );
+}
+
+export async function actionPdf(page: Page, a: ActionArgs, runtime?: ActionRuntime): Promise<{ result?: any }> {
+  const plan = parsePdfArgs(a);
+
+  let path: string;
+  if (plan.out) {
+    path = plan.out;
+    mkdirSync(dirname(path), { recursive: true });
+  } else {
+    path = pdfPath(plan.name, runtime?.session as any);
+  }
+
+  if (plan.printMedia) await page.emulateMedia({ media: 'print' });
+  try {
+    await page.pdf({ path, ...plan.options });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // page.pdf() is headless-Chromium only. Left raw, the Playwright message
+    // reads like an internal failure rather than "this session cannot do it".
+    if (/headless/i.test(message)) {
+      throw new Error(
+        `pdf requires a headless chromium session (this one cannot generate PDFs). ` +
+        `Render it in a headless session instead: pw launch --name=pdf :: navigate <url> :: pdf --out=${path}. ` +
+        `Original error: ${message}`,
+      );
+    }
+    throw err;
+  } finally {
+    // Media emulation outlives the command, so a later screenshot in the same
+    // session would silently come back in print styling.
+    if (plan.printMedia) await page.emulateMedia({ media: null }).catch(() => {});
+  }
+
+  return { result: { pdf: path } };
+}
+
 function inspectCapture(path: string): { degenerate: boolean; reason?: string } {
   try {
     const buf = readFileSync(path);
@@ -1210,6 +1350,7 @@ export const ACTION_MAP: Record<string, (page: Page, a: ActionArgs, runtime?: Ac
   fetch: actionFetch,
   screenshot: actionScreenshot,
   shot: actionScreenshot,
+  pdf: actionPdf,
   evaluate: actionEvaluate,
   eval: actionEvaluate,
   dump: actionDump,

@@ -14,7 +14,7 @@ import type { Step } from './sequence-types.js';
 // actions.ts / the CLI dispatch table.
 export const KNOWN_ACTIONS = new Set([
   'navigate', 'nav', 'refresh', 'reload', 'resize', 'click', 'dblclick', 'drag', 'fill', 'type', 'press', 'wait', 'hover',
-  'scroll', 'select', 'sel', 'upload', 'attr', 'submit', 'fetch', 'screenshot', 'shot',
+  'scroll', 'select', 'sel', 'upload', 'attr', 'submit', 'fetch', 'screenshot', 'shot', 'pdf',
   'evaluate', 'eval', 'log', 'condition', 'each', 'loop', 'def', 'call', 'goto', 'try', 'shell', 'set', 'dump', 'console', 'network', 'dialog', 'return', 'assert',
 ]);
 

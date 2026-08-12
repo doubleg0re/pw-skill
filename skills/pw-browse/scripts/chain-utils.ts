@@ -77,7 +77,7 @@ export function buildInlineStepArgs(args: string[], scope: Record<string, any>):
 // --- Chainable actions list (shared by pw and pwi) ---
 
 export const CHAINABLE_ACTIONS = [
-  'navigate', 'nav', 'refresh', 'reload', 'resize', 'screenshot', 'shot', 'click', 'dblclick', 'hover', 'drag', 'scroll',
+  'navigate', 'nav', 'refresh', 'reload', 'resize', 'screenshot', 'shot', 'pdf', 'click', 'dblclick', 'hover', 'drag', 'scroll',
   'fill', 'type', 'press', 'select', 'sel', 'upload', 'submit',
   'dump', 'attr', 'wait', 'fetch', 'evaluate', 'eval', 'assert', 'console', 'network', 'dialog',
 ] as const;

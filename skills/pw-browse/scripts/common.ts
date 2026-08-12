@@ -497,6 +497,12 @@ export function screenshotPath(name?: string, session?: SessionInfo): string {
   return join(dir, `${filename}.png`);
 }
 
+export function pdfPath(name?: string, session?: SessionInfo): string {
+  const dir = session?.screenshotDir || SCREENSHOTS_DIR;
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return join(dir, `${name ?? Date.now()}.pdf`);
+}
+
 // --- Parameter parsing ---
 
 export function parseArgs(): string[] {
