@@ -4,14 +4,13 @@ import { spawnSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, parseChainSegments, splitLeadingGlobalFlags, wantsHelp } from './chain-utils.js';
+import { buildChainStepArgs, CHAINABLE_ACTIONS, CHAINABLE_ACTION_SET, GLOBAL_FLAG_NAMES, parseChainSegments, splitLeadingGlobalFlags, wantsHelp } from './chain-utils.js';
 import { isSafeMode, safeModeReason } from './safe-mode.js';
 import { buildRunScriptCandidates, resolveRunScriptPath } from './run-command.js';
 
 const SCRIPTS_DIR = resolve(import.meta.dirname || __dirname, '.');
 const args = process.argv.slice(2);
 const CHAINABLE_ACTIONS_TEXT = CHAINABLE_ACTIONS.join(', ');
-const GLOBAL_FLAG_NAMES = new Set(['session', 'headed', 'viewport', 'device', 'video', 'no-restore', 'no-pin-check', 'safe']);
 
 const AGENT_SKILLS: Record<string, { title: string; summary: string; when: string[]; cli: string[]; notes?: string[] }> = {
   browse: {

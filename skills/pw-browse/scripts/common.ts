@@ -435,6 +435,30 @@ export async function launchSession(opts: {
   });
 }
 
+// --- Stable tab identity ---
+
+/**
+ * Chrome's own handle for a tab. Unlike a page-array index it survives tabs
+ * opening, closing, and reordering, and unlike a URL it survives navigation —
+ * which is what makes it usable as the identity a long-running caller holds.
+ */
+export async function pageTargetId(context: BrowserContext, page: Page): Promise<string | undefined> {
+  try {
+    const cdp = await context.newCDPSession(page);
+    const info = await cdp.send('Target.getTargetInfo');
+    await cdp.detach().catch(() => {});
+    return info?.targetInfo?.targetId;
+  } catch {
+    // Non-Chromium browsers have no CDP target, and a page can close mid-call.
+    // Callers treat "no id" as "not addressable by --tab-id", never as a match.
+    return undefined;
+  }
+}
+
+export async function pageTargetIds(context: BrowserContext): Promise<Array<string | undefined>> {
+  return Promise.all(context.pages().map(p => pageTargetId(context, p)));
+}
+
 // --- Result output ---
 
 export interface ChallengeInfo {
@@ -689,15 +713,32 @@ export async function run(
       writeFileSync(join(LOCAL_STATE_DIR, 'video-meta.json'), JSON.stringify({ name: videoName, file: videoPath }));
     }
 
-    // Select specific tab with --tab=N
+    // Restore the stable tab registry before resolving a tab target — --tab-id
+    // is looked up in it.
+    const { restoreRegistry, resolveTabIdFlag, resolveTabIndexFlag } = await import('./tab-registry.js');
+    restoreRegistry(join(globalSessionDir(session.name), 'tabs.json'));
+
+    // Select a specific tab with --tab=<index> or --tab-id=<stable id>.
+    // Both fail loudly: an unresolvable target used to leave the command pointed
+    // at the default page, so a stale index wrote into somebody else's tab.
     const tabStr = parseFlag(cliArgs, 'tab');
+    const tabIdStr = parseFlag(cliArgs, 'tab-id');
     let page = defaultPage;
-    if (tabStr !== undefined) {
-      const tabIdx = parseInt(tabStr);
-      const pages = context.pages();
-      if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < pages.length) {
-        page = pages[tabIdx];
-      }
+    const failTabSelection = (error: string): never => {
+      console.log(JSON.stringify({ success: false, error, context: { session: session.name } }));
+      process.exit(1);
+    };
+    if (tabStr !== undefined && tabIdStr !== undefined) {
+      failTabSelection('Use either --tab=<index> or --tab-id=<id>, not both.');
+    }
+    if (tabIdStr !== undefined) {
+      const resolved = resolveTabIdFlag(tabIdStr, await pageTargetIds(context));
+      if (resolved.error) failTabSelection(resolved.error);
+      page = context.pages()[resolved.index!];
+    } else if (tabStr !== undefined) {
+      const resolved = resolveTabIndexFlag(tabStr, context.pages().length);
+      if (resolved.error) failTabSelection(resolved.error);
+      page = context.pages()[resolved.index!];
     }
 
     // Device emulation is applied natively at context creation (browser-server),
@@ -723,10 +764,6 @@ export async function run(
     } else if (session.device && !findDevicePreset(session.device)) {
       bindingWarnings.push(`Stored device preset "${session.device}" is no longer available.`);
     }
-
-    // Restore stable tab registry for the active session before runtime/hook work.
-    const { restoreRegistry } = await import('./tab-registry.js');
-    restoreRegistry(join(globalSessionDir(session.name), 'tabs.json'));
 
     // --- Core: Load event handlers + run 'load' hooks ---
     const { runHooks, getActiveExtensions, packageDir } = await import('./rary.js');

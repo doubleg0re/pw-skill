@@ -766,6 +766,23 @@ export async function actionFetch(page: Page, a: ActionArgs): Promise<{ result?:
   return { result: fetchResult };
 }
 
+/** Every flag spelling screenshot understands, so anything else is a typo. */
+const SCREENSHOT_FLAGS = new Set([
+  'full', 'fullPage', 'full-page',
+  'out', 'path', 'name', 'filename',
+  'selector', 'target', 'key',
+]);
+
+const FULL_PAGE_FLAGS = new Set(['full', 'fullPage', 'full-page']);
+
+/** Unknown flags used to fall through to positionals and end up as a CSS selector. */
+function assertKnownScreenshotFlag(flag: string): void {
+  if (SCREENSHOT_FLAGS.has(flag)) return;
+  throw new Error(
+    `Unknown screenshot flag --${flag}. Supported: --full (--full-page), --out=<path>, --path=<path>, --name=<name>`,
+  );
+}
+
 /**
  * Normalize screenshot args across the three entry points so they behave
  * identically: object args (:: chain → { full: true }), array args
@@ -776,24 +793,50 @@ function parseScreenshotArgs(a: ActionArgs): { target?: string; name?: string; o
   let target: string | undefined;
   let name: string | undefined;
   let out: string | undefined;
+  // A value-taking flag written space-separated (`--path /tmp/a.png`) reaches the
+  // chain parser as `{ path: true }` with its value stranded as a positional.
+  // Remember which flag so a missing value fails by name instead of as a Node
+  // TypeError from dirname(true).
+  let valuelessFlag: string | undefined;
 
   if (Array.isArray(a)) {
     const positionals: string[] = [];
     for (const token of a) {
       const s = String(token);
-      if (s === '--full' || s === '--fullPage') { full = true; continue; }
-      if (s.startsWith('--out=')) { out = s.slice('--out='.length); continue; }
-      if (s.startsWith('--path=')) { out = s.slice('--path='.length); continue; }
-      if (s.startsWith('--name=')) { name = s.slice('--name='.length); continue; }
+      if (s.startsWith('--')) {
+        const eq = s.indexOf('=');
+        const flag = eq > 0 ? s.slice(2, eq) : s.slice(2);
+        const value = eq > 0 ? s.slice(eq + 1) : undefined;
+        assertKnownScreenshotFlag(flag);
+        if (FULL_PAGE_FLAGS.has(flag)) { full = true; continue; }
+        if (flag === 'out' || flag === 'path') {
+          if (value === undefined) valuelessFlag = flag;
+          else out = value;
+          continue;
+        }
+        if (flag === 'name' || flag === 'filename') {
+          if (value === undefined) valuelessFlag = flag;
+          else name = value;
+          continue;
+        }
+        continue; // selector/target/key are read from object args, not tokens
+      }
       positionals.push(s);
     }
     target = positionals[0];
     if (name === undefined) name = positionals[1];
   } else {
+    for (const key of Object.keys(a)) {
+      if (/^\d+$/.test(key)) continue;
+      assertKnownScreenshotFlag(key);
+    }
     target = getArg(a, 'selector', 0) ?? getArg(a, 'target', 0);
     name = getArg(a, 'name', 1) ?? getArg(a, 'filename', 1);
-    out = a.out ?? a.path;
-    full = a.full === true || a.fullPage === true;
+    const rawOut = a.out ?? a.path;
+    if (rawOut === true) valuelessFlag = a.out === true ? 'out' : 'path';
+    else out = rawOut;
+    if (name === true) { valuelessFlag = 'name'; name = undefined; }
+    full = a.full === true || a.fullPage === true || a['full-page'] === true;
   }
 
   // Positional "full" sentinel resolves to a full-page capture, not a selector.
@@ -802,6 +845,10 @@ function parseScreenshotArgs(a: ActionArgs): { target?: string; name?: string; o
   // A positional that looks like a filesystem path is an output path, not a CSS selector.
   // dump and copy take their path positionally, so accept it here too rather than rejecting.
   if (target && !out && looksLikeOutputPath(target)) { out = target; target = undefined; }
+
+  if (valuelessFlag && (valuelessFlag === 'name' ? name === undefined : !out)) {
+    throw new Error(`--${valuelessFlag} needs a value: write --${valuelessFlag}=<value>`);
+  }
 
   return { target, name, out, full };
 }

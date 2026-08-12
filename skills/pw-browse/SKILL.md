@@ -66,7 +66,8 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | Flag | Applies to | Description |
 |------|-----------|-------------|
 | `--session=N` | `pw` only | Target a specific named session |
-| `--tab=N` | `pw` only | Target a specific tab (default: 0) |
+| `--tab=N` | `pw` only | Target a tab by position (default: 0). Errors when the index does not exist — indices reorder, so it is not an identity |
+| `--tab-id=N` | `pw` only | Target a tab by the stable id from `pw tab list`. Survives reordering and navigation |
 | `--headed` | `pw` and `pwi` | Show browser window |
 | `--viewport=auto\|WxH` | `pw` and `pwi` | Viewport size (default: `auto` — follows the browser window; headless has no real window so it uses a 1440×900 default. Pass `WxH` for an exact size) |
 | `--video[=name]` | `pw` only | Enable video recording |
@@ -92,12 +93,13 @@ npx tsx {script_path}/resize.ts <width>x<height>
 npx tsx {script_path}/screenshot.ts [target] [--full] [--out=path] [--name=filename] [--headed]
 ```
 - No args: Capture current viewport
-- `--full`: Full-page scroll capture
+- `--full` (also `--full-page`, `--fullPage`): Full-page scroll capture
 - `selector`: Capture a specific element (e.g., `#header`, `.card`) — a CSS selector, **not** an output path
 - `x,y,width,height`: Capture a coordinate region (e.g., `100,200,500,300`)
 - `--out=path`: Write to an explicit file path (absolute or relative); parent dirs are created
 - `--name=filename`: Custom filename within the screenshot dir (default: timestamp)
 - `--full`, `--out`, and `--name` behave identically in `pw shot`, `::` chains, and `seq` JSON
+- An unrecognized flag is an error. A capture that silently ignored `--full-page` and returned the viewport was indistinguishable from a correct one
 
 ### click.ts — Click an element
 ```bash

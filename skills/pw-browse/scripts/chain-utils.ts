@@ -91,6 +91,17 @@ export interface ChainSegment {
   args: string[];
 }
 
+/**
+ * Flags run() consumes for every command, so a per-command script can forward
+ * everything else to its action parser and let unknown flags be rejected there.
+ * `tab`/`tab-id` are here too, so a `::` chain forwards them to the session
+ * instead of handing them to the action.
+ */
+export const GLOBAL_FLAG_NAMES = new Set([
+  'session', 'headed', 'viewport', 'device', 'video',
+  'no-restore', 'no-pin-check', 'safe', 'tab', 'tab-id',
+]);
+
 export function isGlobalFlagArg(arg: string, globalFlagNames: Set<string>): boolean {
   return arg.startsWith('--') && globalFlagNames.has(arg.replace(/^--/, '').split('=')[0]);
 }

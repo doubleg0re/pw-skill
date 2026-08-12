@@ -57,7 +57,7 @@ Pure element→element drags use Playwright's native `dragTo` (the right choice 
 | Command | Description |
 |---|---|
 | `pw shot\|screenshot` | Capture viewport |
-| `pw shot\|screenshot --full` | Capture full page |
+| `pw shot\|screenshot --full` | Capture full page (`--full-page` and `--fullPage` are accepted spellings) |
 | `pw shot\|screenshot <selector>` | Capture element |
 | `pw shot\|screenshot <x,y,w,h>` | Capture coordinate region |
 | `pw shot\|screenshot --out=<path>` | Write to an explicit file path (parent dirs created) |
@@ -71,6 +71,8 @@ Pure element→element drags use Playwright's native `dragTo` (the right choice 
 | `pw wait <selector> --attr=textContent --value=Done` | Wait for attribute value |
 
 Screenshots default to `./.playwright-state/screenshots` under the current working directory. For session-based work, `pw launch --screenshot-path=dir` pins the screenshot directory in session metadata so later commands keep writing there even if `cwd` changes.
+
+A misspelled flag is rejected rather than ignored: `screenshot --fullpage` used to return a viewport capture as a success, which reads exactly like a verified full-page one.
 
 ## HTTP
 
@@ -101,10 +103,12 @@ Screenshots default to `./.playwright-state/screenshots` under the current worki
 | `pw sessions` | List all sessions |
 | `pw browsers` | Alias for `pw browser list` |
 | `pw close [--session=N] [--all]` | Close session(s) |
-| `pw tab new [url]` | Open new tab |
-| `pw tab list` | List open tabs |
+| `pw tab new [url]` | Open new tab — returns the `tabId` to address it with |
+| `pw tab list` | List open tabs with their `index` and stable `tabId` |
 | `pw tab close <index>` | Close tab |
 | `pw status` | Session status (pages, URL, title) |
+
+A tab **index** is a position in a list that reorders on its own: opening a tab puts it at the front on the next connection, shifting everything after it. Use `--tab-id=<id>` from `pw tab list` for anything that outlives a single command — it tracks the browser's own tab handle, so it survives both reordering and navigation. Both flags fail loudly when they cannot be resolved; an unresolvable `--tab=N` used to silently act on tab 0.
 
 > **Caution for AI agents:** Unless the user explicitly asks to close every session, avoid using `--all`. Other agents or background tasks may have active sessions you do not know about. Prefer plain `pw close` to safely terminate the current bound session.
 
@@ -187,7 +191,8 @@ All commands support these flags:
 
 ```
 --session=N         Target specific session
---tab=N             Target specific tab (default: 0)
+--tab=N             Target tab by position (default: 0) — errors when out of range
+--tab-id=N          Target tab by stable id from `pw tab list` — survives reordering
 --headed            Show browser window
 --viewport=auto|WxH Viewport size (default: auto — follows the window; headless uses a 1440x900 default window)
 --video[=name]      Enable video recording

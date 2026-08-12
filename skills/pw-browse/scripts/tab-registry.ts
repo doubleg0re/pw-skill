@@ -8,6 +8,8 @@ import { atomicWriteJSON } from './file-utils.js';
 export interface TabEntry {
   tabId: number;
   pageIndex?: number; // Playwright page array index at creation time
+  /** Chrome DevTools target id — the only handle that survives reorder and navigation. */
+  targetId?: string;
   url: string;
   title?: string;
   createdAt: string;
@@ -45,10 +47,11 @@ let nextId = 1;
 const registry = new Map<number, TabEntry>();
 let persistPath: string | null = null;
 
-export function assignTabId(url: string, title?: string, pageIndex?: number): TabEntry {
+export function assignTabId(url: string, title?: string, pageIndex?: number, targetId?: string): TabEntry {
   const entry: TabEntry = {
     tabId: nextId++,
     pageIndex,
+    targetId,
     url,
     title,
     createdAt: new Date().toISOString(),
@@ -84,6 +87,66 @@ export function findTabByUrl(url: string): TabEntry | undefined {
     if (entry.url === url) return entry;
   }
   return undefined;
+}
+
+export function findTabByTargetId(targetId: string): TabEntry | undefined {
+  for (const entry of registry.values()) {
+    if (entry.targetId === targetId) return entry;
+  }
+  return undefined;
+}
+
+/** A resolved tab target, or the reason it could not be resolved. */
+export interface TabResolution {
+  index?: number;
+  error?: string;
+}
+
+/**
+ * Resolve `--tab=N` against the live page list.
+ *
+ * An out-of-range index used to be dropped, leaving the command pointed at the
+ * default page — so a stale index quietly wrote into tab 0.
+ */
+export function resolveTabIndexFlag(raw: string, pageCount: number): TabResolution {
+  const index = Number(raw);
+  if (!/^\d+$/.test(raw.trim())) {
+    return { error: `Invalid --tab=${raw}. Expected a tab index; run \`pw tab list\` to see the open tabs.` };
+  }
+  if (pageCount === 0) {
+    return { error: `--tab=${raw} cannot be used: no tabs are open in this session.` };
+  }
+  if (index >= pageCount) {
+    return {
+      error:
+        `--tab=${raw} is out of range: ${pageCount} tab${pageCount === 1 ? '' : 's'} open (0-${pageCount - 1}). ` +
+        `Tab indices shift when tabs open or close — use \`pw tab list\` and --tab-id=<id> for a handle that does not move.`,
+    };
+  }
+  return { index };
+}
+
+/**
+ * Resolve `--tab-id=N` to a live page position by matching the recorded
+ * DevTools target id. Unlike an index it survives reordering, and unlike a URL
+ * it survives navigation.
+ */
+export function resolveTabIdFlag(raw: string, liveTargetIds: Array<string | undefined>): TabResolution {
+  if (!/^\d+$/.test(raw.trim())) {
+    return { error: `Invalid --tab-id=${raw}. Expected a numeric tab id from \`pw tab list\`.` };
+  }
+  const entry = getTab(Number(raw));
+  if (!entry) {
+    return { error: `--tab-id=${raw} is not a known tab in this session. Run \`pw tab list\` for current ids.` };
+  }
+  if (!entry.targetId) {
+    return { error: `--tab-id=${raw} has no target id recorded. Run \`pw tab list\` to re-register the open tabs.` };
+  }
+  const index = liveTargetIds.indexOf(entry.targetId);
+  if (index < 0) {
+    return { error: `--tab-id=${raw} is no longer open (last seen at ${entry.url}).` };
+  }
+  return { index };
 }
 
 export function findTabByPageIndex(pageIndex: number): TabEntry | undefined {

@@ -1,19 +1,16 @@
 // ~/.claude/skills/pw-browse/scripts/screenshot.ts
-import { run, hasFlag, parseFlag } from './common.js';
+import { run } from './common.js';
 import { actionScreenshot } from './actions.js';
+import { GLOBAL_FLAG_NAMES, isGlobalFlagArg } from './chain-utils.js';
 
-run(async ({ page, args, session }) => {
-  const argv = process.argv.slice(2);
-
-  // Forward flags as tokens; actionScreenshot is the single source of truth for
-  // parsing them, so CLI, :: chains, and seq JSON all behave identically.
+run(async ({ page, args, rawArgs, session }) => {
+  // Forward every non-global flag verbatim; actionScreenshot is the single
+  // source of truth for parsing them, so CLI, :: chains, and seq JSON all
+  // behave identically — including rejecting a misspelled --fullpage, which
+  // used to be dropped here and reported as a successful full-page capture.
   const actionArgs: string[] = [];
   if (args[0]) actionArgs.push(args[0]); // selector / 'full' / x,y,w,h
-  if (hasFlag(argv, 'full')) actionArgs.push('--full');
-  const out = parseFlag(argv, 'out') ?? parseFlag(argv, 'path');
-  if (out) actionArgs.push(`--out=${out}`);
-  const name = parseFlag(argv, 'name');
-  if (name) actionArgs.push(`--name=${name}`);
+  actionArgs.push(...rawArgs.filter(a => a.startsWith('--') && !isGlobalFlagArg(a, GLOBAL_FLAG_NAMES)));
 
   const { result } = await actionScreenshot(page, actionArgs, { session });
   return { success: true, screenshot: (result as any).screenshot };
