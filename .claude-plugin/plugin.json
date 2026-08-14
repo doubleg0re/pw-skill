@@ -1,6 +1,6 @@
 {
   "name": "pw-skill",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Playwright CLI Skill for Claude Code. Persistent browser via CDP, 4 modular skills, 10+ scripts, minimal token usage.",
   "author": { "name": "doubleg0re" },
   "license": "MIT",

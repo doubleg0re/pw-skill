@@ -3,14 +3,14 @@
   "owner": { "name": "doubleg0re" },
   "metadata": {
     "description": "Playwright browser automation skill for Claude Code",
-    "version": "1.4.0"
+    "version": "1.4.1"
   },
   "plugins": [
     {
       "name": "pw-skill",
       "source": "./",
       "description": "Persistent CDP browser + 4 modular skills + CLI. Navigate, click, screenshot, console logs, network capture, tab management.",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "category": "testing",
       "tags": ["browser", "automation", "playwright", "testing", "e2e", "cdp"]
     }
