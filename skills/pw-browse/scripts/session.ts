@@ -30,6 +30,13 @@ export interface SessionInfo {
   screenshotDir?: string;
   device?: string;
   documentEpoch?: number;
+  /**
+   * The `.playwright-state` dir the session was launched from. Sessions live in
+   * the shared global dir, so this is the only record of which cwd owns one — a
+   * bare command auto-selects only sessions launched from its own cwd, so it can
+   * never reach across workspaces and drive a session under test elsewhere.
+   */
+  originDir?: string;
 }
 
 export interface SessionStoreOptions {
@@ -130,6 +137,7 @@ export function createSessionStore(opts: SessionStoreOptions) {
         wsEndpoint,
         startedAt: new Date().toISOString(),
         video,
+        originDir: opts.localDir,
         ...(screenshotDir ? { screenshotDir } : {}),
       };
 
@@ -246,10 +254,14 @@ export function createSessionStore(opts: SessionStoreOptions) {
         }
       }
 
-      // 3. Only one alive session → auto-select
+      // 3. Only one alive session launched from THIS cwd → auto-select.
+      //    Foreign-cwd sessions are never picked implicitly: a bare command
+      //    must not reach across workspaces and drive a session under test
+      //    elsewhere (gitea #7).
       const alive = this.listSessions().filter(s => isProcessAlive(s.pid));
-      if (alive.length === 1) {
-        const session = alive[0];
+      const local = alive.filter(s => s.originDir === opts.localDir);
+      if (local.length === 1) {
+        const session = local[0];
         const warnings: string[] = [];
 
         if (!bound) {
@@ -262,10 +274,27 @@ export function createSessionStore(opts: SessionStoreOptions) {
 
         return { session, warnings };
       }
-      if (alive.length === 0) throw new Error('No active sessions. Run `pw launch` first.');
-      throw new Error(
-        `Multiple active sessions. Specify --session=<name> or run \`pw use <name>\`.\n` +
-        `Active: ${alive.map(s => s.name).join(', ')}`
+      throw this.noAutoSelectError(alive, local);
+    },
+
+    /**
+     * The failure when no single local session can be auto-selected. Kept in one
+     * place so both resolvers name the same distinctions: nothing running, an
+     * ambiguous set of local sessions, or live sessions that only exist in other
+     * cwds (which must be addressed with --session, never grabbed implicitly).
+     */
+    noAutoSelectError(alive: SessionInfo[], local: SessionInfo[]): Error {
+      if (local.length > 1) {
+        return new Error(
+          `Multiple active sessions. Specify --session=<name> or run \`pw use <name>\`.\n` +
+          `Active: ${local.map(s => s.name).join(', ')}`
+        );
+      }
+      if (alive.length === 0) return new Error('No active sessions. Run `pw launch` first.');
+      return new Error(
+        `No session was launched from this directory. ` +
+        `Live sessions exist elsewhere (${alive.map(s => s.name).join(', ')}); ` +
+        `pass --session=<name> to target one, or run \`pw launch\` here.`
       );
     },
 
@@ -286,14 +315,12 @@ export function createSessionStore(opts: SessionStoreOptions) {
         if (session && isProcessAlive(session.pid)) return session;
       }
 
-      // 3. Only one alive → return it (but don't bind)
+      // 3. Only one alive session from THIS cwd → return it (but don't bind).
+      //    Foreign-cwd sessions are never picked implicitly (gitea #7).
       const alive = this.listSessions().filter(s => isProcessAlive(s.pid));
-      if (alive.length === 1) return alive[0];
-      if (alive.length === 0) throw new Error('No active sessions. Run `pw launch` first.');
-      throw new Error(
-        `Multiple active sessions. Specify --session=<name> or run \`pw use <name>\`.\n` +
-        `Active: ${alive.map(s => s.name).join(', ')}`
-      );
+      const local = alive.filter(s => s.originDir === opts.localDir);
+      if (local.length === 1) return local[0];
+      throw this.noAutoSelectError(alive, local);
     },
 
     // --- Profile ---

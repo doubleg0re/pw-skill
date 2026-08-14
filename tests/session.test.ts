@@ -283,6 +283,66 @@ describe('SessionStore — resolveSession', () => {
   });
 });
 
+// gitea #7 — a bare command auto-attached to the single live session even when
+// it was launched from another working directory, driving its tab under the
+// user. Sessions live in the shared global dir, so cwd is the only thing that
+// scopes "mine".
+describe('SessionStore — cross-cwd auto-select', () => {
+  const GLOBAL = join(tmpdir(), `pw-xcwd-global-${Date.now()}`);
+  const DIR_A = join(tmpdir(), `pw-xcwd-a-${Date.now()}`);
+  const DIR_B = join(tmpdir(), `pw-xcwd-b-${Date.now()}`);
+  let storeA: SessionStore;
+  let storeB: SessionStore;
+
+  beforeEach(() => {
+    storeA = createSessionStore({ globalDir: GLOBAL, localDir: DIR_A });
+    storeB = createSessionStore({ globalDir: GLOBAL, localDir: DIR_B });
+  });
+  afterEach(() => {
+    for (const d of [GLOBAL, DIR_A, DIR_B]) {
+      if (existsSync(d)) rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('stamps the launch cwd on the session record', () => {
+    const s = storeA.createSession('a', 9001, process.pid);
+    expect(s.originDir).toBe(DIR_A);
+  });
+
+  it('refuses to auto-select a session launched from another cwd', () => {
+    storeA.createSession('remote', 9001, process.pid);
+    expect(() => storeB.resolveSessionWithContext()).toThrow(/launched from this directory/);
+  });
+
+  it('does not auto-bind a foreign-cwd session', () => {
+    storeA.createSession('remote', 9001, process.pid);
+    expect(() => storeB.resolveSessionWithContext()).toThrow();
+    expect(storeB.getBoundSession()).toBeNull();
+  });
+
+  it('names the foreign sessions so the caller can pick one', () => {
+    storeA.createSession('remote', 9001, process.pid);
+    expect(() => storeB.resolveSessionWithContext()).toThrow(/remote/);
+  });
+
+  it('auto-selects the local session even when another cwd also has one', () => {
+    storeA.createSession('a', 9001, process.pid);
+    storeB.createSession('b', 9002, process.pid);
+    const resolved = storeB.resolveSessionWithContext();
+    expect(resolved.session.name).toBe('b');
+  });
+
+  it('still honors an explicit --session across cwds', () => {
+    storeA.createSession('remote', 9001, process.pid);
+    expect(storeB.resolveSessionWithContext('remote').session.name).toBe('remote');
+  });
+
+  it('resolveSession (pure) also refuses a foreign-cwd auto-select', () => {
+    storeA.createSession('remote', 9001, process.pid);
+    expect(() => storeB.resolveSession()).toThrow(/launched from this directory/);
+  });
+});
+
 // --- Profile ---
 
 describe('SessionStore — profile', () => {

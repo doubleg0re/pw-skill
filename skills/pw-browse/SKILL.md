@@ -53,13 +53,15 @@ When you need the previous step result in a later chained step, quote `'$ret'` o
 Screenshots default to `./.playwright-state/screenshots` under the current working directory. For persistent sessions, `pw launch --screenshot-path=dir` pins screenshot output to a stable directory.
 
 **Session resolution order** (for `pw` commands):
-1. `--session=name` (explicit)
+1. `--session=name` (explicit) — works across cwds
 2. Bound session via `pw use`
-3. Auto-select if only one session alive
-4. Auto-launch if no sessions
-5. Error if multiple sessions without `--session`
+3. Auto-select if exactly one session **launched from this cwd** is alive
+4. Auto-launch if no sessions alive anywhere
+5. Error if multiple local sessions, or if the only live sessions belong to other cwds
 
 **Error recovery**: Dead bound session falls through to auto-select. Explicit `--session=dead` always errors. No session at all auto-launches.
+
+Sessions live in a shared global store, so a bare command only ever auto-selects one launched from the current directory. A session under test in another workspace is never picked implicitly — a bare `pw navigate` elsewhere used to attach to it and drive its tab. Target a cross-cwd session explicitly with `--session=<name>`.
 
 ## Global Flags
 
